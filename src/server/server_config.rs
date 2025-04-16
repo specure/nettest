@@ -6,6 +6,7 @@ use std::fs;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::process;
 use std::str::FromStr;
+use std::os::unix::process::CommandExt;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ServerConfig {
@@ -23,6 +24,10 @@ pub struct ServerConfig {
 
 impl ServerConfig {
     pub fn from_args() -> Result<Self, Box<dyn Error + Send + Sync>> {
+        Self::from_args_vec(std::env::args().collect())
+    }
+
+    pub fn from_args_vec(args: Vec<String>) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let mut config = ServerConfig {
             listen_addresses: Vec::new(),
             ssl_listen_addresses: Vec::new(),
@@ -36,7 +41,6 @@ impl ServerConfig {
             version: None,
         };
 
-        let args: Vec<String> = std::env::args().collect();
         let mut i = 1;
         while i < args.len() {
             match args[i].as_str() {
@@ -55,8 +59,7 @@ impl ServerConfig {
                     i += 1;
                     if i < args.len() {
                         if config.cert_path.is_some() {
-                            eprintln!("Error: only one -c is allowed");
-                            process::exit(1);
+                            return Err("Error: only one -c is allowed".into());
                         }
                         config.cert_path = Some(args[i].clone());
                     }
@@ -65,8 +68,7 @@ impl ServerConfig {
                     i += 1;
                     if i < args.len() {
                         if config.key_path.is_some() {
-                            eprintln!("Error: only one -k is allowed");
-                            process::exit(1);
+                            return Err("Error: only one -k is allowed".into());
                         }
                         config.key_path = Some(args[i].clone());
                     }
@@ -81,18 +83,15 @@ impl ServerConfig {
                     i += 1;
                     if i < args.len() {
                         if unsafe { getuid() } != 0 {
-                            eprintln!("Error: must be root to use option -u");
-                            process::exit(1);
+                            return Err("Error: must be root to use option -u".into());
                         }
                         if config.user.is_some() {
-                            eprintln!("Error: only one -u is allowed");
-                            process::exit(1);
+                            return Err("Error: only one -u is allowed".into());
                         }
                         let username = CString::new(args[i].as_bytes())?;
                         let pw = unsafe { getpwnam(username.as_ptr()) };
                         if pw.is_null() {
-                            eprintln!("Error: could not find user \"{}\"", args[i]);
-                            process::exit(1);
+                            return Err(format!("Error: could not find user \"{}\"", args[i]).into());
                         }
                         unsafe {
                             setgid((*pw).pw_gid);
@@ -115,23 +114,20 @@ impl ServerConfig {
                     i += 1;
                     if i < args.len() {
                         if config.version.is_some() {
-                            eprintln!("Error: only one -v is allowed");
-                            process::exit(1);
+                            return Err("Error: only one -v is allowed".into());
                         }
                         if args[i] != "0.3" {
-                            eprintln!("Error: unsupported version for backwards compatibility: >{}<", args[i]);
-                            process::exit(1);
+                            return Err(format!("Error: unsupported version for backwards compatibility: >{}<", args[i]).into());
                         }
                         config.version = Some(args[i].clone());
                     }
                 }
                 "--help" | "-h" => {
                     print_help();
-                    process::exit(0);
+                    return Err("Help printed".into());
                 }
                 _ => {
-                    eprintln!("Unknown option: {}", args[i]);
-                    process::exit(1);
+                    return Err(format!("Unknown option: {}", args[i]).into());
                 }
             }
             i += 1;
@@ -139,13 +135,11 @@ impl ServerConfig {
 
         // Validate required options
         if config.cert_path.is_none() || config.key_path.is_none() {
-            eprintln!("Error: -c and -k options are required");
-            process::exit(1);
+            return Err("Error: -c and -k options are required".into());
         }
 
         if config.listen_addresses.is_empty() && config.ssl_listen_addresses.is_empty() {
-            eprintln!("Error: at least one -l or -L option is required");
-            process::exit(1);
+            return Err("Error: at least one -l or -L option is required".into());
         }
 
         Ok(config)
@@ -160,12 +154,16 @@ impl ServerConfig {
 
 fn parse_listen_address(addr: &str) -> Result<SocketAddr, Box<dyn Error + Send + Sync>> {
     // Try IPv6 format: [::1]:8080
-    if let Some(addr) = addr.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
-        if let Some((ip, port)) = addr.split_once(':') {
-            let ip: Ipv6Addr = ip.parse()?;
-            let port: u16 = port.parse()?;
-            return Ok(SocketAddr::new(IpAddr::V6(ip), port));
+    if addr.starts_with('[') {
+        if let Some(end_bracket) = addr.rfind(']') {
+            let ip_str = &addr[1..end_bracket];
+            if let Some(port_str) = addr[end_bracket + 1..].strip_prefix(':') {
+                let ip: Ipv6Addr = ip_str.parse()?;
+                let port: u16 = port_str.parse()?;
+                return Ok(SocketAddr::new(IpAddr::V6(ip), port));
+            }
         }
+        return Err(format!("Invalid IPv6 address format: {}", addr).into());
     }
 
     // Try IPv4 format: 127.0.0.1:8080
@@ -180,7 +178,7 @@ fn parse_listen_address(addr: &str) -> Result<SocketAddr, Box<dyn Error + Send +
         return Ok(SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port));
     }
 
-    Err("Invalid listen address format".into())
+    Err(format!("Invalid listen address format: {}", addr).into())
 }
 
 fn print_help() {
@@ -201,4 +199,157 @@ fn print_help() {
     println!(" -v     behave as version (v) for serving very old clients");
     println!("        example: \"0.3\"\n");
     println!("Required are -c,-k and at least one -l/-L option");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    fn create_test_args(args: &[&str]) -> Vec<String> {
+        let mut vec = vec!["test_program".to_string()];
+        vec.extend(args.iter().map(|&s| s.to_string()));
+        vec
+    }
+
+    #[test]
+    fn test_parse_listen_address_ipv6() {
+        let addr = parse_listen_address("[::1]:8080").unwrap();
+        assert_eq!(addr.ip(), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)));
+        assert_eq!(addr.port(), 8080);
+    }
+
+    #[test]
+    fn test_parse_listen_address_ipv4() {
+        let addr = parse_listen_address("127.0.0.1:8080").unwrap();
+        assert_eq!(addr.ip(), IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        assert_eq!(addr.port(), 8080);
+    }
+
+    #[test]
+    fn test_parse_listen_address_port_only() {
+        let addr = parse_listen_address("8080").unwrap();
+        assert_eq!(addr.ip(), IpAddr::V6(Ipv6Addr::UNSPECIFIED));
+        assert_eq!(addr.port(), 8080);
+    }
+
+    #[test]
+    fn test_parse_listen_address_invalid() {
+        assert!(parse_listen_address("invalid").is_err());
+        assert!(parse_listen_address("127.0.0.1:invalid").is_err());
+        assert!(parse_listen_address("[::1]:invalid").is_err());
+    }
+
+    #[test]
+    fn test_server_config_minimal() {
+        let args = create_test_args(&[
+            "-l", "8080",
+            "-c", "cert.pem",
+            "-k", "key.pem"
+        ]);
+        
+        let config = ServerConfig::from_args_vec(args).unwrap();
+        
+        assert_eq!(config.listen_addresses.len(), 1);
+        assert_eq!(config.listen_addresses[0].port(), 8080);
+        assert_eq!(config.cert_path.unwrap(), "cert.pem");
+        assert_eq!(config.key_path.unwrap(), "key.pem");
+        assert_eq!(config.num_threads, 200); // default value
+        assert!(!config.daemon);
+        assert!(!config.debug);
+        assert!(!config.websocket);
+        assert!(config.version.is_none());
+    }
+
+    #[test]
+    fn test_server_config_multiple_listen() {
+        let args = create_test_args(&[
+            "-l", "8080",
+            "-L", "[::1]:8443",
+            "-c", "cert.pem",
+            "-k", "key.pem"
+        ]);
+        
+        let config = ServerConfig::from_args_vec(args).unwrap();
+        
+        assert_eq!(config.listen_addresses.len(), 1);
+        assert_eq!(config.ssl_listen_addresses.len(), 1);
+        assert_eq!(config.listen_addresses[0].port(), 8080);
+        assert_eq!(config.ssl_listen_addresses[0].port(), 8443);
+    }
+
+    #[test]
+    fn test_server_config_all_options() {
+        let args = create_test_args(&[
+            "-l", "8080",
+            "-L", "[::1]:8443",
+            "-c", "cert.pem",
+            "-k", "key.pem",
+            "-t", "100",
+            "-d",
+            "-D",
+            "-w",
+            "-v", "0.3"
+        ]);
+        
+        let config = ServerConfig::from_args_vec(args).unwrap();
+        
+        assert_eq!(config.listen_addresses.len(), 1);
+        assert_eq!(config.ssl_listen_addresses.len(), 1);
+        assert_eq!(config.num_threads, 100);
+        assert!(config.daemon);
+        assert!(config.debug);
+        assert!(config.websocket);
+        assert_eq!(config.version.unwrap(), "0.3");
+    }
+
+    #[test]
+    fn test_server_config_duplicate_cert() {
+        let args = create_test_args(&[
+            "-l", "8080",
+            "-c", "cert1.pem",
+            "-c", "cert2.pem",
+            "-k", "key.pem"
+        ]);
+        
+        let result = ServerConfig::from_args_vec(args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_server_config_duplicate_key() {
+        let args = create_test_args(&[
+            "-l", "8080",
+            "-c", "cert.pem",
+            "-k", "key1.pem",
+            "-k", "key2.pem"
+        ]);
+        
+        let result = ServerConfig::from_args_vec(args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_server_config_missing_required() {
+        let args = create_test_args(&[
+            "-l", "8080",
+            "-c", "./cert.pem"
+        ]);
+        
+        let result = ServerConfig::from_args_vec(args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_server_config_invalid_version() {
+        let args = create_test_args(&[
+            "-l", "8080",
+            "-c", "cert.pem",
+            "-k", "key.pem",
+            "-v", "1.0"
+        ]);
+        
+        let result = ServerConfig::from_args_vec(args);
+        assert!(result.is_err());
+    }
 }
