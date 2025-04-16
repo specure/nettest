@@ -6,7 +6,7 @@ use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::os::unix::process::CommandExt;
 use std::str::FromStr;
 use std::fs;
-use log::LevelFilter;
+use log::{info, LevelFilter};
 use crate::logger;
 use crate::utils::daemon;
 
@@ -184,6 +184,7 @@ impl ServerConfig {
     ) -> Result<tokio_native_tls::native_tls::Identity, Box<dyn Error + Send + Sync>> {
         let cert = fs::read(self.cert_path.as_ref().unwrap())?;
         let key = fs::read(self.key_path.as_ref().unwrap())?;
+        info!("Loading identity from cert and key files");
         Ok(tokio_native_tls::native_tls::Identity::from_pkcs8(
             &cert, &key,
         )?)
