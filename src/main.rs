@@ -1,7 +1,8 @@
 use crate::server::server::Server;
 use crate::server::server_config::ServerConfig;
 use std::error::Error;
-use log::{error, info};
+use log::{error, info, debug};
+use rand::rngs::OsRng;
 
 mod server;
 mod protocol;
@@ -25,6 +26,17 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         }
     };
 
+    info!("starting...");
+    info!("version: {}", config.version.as_deref().unwrap_or("RMBTv2"));
+    if config.debug {
+        debug!("debug logging on");
+    }
+
+    // Initialize random number generator
+    let _rng = OsRng;
+    if config.debug {
+        debug!("random number generator initialized");
+    }
 
     let server = match Server::new(config) {
         Ok(server) => server,

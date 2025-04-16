@@ -20,6 +20,8 @@ regex = "1.10"
 simplelog = "0.12"
 libc = "0.2.171"
 nix = "0.26"
+rand = "0.8"
+getrandom = "0.2"
 
 [dev-dependencies]
 tempfile = "3.8"
