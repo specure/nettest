@@ -6,6 +6,9 @@ use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::os::unix::process::CommandExt;
 use std::str::FromStr;
 use std::fs;
+use log::LevelFilter;
+use crate::logger;
+use crate::utils::daemon;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ServerConfig {
@@ -163,6 +166,15 @@ impl ServerConfig {
         if config.listen_addresses.is_empty() && config.ssl_listen_addresses.is_empty() {
             return Err("Error: at least one -l or -L option is required".into());
         }
+
+
+        if config.daemon {
+            // Run as daemon
+            daemon::daemonize()?;
+        }
+
+        logger::init_logger(if config.debug { LevelFilter::Debug } else { LevelFilter::Info });
+
 
         Ok(config)
     }
