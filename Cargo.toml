@@ -19,3 +19,7 @@ hmac = "0.12"
 regex = "1.10"
 simplelog = "0.12"
 libc = "0.2.171"
+nix = "0.26"
+
+[dev-dependencies]
+tempfile = "3.8"

@@ -1,6 +1,6 @@
-use std::error::Error;
 use crate::server::server::Server;
 use crate::server::server_config::ServerConfig;
+use std::error::Error;
 
 mod server;
 mod protocol;
@@ -8,15 +8,10 @@ mod handlers;
 mod utils;
 mod config;
 
-use env_logger;
 use clap::{Parser, ValueEnum};
-use std::path::PathBuf;
-use std::time::Duration;
+use env_logger;
 use log::LevelFilter;
-use tokio::net::TcpListener;
-use tokio_native_tls::TlsAcceptor;
-use crate::utils::token_validator::TokenValidator;
-use log::info;
+use crate::utils::daemon;
 
 #[derive(ValueEnum, Clone, Debug)]
 enum LogLevel {
@@ -42,53 +37,46 @@ impl From<LogLevel> for LevelFilter {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(short, long, default_value = "config.toml")]
-    config: String,
+    /// Number of worker threads
+    #[arg(short = 't', long = "threads", default_value_t = 4)]
+    num_threads: usize,
 
-    #[arg(short, long, value_enum, default_value = "info")]
-    log_level: LogLevel,
+    /// Port for plain TCP connections
+    #[arg(short = 'l', long = "plain-port", default_value_t = 8080)]
+    plain_port: u16,
 
-    #[arg(short = 'l', long = "label", help = "Token label")]
-    token_label: Option<String>,
+    /// Port for TLS connections
+    #[arg(short = 'L', long = "tls-port", default_value_t = 443)]
+    tls_port: u16,
 
-    #[arg(short = 'L', long = "labels", help = "Token labels file")]
-    token_labels_file: Option<PathBuf>,
+    /// Path to certificate file
+    #[arg(short = 'c', long = "cert")]
+    cert_path: Option<String>,
 
-    #[arg(short = 'c', long = "cert", help = "Certificate file")]
-    cert_file: Option<PathBuf>,
+    /// Path to private key file
+    #[arg(short = 'k', long = "key")]
+    key_path: Option<String>,
 
-    #[arg(short = 'k', long = "key", help = "Private key file")]
-    key_file: Option<PathBuf>,
-
-    #[arg(short = 't', long = "timeout", help = "Connection timeout in seconds")]
-    timeout: Option<u64>,
-
-    #[arg(short = 'u', long = "user", help = "Username")]
-    username: Option<String>,
-
-    #[arg(short = 'p', long = "password", help = "Password")]
-    password: Option<String>,
-
-    #[arg(short = 'v', long = "version", help = "Protocol version")]
-    version: Option<u32>,
-
-    #[arg(short = 'd', long = "debug", help = "Enable debug mode")]
-    debug: bool,
-
-    #[arg(short = 'D', long = "daemon", help = "Run as daemon")]
+    /// Run as daemon
+    #[arg(short = 'd', long = "daemon")]
     daemon: bool,
 
-    #[arg(short = 'w', long = "workers", help = "Number of worker threads")]
-    workers: Option<usize>,
+    /// Path to config file
+    #[arg(short = 'f', long = "config", default_value = "config.toml")]
+    config_path: String,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
-    // Initialize logging
-    env_logger::init();
+    let args = Args::parse();
 
     // Parse command line arguments
     let config = ServerConfig::from_args()?;
+
+    if args.daemon {
+        // Run as daemon
+        daemon::daemonize()?;
+    }
 
     // Create server
     let server = Server::new(config)?;

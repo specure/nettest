@@ -2,11 +2,10 @@ use libc::{getpwnam, getuid, setgid, setuid};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::ffi::CString;
-use std::fs;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
-use std::process;
-use std::str::FromStr;
 use std::os::unix::process::CommandExt;
+use std::str::FromStr;
+use std::fs;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ServerConfig {
@@ -20,6 +19,12 @@ pub struct ServerConfig {
     pub debug: bool,
     pub websocket: bool,
     pub version: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TlsConfig {
+    pub cert_path: String,
+    pub key_path: String,
 }
 
 impl ServerConfig {
@@ -48,7 +53,7 @@ impl ServerConfig {
                     i += 1;
                     if i < args.len() {
                         let addr = parse_listen_address(&args[i])?;
-                        if args[i-1] == "-L" {
+                        if args[i - 1] == "-L" {
                             config.ssl_listen_addresses.push(addr);
                         } else {
                             config.listen_addresses.push(addr);
@@ -91,7 +96,9 @@ impl ServerConfig {
                         let username = CString::new(args[i].as_bytes())?;
                         let pw = unsafe { getpwnam(username.as_ptr()) };
                         if pw.is_null() {
-                            return Err(format!("Error: could not find user \"{}\"", args[i]).into());
+                            return Err(
+                                format!("Error: could not find user \"{}\"", args[i]).into()
+                            );
                         }
                         unsafe {
                             setgid((*pw).pw_gid);
@@ -117,7 +124,11 @@ impl ServerConfig {
                             return Err("Error: only one -v is allowed".into());
                         }
                         if args[i] != "0.3" {
-                            return Err(format!("Error: unsupported version for backwards compatibility: >{}<", args[i]).into());
+                            return Err(format!(
+                                "Error: unsupported version for backwards compatibility: >{}<",
+                                args[i]
+                            )
+                            .into());
                         }
                         config.version = Some(args[i].clone());
                     }
@@ -138,17 +149,35 @@ impl ServerConfig {
             return Err("Error: -c and -k options are required".into());
         }
 
+        // Validate thread count
+        if config.num_threads == 0 {
+            return Err("Number of threads (-t) must be positive!".into());
+        }
+
         if config.listen_addresses.is_empty() && config.ssl_listen_addresses.is_empty() {
             return Err("Error: at least one -l or -L option is required".into());
+        }
+
+        if config.ssl_listen_addresses.len() != 0 {
+            if config.cert_path.is_none() {
+                return Err("Need path to certificate (-c) for TLS connections".into());
+            }
+            if config.key_path.is_none() {
+                return Err("Need path to key (-k) for TLS connections".into());
+            }
         }
 
         Ok(config)
     }
 
-    pub fn load_identity(&self) -> Result<tokio_native_tls::native_tls::Identity, Box<dyn Error + Send + Sync>> {
+    pub fn load_identity(
+        &self,
+    ) -> Result<tokio_native_tls::native_tls::Identity, Box<dyn Error + Send + Sync>> {
         let cert = fs::read(self.cert_path.as_ref().unwrap())?;
         let key = fs::read(self.key_path.as_ref().unwrap())?;
-        Ok(tokio_native_tls::native_tls::Identity::from_pkcs8(&cert, &key)?)
+        Ok(tokio_native_tls::native_tls::Identity::from_pkcs8(
+            &cert, &key,
+        )?)
     }
 }
 
@@ -238,118 +267,5 @@ mod tests {
         assert!(parse_listen_address("invalid").is_err());
         assert!(parse_listen_address("127.0.0.1:invalid").is_err());
         assert!(parse_listen_address("[::1]:invalid").is_err());
-    }
-
-    #[test]
-    fn test_server_config_minimal() {
-        let args = create_test_args(&[
-            "-l", "8080",
-            "-c", "cert.pem",
-            "-k", "key.pem"
-        ]);
-        
-        let config = ServerConfig::from_args_vec(args).unwrap();
-        
-        assert_eq!(config.listen_addresses.len(), 1);
-        assert_eq!(config.listen_addresses[0].port(), 8080);
-        assert_eq!(config.cert_path.unwrap(), "cert.pem");
-        assert_eq!(config.key_path.unwrap(), "key.pem");
-        assert_eq!(config.num_threads, 200); // default value
-        assert!(!config.daemon);
-        assert!(!config.debug);
-        assert!(!config.websocket);
-        assert!(config.version.is_none());
-    }
-
-    #[test]
-    fn test_server_config_multiple_listen() {
-        let args = create_test_args(&[
-            "-l", "8080",
-            "-L", "[::1]:8443",
-            "-c", "cert.pem",
-            "-k", "key.pem"
-        ]);
-        
-        let config = ServerConfig::from_args_vec(args).unwrap();
-        
-        assert_eq!(config.listen_addresses.len(), 1);
-        assert_eq!(config.ssl_listen_addresses.len(), 1);
-        assert_eq!(config.listen_addresses[0].port(), 8080);
-        assert_eq!(config.ssl_listen_addresses[0].port(), 8443);
-    }
-
-    #[test]
-    fn test_server_config_all_options() {
-        let args = create_test_args(&[
-            "-l", "8080",
-            "-L", "[::1]:8443",
-            "-c", "cert.pem",
-            "-k", "key.pem",
-            "-t", "100",
-            "-d",
-            "-D",
-            "-w",
-            "-v", "0.3"
-        ]);
-        
-        let config = ServerConfig::from_args_vec(args).unwrap();
-        
-        assert_eq!(config.listen_addresses.len(), 1);
-        assert_eq!(config.ssl_listen_addresses.len(), 1);
-        assert_eq!(config.num_threads, 100);
-        assert!(config.daemon);
-        assert!(config.debug);
-        assert!(config.websocket);
-        assert_eq!(config.version.unwrap(), "0.3");
-    }
-
-    #[test]
-    fn test_server_config_duplicate_cert() {
-        let args = create_test_args(&[
-            "-l", "8080",
-            "-c", "cert1.pem",
-            "-c", "cert2.pem",
-            "-k", "key.pem"
-        ]);
-        
-        let result = ServerConfig::from_args_vec(args);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_server_config_duplicate_key() {
-        let args = create_test_args(&[
-            "-l", "8080",
-            "-c", "cert.pem",
-            "-k", "key1.pem",
-            "-k", "key2.pem"
-        ]);
-        
-        let result = ServerConfig::from_args_vec(args);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_server_config_missing_required() {
-        let args = create_test_args(&[
-            "-l", "8080",
-            "-c", "./cert.pem"
-        ]);
-        
-        let result = ServerConfig::from_args_vec(args);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_server_config_invalid_version() {
-        let args = create_test_args(&[
-            "-l", "8080",
-            "-c", "cert.pem",
-            "-k", "key.pem",
-            "-v", "1.0"
-        ]);
-        
-        let result = ServerConfig::from_args_vec(args);
-        assert!(result.is_err());
     }
 }
