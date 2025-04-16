@@ -2,56 +2,142 @@ use std::sync::Arc;
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
+use std::error::Error;
+use std::fs;
+use std::path::Path;
+use std::str::FromStr;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct ServerConfig {
-    pub host: String,
-    pub port: u16,
-    pub version: u32,
-    pub timeout: Duration,
+    pub listen_addresses: Vec<SocketAddr>,
+    pub ssl_listen_addresses: Vec<SocketAddr>,
+    pub cert_path: String,
+    pub key_path: String,
     pub num_threads: usize,
-    pub token_label: String,
-    pub token_labels_file: String,
-    pub cert_file: String,
-    pub key_file: String,
-    pub username: String,
-    pub password: String,
-    pub debug: bool,
+    pub user: Option<String>,
     pub daemon: bool,
-    pub log_level: String,
+    pub debug: bool,
+    pub websocket: bool,
+    pub version: Option<String>,
 }
 
 impl ServerConfig {
-    pub fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(Self {
-            host: "0.0.0.0".to_string(),
-            port: 8080,
-            version: 2,
-            timeout: Duration::from_secs(30),
-            num_threads: 200,
-            token_label: "test_label".to_string(),
-            token_labels_file: "labels.txt".to_string(),
-            cert_file: "cert.pem".to_string(),
-            key_file: "key.pem".to_string(),
-            username: "admin".to_string(),
-            password: "password".to_string(),
-            debug: false,
+    pub fn from_args() -> Result<Self, Box<dyn Error + Send + Sync>> {
+        let mut config = ServerConfig {
+            listen_addresses: Vec::new(),
+            ssl_listen_addresses: Vec::new(),
+            cert_path: String::new(),
+            key_path: String::new(),
+            num_threads: 200, // Default value from C version
+            user: None,
             daemon: false,
-            log_level: "info".to_string(),
-        })
-    }
-
-    pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let config = if std::path::Path::new(path).exists() {
-            let contents = std::fs::read_to_string(path)?;
-            toml::from_str(&contents)?
-        } else {
-            Self::new()?
+            debug: false,
+            websocket: false,
+            version: None,
         };
+
+        let args: Vec<String> = std::env::args().collect();
+        let mut i = 1;
+        while i < args.len() {
+            match args[i].as_str() {
+                "-l" => {
+                    i += 1;
+                    if i < args.len() {
+                        let addr = args[i].parse::<SocketAddr>()?;
+                        config.listen_addresses.push(addr);
+                    }
+                }
+                "-L" => {
+                    i += 1;
+                    if i < args.len() {
+                        let addr = args[i].parse::<SocketAddr>()?;
+                        config.ssl_listen_addresses.push(addr);
+                    }
+                }
+                "-c" => {
+                    i += 1;
+                    if i < args.len() {
+                        config.cert_path = args[i].clone();
+                    }
+                }
+                "-k" => {
+                    i += 1;
+                    if i < args.len() {
+                        config.key_path = args[i].clone();
+                    }
+                }
+                "-t" => {
+                    i += 1;
+                    if i < args.len() {
+                        config.num_threads = args[i].parse()?;
+                    }
+                }
+                "-u" => {
+                    i += 1;
+                    if i < args.len() {
+                        config.user = Some(args[i].clone());
+                    }
+                }
+                "-d" => {
+                    config.daemon = true;
+                }
+                "-D" => {
+                    config.debug = true;
+                }
+                "-w" => {
+                    config.websocket = true;
+                }
+                "-v" => {
+                    i += 1;
+                    if i < args.len() {
+                        config.version = Some(args[i].clone());
+                    }
+                }
+                "--help" | "-h" => {
+                    println!("==== rmbtd ====");
+                    println!("command line arguments:\n");
+                    println!(" -l/-L  listen on (IP and) port; -L for SSL;");
+                    println!("        examples: \"443\",\"1.2.3.4:1234\",\"[2001:1234::567A]:1234\"");
+                    println!("        maybe specified multiple times; at least once\n");
+                    println!(" -c     path to SSL certificate in PEM format;");
+                    println!("        intermediate certificates following server cert in same file if needed");
+                    println!("        required\n");
+                    println!(" -k     path to SSL key file in PEM format; required\n");
+                    println!(" -t     number of worker threads to run for handling connections (default: 200)\n");
+                    println!(" -u     drop root privileges and setuid to specified user; must be root\n");
+                    println!(" -d     fork into background as daemon (no argument)\n");
+                    println!(" -D     enable debug logging (no argument)\n");
+                    println!(" -w     use as websocket server (no argument)\n");
+                    println!(" -v     behave as version (v) for serving very old clients");
+                    println!("        example: \"0.3\"\n");
+                    println!("Required are -c,-k and at least one -l/-L option");
+                    std::process::exit(0);
+                }
+                _ => {
+                    eprintln!("Unknown option: {}", args[i]);
+                    std::process::exit(1);
+                }
+            }
+            i += 1;
+        }
+
+        // Validate required options
+        if config.cert_path.is_empty() || config.key_path.is_empty() {
+            eprintln!("Error: -c and -k options are required");
+            std::process::exit(1);
+        }
+
+        if config.listen_addresses.is_empty() && config.ssl_listen_addresses.is_empty() {
+            eprintln!("Error: at least one -l or -L option is required");
+            std::process::exit(1);
+        }
+
         Ok(config)
     }
 
-    pub fn listen_address(&self) -> SocketAddr {
-        format!("{}:{}", self.host, self.port).parse().unwrap()
+    pub fn load_identity(&self) -> Result<tokio_native_tls::native_tls::Identity, Box<dyn Error + Send + Sync>> {
+        let cert = fs::read(&self.cert_path)?;
+        let key = fs::read(&self.key_path)?;
+        Ok(tokio_native_tls::native_tls::Identity::from_pkcs8(&cert, &key)?)
     }
-} 
+}

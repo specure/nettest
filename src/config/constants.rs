@@ -1,5 +1,7 @@
 pub const DEFAULT_NUM_THREADS: usize = 200;
-pub const CHUNK_SIZE: usize = 8192;
+pub const CHUNK_SIZE: usize = 4096; // 4 KiB
+pub const MIN_CHUNK_SIZE: usize = 4096; // 4 KiB
+pub const MAX_CHUNK_SIZE: usize = 4194304; // 4 MiB
 pub const GREETING: &str = "RMBTv2\n";
 pub const GREETING_V3: &str = "RMBTv3\n";
 pub const ACCEPT_TOKEN: &str = "ACCEPT TOKEN QUIT\n";

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use crate::config::constants::{RESP_OK, RESP_ERR, RESP_BYE, RESP_PONG, RESP_TIME, CHUNK_SIZE, MAX_CHUNKS, MAX_PUT_SIZE};
 use crate::server::connection_handler::Stream;
+use crate::utils::chunk_validator::validate_chunk_size;
 
 pub async fn handle_get_time(stream: &mut Stream) -> Result<(), Box<dyn Error + Send + Sync>> {
     let time = std::time::SystemTime::now()
@@ -21,6 +22,8 @@ pub async fn handle_get_chunks(stream: &mut Stream, data_buffer: Arc<Mutex<Vec<u
     if total_chunks > MAX_CHUNKS {
         return Err("Too many chunks".into());
     }
+    
+    validate_chunk_size(CHUNK_SIZE)?;
     
     for chunk in data.chunks(CHUNK_SIZE) {
         stream.write_all(chunk).await?;

@@ -1,13 +1,13 @@
 use std::error::Error;
 use std::sync::Arc;
-use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio_native_tls::TlsAcceptor;
 use tokio_native_tls::TlsStream;
-use log::{info, error};
-use crate::protocol::parse_token;
-use crate::utils::token_validator::TokenValidator;
-use crate::utils::tls::TlsConfig;
-use crate::handlers::*;
+use crate::protocol::commands::{parse_command, Command};
+use crate::config::constants::{RESP_OK, RESP_BYE, RESP_PONG};
+use crate::handlers;
+use crate::handlers::{handle_get_chunks, handle_get_time, handle_ping, handle_put, handle_put_no_result, handle_quit};
 
 pub enum Stream {
     Plain(TcpStream),
@@ -39,27 +39,60 @@ impl Stream {
 
 pub async fn handle_connection(
     stream: TcpStream,
-    token_validator: Arc<TokenValidator>,
-    tls_config: Option<Arc<TlsConfig>>,
+    tls_acceptor: Option<Arc<TlsAcceptor>>,
     data_buffer: Arc<tokio::sync::Mutex<Vec<u8>>>,
+    use_ssl: bool,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let mut stream = if let Some(tls_config) = tls_config {
-        Stream::Tls(tls_config.accept(stream).await?)
+    let mut stream = if use_ssl {
+        if let Some(acceptor) = tls_acceptor {
+            Stream::Tls(acceptor.accept(stream).await?)
+        } else {
+            return Err("SSL requested but no TLS acceptor available".into());
+        }
     } else {
         Stream::Plain(stream)
     };
 
-    crate::protocol::send_greeting(&mut stream, 3).await?;
-    
-    let token = crate::protocol::read_line(&mut stream).await?;
-    let token = parse_token(&token)?;
-    
-    if !token_validator.validate(&token).await? {
-        return Err("Invalid token".into());
+    // Send greeting
+    stream.write_all(RESP_OK.as_bytes()).await?;
+
+    loop {
+        let mut buf = [0u8; 1024];
+        let n = stream.read(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+
+        let input = String::from_utf8_lossy(&buf[..n]);
+        let command = parse_command(&input);
+
+        match command {
+            Command::Quit => {
+                stream.write_all(RESP_BYE.as_bytes()).await?;
+                break;
+            }
+            Command::Ping => {
+                stream.write_all(RESP_PONG.as_bytes()).await?;
+            }
+            Command::GetTime => {
+                handlers::handle_get_time(&mut stream).await?;
+            }
+            Command::GetChunks => {
+                handlers::handle_get_chunks(&mut stream, data_buffer.clone()).await?;
+            }
+            Command::Put => {
+                handlers::handle_put(&mut stream, data_buffer.clone()).await?;
+            }
+            Command::PutNoResult => {
+                handlers::handle_put_no_result(&mut stream, data_buffer.clone()).await?;
+            }
+            Command::Unknown(cmd) => {
+                stream.write_all(format!("ERR Unknown command: {}\r\n", cmd).as_bytes()).await?;
+            }
+        }
     }
-    
-    crate::protocol::confirm_token_accepted(&mut stream).await?;
-    command_loop(&mut stream, data_buffer).await
+
+    Ok(())
 }
 
 async fn command_loop(
