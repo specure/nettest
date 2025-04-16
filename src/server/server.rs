@@ -11,6 +11,8 @@ use tokio::task::JoinHandle;
 use tokio::sync::oneshot;
 use std::sync::Mutex;
 use tokio::time::sleep;
+use tokio_native_tls::TlsConnector;
+use native_tls::TlsConnector as NativeTlsConnector;
 
 pub struct Server {
     config: Arc<ServerConfig>,
@@ -172,6 +174,8 @@ mod tests {
     use std::sync::Mutex;
     use std::net::{TcpListener, SocketAddr};
     use log::debug;
+    use tokio_native_tls::TlsConnector;
+    use native_tls::TlsConnector as NativeTlsConnector;
 
     fn find_free_port() -> u16 {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -224,6 +228,67 @@ mod tests {
             Ok(Ok(addr)) => debug!("Server shutdown successfully on {}", addr),
             Ok(Err(e)) => debug!("Server shutdown with error: {}", e),
             Err(e) => debug!("Server task panicked: {}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_server_tls() {
+        let port = find_free_port();
+        println!("Found free TLS port: {}", port);
+
+        let config = ServerConfig {
+            listen_addresses: vec![],
+            ssl_listen_addresses: vec![format!("127.0.0.1:{}", port).parse().unwrap()],
+            cert_path: Some("measurementservers.crt".to_string()),
+            key_path: Some("measurementservers.key".to_string()),
+            num_threads: 1,
+            user: None,
+            daemon: false,
+            debug: true,
+            websocket: true,
+            version: Some("1.0".to_string()),
+        };
+
+        let server = Server::new(config).expect("Failed to create server");
+        
+        // Run server in a separate task
+        let server_handle = tokio::spawn({
+            async move {
+                server.run().await
+            }
+        });
+
+        // Give the server time to start
+        sleep(Duration::from_millis(500)).await;
+
+        // Try to connect to the server using TLS
+        let tls_connector = NativeTlsConnector::builder()
+            .danger_accept_invalid_certs(true) // Для тестов разрешаем невалидные сертификаты
+            .build()
+            .unwrap();
+        let tls_connector = TlsConnector::from(tls_connector);
+
+        match TcpStream::connect(format!("127.0.0.1:{}", port)).await {
+            Ok(stream) => {
+                println!("Successfully connected to server on port {}", port);
+                match tls_connector.connect("localhost", stream).await {
+                    Ok(_) => println!("Successfully established TLS connection"),
+                    Err(e) => println!("Failed to establish TLS connection: {}", e),
+                }
+            },
+            Err(e) => println!("Failed to connect to server: {}", e),
+        }
+
+        // Send SIGTERM to shutdown
+        unsafe {
+            libc::kill(libc::getpid(), libc::SIGTERM);
+        }
+
+        // Wait for server to shutdown
+        match server_handle.await {
+            Ok(Ok(addr)) => println!("Server shutdown successfully on {}", addr),
+            Ok(Err(e)) => println!("Server shutdown with error: {}", e),
+            Err(e) => println!("Server task panicked: {}", e),
         }
     }
 }
