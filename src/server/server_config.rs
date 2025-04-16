@@ -43,7 +43,7 @@ impl ServerConfig {
             daemon: false,
             debug: false,
             websocket: false,
-            version: None,
+            version: None
         };
 
         let mut i = 1;
@@ -53,7 +53,7 @@ impl ServerConfig {
                     i += 1;
                     if i < args.len() {
                         let addr = parse_listen_address(&args[i])?;
-                        if args[i - 1] == "-L" {
+                        if args[i-1] == "-L" {
                             config.ssl_listen_addresses.push(addr);
                         } else {
                             config.listen_addresses.push(addr);
@@ -96,9 +96,7 @@ impl ServerConfig {
                         let username = CString::new(args[i].as_bytes())?;
                         let pw = unsafe { getpwnam(username.as_ptr()) };
                         if pw.is_null() {
-                            return Err(
-                                format!("Error: could not find user \"{}\"", args[i]).into()
-                            );
+                            return Err(format!("Error: could not find user \"{}\"", args[i]).into());
                         }
                         unsafe {
                             setgid((*pw).pw_gid);
@@ -124,11 +122,7 @@ impl ServerConfig {
                             return Err("Error: only one -v is allowed".into());
                         }
                         if args[i] != "0.3" {
-                            return Err(format!(
-                                "Error: unsupported version for backwards compatibility: >{}<",
-                                args[i]
-                            )
-                            .into());
+                            return Err(format!("Error: unsupported version for backwards compatibility: >{}<", args[i]).into());
                         }
                         config.version = Some(args[i].clone());
                     }
@@ -144,27 +138,30 @@ impl ServerConfig {
             i += 1;
         }
 
-        // Validate required options
-        if config.cert_path.is_none() || config.key_path.is_none() {
-            return Err("Error: -c and -k options are required".into());
-        }
-
         // Validate thread count
         if config.num_threads == 0 {
             return Err("Number of threads (-t) must be positive!".into());
         }
 
-        if config.listen_addresses.is_empty() && config.ssl_listen_addresses.is_empty() {
-            return Err("Error: at least one -l or -L option is required".into());
-        }
-
-        if config.ssl_listen_addresses.len() != 0 {
+        // Validate TLS configuration
+        if !config.ssl_listen_addresses.is_empty() {
             if config.cert_path.is_none() {
                 return Err("Need path to certificate (-c) for TLS connections".into());
             }
             if config.key_path.is_none() {
                 return Err("Need path to key (-k) for TLS connections".into());
             }
+        }
+
+        // Validate required options for non-TLS connections
+        if config.ssl_listen_addresses.is_empty() {
+            if config.cert_path.is_none() || config.key_path.is_none() {
+                return Err("Error: -c and -k options are required".into());
+            }
+        }
+
+        if config.listen_addresses.is_empty() && config.ssl_listen_addresses.is_empty() {
+            return Err("Error: at least one -l or -L option is required".into());
         }
 
         Ok(config)
@@ -234,6 +231,9 @@ fn print_help() {
 mod tests {
     use super::*;
     use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::fs::File;
+    use std::io::Write;
+    use tempfile::tempdir;
 
     fn create_test_args(args: &[&str]) -> Vec<String> {
         let mut vec = vec!["test_program".to_string()];
@@ -267,5 +267,118 @@ mod tests {
         assert!(parse_listen_address("invalid").is_err());
         assert!(parse_listen_address("127.0.0.1:invalid").is_err());
         assert!(parse_listen_address("[::1]:invalid").is_err());
+    }
+
+    #[test]
+    fn test_validate_required_cert_and_key() {
+        let args = create_test_args(&["-l", "8080"]);
+        let result = ServerConfig::from_args_vec(args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("-c and -k options are required"));
+    }
+
+    #[test]
+    fn test_validate_positive_threads() {
+        let args = create_test_args(&[
+            "-l", "8080",
+            "-c", "cert.pem",
+            "-k", "key.pem",
+            "-t", "0"
+        ]);
+        let result = ServerConfig::from_args_vec(args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Number of threads (-t) must be positive"));
+    }
+
+    #[test]
+    fn test_validate_at_least_one_port() {
+        let args = create_test_args(&[
+            "-c", "cert.pem",
+            "-k", "key.pem"
+        ]);
+        let result = ServerConfig::from_args_vec(args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("at least one -l or -L option is required"));
+    }
+
+    #[test]
+    fn test_validate_tls_config_without_cert() {
+        let args = create_test_args(&[
+            "-L", "8443",
+            "-k", "key.pem"
+        ]);
+        let result = ServerConfig::from_args_vec(args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Need path to certificate (-c) for TLS connections"));
+    }
+
+    #[test]
+    fn test_validate_tls_config_without_key() {
+        let args = create_test_args(&[
+            "-L", "8443",
+            "-c", "cert.pem"
+        ]);
+        let result = ServerConfig::from_args_vec(args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Need path to key (-k) for TLS connections"));
+    }
+
+    #[test]
+    fn test_valid_config() {
+        let args = create_test_args(&[
+            "-l", "8080",
+            "-L", "8443",
+            "-c", "cert.pem",
+            "-k", "key.pem",
+            "-t", "100"
+        ]);
+        let config = ServerConfig::from_args_vec(args).unwrap();
+        
+        assert_eq!(config.listen_addresses.len(), 1);
+        assert_eq!(config.ssl_listen_addresses.len(), 1);
+        assert_eq!(config.listen_addresses[0].port(), 8080);
+        assert_eq!(config.ssl_listen_addresses[0].port(), 8443);
+        assert_eq!(config.cert_path.unwrap(), "cert.pem");
+        assert_eq!(config.key_path.unwrap(), "key.pem");
+        assert_eq!(config.num_threads, 100);
+    }
+
+    #[test]
+    fn test_duplicate_cert() {
+        let args = create_test_args(&[
+            "-l", "8080",
+            "-c", "cert1.pem",
+            "-c", "cert2.pem",
+            "-k", "key.pem"
+        ]);
+        let result = ServerConfig::from_args_vec(args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("only one -c is allowed"));
+    }
+
+    #[test]
+    fn test_duplicate_key() {
+        let args = create_test_args(&[
+            "-l", "8080",
+            "-c", "cert.pem",
+            "-k", "key1.pem",
+            "-k", "key2.pem"
+        ]);
+        let result = ServerConfig::from_args_vec(args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("only one -k is allowed"));
+    }
+
+    #[test]
+    fn test_invalid_version() {
+        let args = create_test_args(&[
+            "-l", "8080",
+            "-c", "cert.pem",
+            "-k", "key.pem",
+            "-v", "1.0"
+        ]);
+        let result = ServerConfig::from_args_vec(args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("unsupported version"));
     }
 }
