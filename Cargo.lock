@@ -1102,6 +1102,7 @@ dependencies = [
  "clap",
  "env_logger",
  "hmac",
+ "libc",
  "log",
  "native-tls",
  "regex",
