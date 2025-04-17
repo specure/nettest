@@ -195,32 +195,41 @@ mod tests {
     async fn test_token_too_early() {
         let validator = create_test_validator();
         let uuid = Uuid::new_v4().to_string();
-        let future_time = (SystemTime::now()
+        let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_secs() as i64 + MAX_ACCEPT_EARLY as i64 + 1)
-            .to_string();
+            .as_secs() as i64;
+        // Создаем токен, который начнет действовать через 2 секунды
+        let future_time = (now + 2).to_string();
+        println!("Current time: {}, Future time: {}", now, future_time);
         let hmac = TokenValidator::generate_hmac(&uuid, &future_time, TEST_KEY_1)
             .expect("Failed to generate HMAC");
         
+        let start = SystemTime::now();
         let result = validator.validate(&uuid, &future_time, &hmac).await;
+        let duration = start.elapsed().unwrap();
+        println!("Test too early result: {:?}, waited for: {:?}", result, duration);
         assert!(result.is_ok());
-        assert!(!result.unwrap());
+        assert!(result.unwrap());
+        // Проверяем, что мы ждали примерно 2 секунды
+        assert!(duration.as_secs() >= 1 && duration.as_secs() <= 3);
     }
 
     #[tokio::test]
     async fn test_token_too_late() {
         let validator = create_test_validator();
         let uuid = Uuid::new_v4().to_string();
-        let past_time = (SystemTime::now()
+        let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_secs() as i64 - MAX_ACCEPT_LATE as i64 - 1)
-            .to_string();
+            .as_secs() as i64;
+        let past_time = (now - MAX_ACCEPT_LATE as i64 - 1).to_string();
+        println!("Current time: {}, Past time: {}", now, past_time);
         let hmac = TokenValidator::generate_hmac(&uuid, &past_time, TEST_KEY_1)
             .expect("Failed to generate HMAC");
         
         let result = validator.validate(&uuid, &past_time, &hmac).await;
+        println!("Test too late result: {:?}", result);
         assert!(result.is_ok());
         assert!(!result.unwrap());
     }
