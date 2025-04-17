@@ -27,8 +27,8 @@ pub const RESP_TIME: &str = "TIME";
 pub const MAX_CHUNKS: usize = 1000;
 pub const MAX_PUT_SIZE: usize = 1024 * 1024; // 1MB
 pub const MAX_LINE_LENGTH: usize = 1024;
-pub const MAX_ACCEPT_EARLY: u32 = 300; // 5 минут
-pub const MAX_ACCEPT_LATE: u32 = 300;  // 5 минут
+pub const MAX_ACCEPT_EARLY: u32 = 20;  // 20 секунд
+pub const MAX_ACCEPT_LATE: u32 = 90;   // 90 секунд
 
 pub const  OK: &str = "OK\n";
 pub const ERR: &str = "ERR\n";

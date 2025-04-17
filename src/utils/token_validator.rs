@@ -7,6 +7,8 @@ use hmac::{Hmac, Mac};
 use sha1::Sha1;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use uuid::Uuid;
+use std::time::Instant;
+use std::time::Duration;
 
 type HmacSha1 = Hmac<Sha1>;
 
@@ -193,43 +195,48 @@ mod tests {
 
     #[tokio::test]
     async fn test_token_too_early() {
-        let validator = create_test_validator();
-        let uuid = Uuid::new_v4().to_string();
+        let validator = TokenValidator::new(vec!["test_key".to_string()], vec!["test_label".to_string()]);
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
-        // Создаем токен, который начнет действовать через 2 секунды
+        
+        // Создаем токен, который начнется через 2 секунды
         let future_time = (now + 2).to_string();
-        println!("Current time: {}, Future time: {}", now, future_time);
-        let hmac = TokenValidator::generate_hmac(&uuid, &future_time, TEST_KEY_1)
+        let uuid = Uuid::new_v4().to_string();
+        let hmac = TokenValidator::generate_hmac(&uuid, &future_time, "test_key")
             .expect("Failed to generate HMAC");
         
-        let start = SystemTime::now();
+        let start = Instant::now();
         let result = validator.validate(&uuid, &future_time, &hmac).await;
-        let duration = start.elapsed().unwrap();
-        println!("Test too early result: {:?}, waited for: {:?}", result, duration);
+        let elapsed = start.elapsed();
+        
+        println!("Current time: {}, Future time: {}", now, future_time);
+        println!("Test too early result: {:?}, waited for: {:?}", result, elapsed);
+        
         assert!(result.is_ok());
         assert!(result.unwrap());
-        // Проверяем, что мы ждали примерно 2 секунды
-        assert!(duration.as_secs() >= 1 && duration.as_secs() <= 3);
+        assert!(elapsed >= Duration::from_secs(1) && elapsed <= Duration::from_secs(3));
     }
 
     #[tokio::test]
     async fn test_token_too_late() {
-        let validator = create_test_validator();
-        let uuid = Uuid::new_v4().to_string();
+        let validator = TokenValidator::new(vec!["test_key".to_string()], vec!["test_label".to_string()]);
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
-        let past_time = (now - MAX_ACCEPT_LATE as i64 - 1).to_string();
-        println!("Current time: {}, Past time: {}", now, past_time);
-        let hmac = TokenValidator::generate_hmac(&uuid, &past_time, TEST_KEY_1)
+        
+        // Создаем токен, который уже просрочен на 91 секунду (больше чем MAX_ACCEPT_LATE)
+        let past_time = (now - 91).to_string();
+        let uuid = Uuid::new_v4().to_string();
+        let hmac = TokenValidator::generate_hmac(&uuid, &past_time, "test_key")
             .expect("Failed to generate HMAC");
         
+        println!("Current time: {}, Past time: {}", now, past_time);
         let result = validator.validate(&uuid, &past_time, &hmac).await;
         println!("Test too late result: {:?}", result);
+        
         assert!(result.is_ok());
         assert!(!result.unwrap());
     }
