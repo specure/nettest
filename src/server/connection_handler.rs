@@ -41,6 +41,13 @@ impl Stream {
             Stream::Tls(stream) => Ok(stream.write_all(buf).await?),
         }
     }
+
+    pub async fn flush(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        match self {
+            Stream::Plain(stream) => Ok(stream.flush().await?),
+            Stream::Tls(stream) => Ok(stream.flush().await?),
+        }
+    }
 }
 
 pub struct ConnectionHandler {
@@ -83,23 +90,24 @@ impl ConnectionHandler {
                 Ok(0) => break, // Connection closed
                 Ok(n) => {
                     let command = String::from_utf8_lossy(&buffer[..n]);
-                    match command.trim() {
-                        "GETTIME" => handle_get_time(&mut self.stream).await?,
-                        "GETCHUNKS" => {
-                            handle_get_chunks(&mut self.stream, self.data_buffer.clone()).await?
-                        }
-                        "PUT" => handle_put(&mut self.stream, self.data_buffer.clone()).await?,
-                        "PUTNORESULT" => {
-                            handle_put_no_result(&mut self.stream, self.data_buffer.clone()).await?
-                        }
-                        "PING" => handle_ping(&mut self.stream).await?,
-                        "QUIT" => {
-                            handle_quit(&mut self.stream).await?;
-                            break;
-                        }
-                        _ => {
-                            self.stream.write_all(RESP_ERR.as_bytes()).await?;
-                        }
+                    let command_str = command.trim();
+                    println!("Received command: {}", command_str);
+                    if command_str.starts_with("GETTIME") {
+                        println!("Handling GETTIME command");
+                        handle_get_time(&mut self.stream, command_str).await?
+                    } else if command_str == "GETCHUNKS" {
+                        handle_get_chunks(&mut self.stream, self.data_buffer.clone()).await?
+                    } else if command_str == "PUT" {
+                        handle_put(&mut self.stream, self.data_buffer.clone()).await?
+                    } else if command_str == "PUTNORESULT" {
+                        handle_put_no_result(&mut self.stream, self.data_buffer.clone()).await?
+                    } else if command_str == "PING" {
+                        handle_ping(&mut self.stream).await?
+                    } else if command_str == "QUIT" {
+                        handle_quit(&mut self.stream).await?;
+                        break;
+                    } else {
+                        self.stream.write_all(RESP_ERR.as_bytes()).await?;
                     }
                 }
                 Err(e) => {

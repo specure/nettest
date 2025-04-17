@@ -5,12 +5,13 @@ use crate::config::constants::{RESP_OK, RESP_ERR, RESP_BYE, RESP_PONG, RESP_TIME
 use crate::server::connection_handler::Stream;
 use crate::utils::chunk_validator::validate_chunk_size;
 
-pub async fn handle_get_time(stream: &mut Stream) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let time = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_secs();
-    stream.write_all(format!("TIME {}\n", time).as_bytes()).await?;
-    Ok(())
+pub mod get_time;
+
+pub async fn handle_get_time(
+    stream: &mut Stream,
+    command: &str,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    get_time::handle_get_time(stream, command).await
 }
 
 pub async fn handle_get_chunks(stream: &mut Stream, data_buffer: Arc<Mutex<Vec<u8>>>) -> Result<(), Box<dyn Error + Send + Sync>> {
