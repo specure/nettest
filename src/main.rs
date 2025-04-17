@@ -3,6 +3,7 @@ use crate::server::server_config::ServerConfig;
 use std::error::Error;
 use log::{error, info, debug};
 use rand::rngs::OsRng;
+use std::sync::Arc;
 
 mod server;
 mod protocol;
@@ -15,6 +16,7 @@ use clap::Parser;
 use env_logger;
 use log::LevelFilter;
 use crate::utils::daemon;
+use crate::utils::token_validator::TokenValidator;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -37,7 +39,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         debug!("random number generator initialized");
     }
 
-    let server = match Server::new(config) {
+    let (server, _shutdown_tx) = match Server::new(config) {
         Ok(server) => server,
         Err(e) => {
             error!("Failed to initialize server: {}", e);

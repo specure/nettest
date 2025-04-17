@@ -3,32 +3,43 @@ use crate::handlers::*;
 use crate::handlers::{
     handle_get_chunks, handle_get_time, handle_ping, handle_put, handle_put_no_result, handle_quit,
 };
+use crate::protocol::*;
+use crate::utils::token_validator::TokenValidator;
+use log::{debug, error, info};
 use std::error::Error;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-use log::{error, info};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_native_tls::TlsStream;
+use tokio::net::TcpStream;
 use crate::server::server_config::ServerConfig;
-use crate::utils::token_validator::TokenValidator;
 
-pub struct Stream {
-    inner: TcpStream,
+pub enum Stream {
+    Plain(TcpStream),
+    Tls(TlsStream<TcpStream>),
 }
 
 impl Stream {
     pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Box<dyn Error + Send + Sync>> {
-        Ok(self.inner.read(buf).await?)
+        match self {
+            Stream::Plain(stream) => Ok(stream.read(buf).await?),
+            Stream::Tls(stream) => Ok(stream.read(buf).await?),
+        }
     }
 
     pub async fn write(&mut self, buf: &[u8]) -> Result<usize, Box<dyn Error + Send + Sync>> {
-        Ok(self.inner.write(buf).await?)
+        match self {
+            Stream::Plain(stream) => Ok(stream.write(buf).await?),
+            Stream::Tls(stream) => Ok(stream.write(buf).await?),
+        }
     }
 
     pub async fn write_all(&mut self, buf: &[u8]) -> Result<(), Box<dyn Error + Send + Sync>> {
-        Ok(self.inner.write_all(buf).await?)
+        match self {
+            Stream::Plain(stream) => Ok(stream.write_all(buf).await?),
+            Stream::Tls(stream) => Ok(stream.write_all(buf).await?),
+        }
     }
 }
 
@@ -54,15 +65,15 @@ impl ConnectionHandler {
         }
     }
 
-    pub async fn handle(&mut self) {
+    pub async fn handle(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         if let Err(e) = self.send_greeting().await {
             eprintln!("Failed to send greeting: {}", e);
-            return;
+            return Err(e);
         }
 
         if let Err(e) = self.handle_token().await {
             eprintln!("Token validation failed: {}", e);
-            return;
+            return Err(e);
         }
 
         // Main command loop
@@ -72,37 +83,33 @@ impl ConnectionHandler {
                 Ok(0) => break, // Connection closed
                 Ok(n) => {
                     let command = String::from_utf8_lossy(&buffer[..n]);
-                    let result = match command.trim() {
-                        "GETTIME" => handle_get_time(&mut self.stream).await,
+                    match command.trim() {
+                        "GETTIME" => handle_get_time(&mut self.stream).await?,
                         "GETCHUNKS" => {
-                            handle_get_chunks(&mut self.stream, self.data_buffer.clone()).await
+                            handle_get_chunks(&mut self.stream, self.data_buffer.clone()).await?
                         }
-                        "PUT" => handle_put(&mut self.stream, self.data_buffer.clone()).await,
+                        "PUT" => handle_put(&mut self.stream, self.data_buffer.clone()).await?,
                         "PUTNORESULT" => {
-                            handle_put_no_result(&mut self.stream, self.data_buffer.clone()).await
+                            handle_put_no_result(&mut self.stream, self.data_buffer.clone()).await?
                         }
-                        "PING" => handle_ping(&mut self.stream).await,
+                        "PING" => handle_ping(&mut self.stream).await?,
                         "QUIT" => {
-                            let _ = handle_quit(&mut self.stream).await;
+                            handle_quit(&mut self.stream).await?;
                             break;
                         }
                         _ => {
-                            let _ = self.stream.write_all(RESP_ERR.as_bytes()).await;
-                            Ok(())
+                            self.stream.write_all(RESP_ERR.as_bytes()).await?;
                         }
-                    };
-
-                    if let Err(e) = result {
-                        eprintln!("Command handling error: {}", e);
-                        break;
                     }
                 }
                 Err(e) => {
                     eprintln!("Read error: {}", e);
-                    break;
+                    return Err(e.into());
                 }
             }
         }
+
+        Ok(())
     }
 
     async fn send_greeting(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -173,5 +180,107 @@ impl ConnectionHandler {
             self.stream.write_all("ERR\n".as_bytes()).await?;
             Err("Invalid token".into())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::SocketAddr;
+    use std::str::FromStr;
+    use tokio::net::TcpListener;
+    use tokio::net::TcpStream;
+
+    #[tokio::test]
+    async fn test_handle_connection() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Client connection
+        let client = TcpStream::connect(addr).await.unwrap();
+
+        // Server accepts connection
+        let (server, _) = listener.accept().await.unwrap();
+
+        let config = Arc::new(ServerConfig::default());
+        let token_validator = Arc::new(TokenValidator::new(vec![], vec![]));
+        let data_buffer = Arc::new(Mutex::new(Vec::new()));
+
+        let mut handler = ConnectionHandler::new(
+            Stream::Plain(server),
+            config,
+            token_validator,
+            data_buffer,
+        );
+
+        // Test connection handling
+        tokio::spawn(async move {
+            handler.handle().await.unwrap();
+        });
+
+        // Clean up
+        drop(client);
+    }
+
+    #[tokio::test]
+    async fn test_handle_quit() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Client connection
+        let client = TcpStream::connect(addr).await.unwrap();
+
+        // Server accepts connection
+        let (server, _) = listener.accept().await.unwrap();
+
+        let config = Arc::new(ServerConfig::default());
+        let token_validator = Arc::new(TokenValidator::new(vec![], vec![]));
+        let data_buffer = Arc::new(Mutex::new(Vec::new()));
+
+        let mut handler = ConnectionHandler::new(
+            Stream::Plain(server),
+            config,
+            token_validator,
+            data_buffer,
+        );
+
+        // Test quit command
+        tokio::spawn(async move {
+            handler.handle().await.unwrap();
+        });
+
+        // Clean up
+        drop(client);
+    }
+
+    #[tokio::test]
+    async fn test_handle_ping() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Client connection
+        let client = TcpStream::connect(addr).await.unwrap();
+
+        // Server accepts connection
+        let (server, _) = listener.accept().await.unwrap();
+
+        let config = Arc::new(ServerConfig::default());
+        let token_validator = Arc::new(TokenValidator::new(vec![], vec![]));
+        let data_buffer = Arc::new(Mutex::new(Vec::new()));
+
+        let mut handler = ConnectionHandler::new(
+            Stream::Plain(server),
+            config,
+            token_validator,
+            data_buffer,
+        );
+
+        // Test ping command
+        tokio::spawn(async move {
+            handler.handle().await.unwrap();
+        });
+
+        // Clean up
+        drop(client);
     }
 }

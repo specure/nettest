@@ -4,26 +4,28 @@ use tokio_native_tls::TlsAcceptor;
 use std::error::Error;
 use std::net::SocketAddr;
 use log::{info, error};
-use tokio::signal::unix::{signal, SignalKind};
-
+use tokio::sync::Mutex;
+use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWriteExt;
+use crate::utils::token_validator::TokenValidator;
 use crate::server::server_config::ServerConfig;
-use tokio::task::JoinHandle;
 use tokio::sync::oneshot;
-use std::sync::Mutex;
-use tokio::time::sleep;
-use tokio_native_tls::TlsConnector;
-use native_tls::TlsConnector as NativeTlsConnector;
+use crate::server::connection_handler::ConnectionHandler;
+use crate::server::connection_handler::Stream;
+use tokio::net::TcpStream;
 
 pub struct Server {
     config: Arc<ServerConfig>,
     tls_acceptor: Option<Arc<TlsAcceptor>>,
     data_buffer: Arc<Mutex<Vec<u8>>>,
+    token_validator: Arc<TokenValidator>,
+    shutdown_signal: oneshot::Receiver<()>,
 }
 
 impl Server {
     pub fn new(
         config: ServerConfig,
-    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
+    ) -> Result<(Self, oneshot::Sender<()>), Box<dyn Error + Send + Sync>> {
         // Create TLS acceptor if SSL is configured
         let tls_acceptor = if !config.ssl_listen_addresses.is_empty() {
             let identity = config.load_identity()?;
@@ -33,135 +35,137 @@ impl Server {
             None
         };
 
-        Ok(Self {
+        let (tx, rx) = oneshot::channel();
+        let token_validator = Arc::new(TokenValidator::new(
+            Vec::new(), // Empty secret keys for now
+            Vec::new(), // Empty labels for now
+        ));
+
+        Ok((Self {
             config: Arc::new(config),
             tls_acceptor,
             data_buffer: Arc::new(Mutex::new(Vec::new())),
-        })
+            token_validator,
+            shutdown_signal: rx,
+        }, tx))
     }
 
-    pub async fn run(&self) -> Result<SocketAddr, Box<dyn Error + Send + Sync>> {
-        // Set up signal handlers
-        let mut sigterm = signal(SignalKind::terminate())?;
-        let mut sigint = signal(SignalKind::interrupt())?;
-
+    pub async fn run(mut self) -> Result<SocketAddr, Box<dyn Error + Send + Sync>> {
         // Create TCP listeners for plain connections
         let mut plain_listeners = Vec::new();
         for addr in &self.config.listen_addresses {
-            match TcpListener::bind(addr).await {
-                Ok(listener) => {
-                    let local_addr = listener.local_addr()?;
-                    info!("Listening on plain TCP {}", local_addr);
-                    plain_listeners.push((listener, local_addr));
-                }
-                Err(e) => {
-                    error!("Failed to bind plain TCP socket on {}: {}", addr, e);
-                    return Err(e.into());
-                }
-            }
+            let listener = TcpListener::bind(addr).await?;
+            info!("Listening on plain TCP {}", addr);
+            plain_listeners.push(listener);
         }
 
         // Create TCP listeners for TLS connections
         let mut tls_listeners = Vec::new();
         for addr in &self.config.ssl_listen_addresses {
-            match TcpListener::bind(addr).await {
-                Ok(listener) => {
-                    let local_addr = listener.local_addr()?;
-                    info!("Listening on TLS {}", local_addr);
-                    tls_listeners.push((listener, local_addr));
-                }
-                Err(e) => {
-                    error!("Failed to bind TLS socket on {}: {}", addr, e);
-                    return Err(e.into());
-                }
-            }
+            let listener = TcpListener::bind(addr).await?;
+            info!("Listening on TLS {}", addr);
+            tls_listeners.push(listener);
         }
 
-        // Store the first address for returning later
-        let first_addr = plain_listeners.first()
-            .map(|(_, addr)| *addr)
-            .or_else(|| tls_listeners.first().map(|(_, addr)| *addr))
-            .ok_or_else(|| -> Box<dyn Error + Send + Sync> { 
-                "No listening addresses configured".into() 
-            })?;
+        // Get the first listening address to return
+        let first_addr = plain_listeners
+            .first()
+            .map(|l| l.local_addr().unwrap())
+            .or_else(|| tls_listeners.first().map(|l| l.local_addr().unwrap()))
+            .ok_or("No listeners configured")?;
 
-        // Handle plain TCP connections
-        for (listener, _) in plain_listeners {
-            let config = self.config.clone();
-            let data_buffer = self.data_buffer.clone();
+        // Create a vector to hold all listeners
+        let mut all_listeners = Vec::new();
+        for listener in plain_listeners {
+            all_listeners.push((listener, false)); // false means no SSL
+        }
+        for listener in tls_listeners {
+            all_listeners.push((listener, true)); // true means SSL
+        }
 
-            tokio::spawn(async move {
-                loop {
-                    match listener.accept().await {
-                        Ok((socket, addr)) => {
-                            info!("New plain TCP connection from {}", addr);
-                            let config = config.clone();
-                            let data_buffer = data_buffer.clone();
-
-                            tokio::spawn(async move {
-                                // if let Err(e) = handle_connection(socket, &config, data_buffer).await {
-                                //     error!("Error handling connection: {}", e);
-                                // }
-                            });
-                        }
-                        Err(e) => {
-                            error!("Failed to accept connection: {}", e);
-                        }
+        // Handle incoming connections
+        loop {
+            tokio::select! {
+                // Handle all listeners
+                result = {
+                    let mut futures = Vec::new();
+                    for (listener, is_ssl) in &all_listeners {
+                        let is_ssl = *is_ssl;
+                        futures.push(Box::pin(async move {
+                            match listener.accept().await {
+                                Ok((stream, addr)) => Some((stream, addr, is_ssl)),
+                                Err(e) => {
+                                    eprintln!("Failed to accept connection: {}", e);
+                                    None
+                                }
+                            }
+                        }));
+                    }
+                    futures::future::select_all(futures)
+                } => {
+                    if let Some((stream, addr, is_ssl)) = result.0 {
+                        let token_validator = self.token_validator.clone();
+                        let config = self.config.clone();
+                        let data_buffer = self.data_buffer.clone();
+                        let tls_acceptor = self.tls_acceptor.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = handle_connection(stream, addr, is_ssl, token_validator, config, data_buffer, tls_acceptor).await {
+                                eprintln!("Error handling connection: {}", e);
+                            }
+                        });
                     }
                 }
-            });
-        }
-
-        // Handle TLS connections
-        if let Some(tls_acceptor) = &self.tls_acceptor {
-            for (listener, _) in tls_listeners {
-                let config = self.config.clone();
-                let data_buffer = self.data_buffer.clone();
-                let tls_acceptor = tls_acceptor.clone();
-
-                tokio::spawn(async move {
-                    loop {
-                        match listener.accept().await {
-                            Ok((socket, addr)) => {
-                                info!("New TLS connection from {}", addr);
-                                let config = config.clone();
-                                let data_buffer = data_buffer.clone();
-                                let tls_acceptor = tls_acceptor.clone();
-
-                                tokio::spawn(async move {
-                                    match tls_acceptor.accept(socket).await {
-                                        Ok(tls_socket) => {
-                                            // if let Err(e) = handle_connection(tls_socket, config, data_buffer).await {
-                                            //     error!("Error handling TLS connection: {}", e);
-                                            // }
-                                        }
-                                        Err(e) => {
-                                            error!("Failed to accept TLS connection: {}", e);
-                                        }
-                                    }
-                                });
-                            }
-                            Err(e) => {
-                                error!("Failed to accept TLS connection: {}", e);
-                            }
-                        }
-                    }
-                });
-            }
-        }
-
-        // Wait for shutdown signal
-        tokio::select! {
-            _ = sigterm.recv() => {
-                info!("Received SIGTERM, shutting down...");
-            }
-            _ = sigint.recv() => {
-                info!("Received SIGINT, shutting down...");
+                _ = &mut self.shutdown_signal => {
+                    info!("Shutdown signal received");
+                    break;
+                }
             }
         }
 
         Ok(first_addr)
     }
+}
+
+async fn handle_connection(
+    stream: TcpStream,
+    addr: SocketAddr,
+    is_ssl: bool,
+    token_validator: Arc<TokenValidator>,
+    config: Arc<ServerConfig>,
+    data_buffer: Arc<Mutex<Vec<u8>>>,
+    tls_acceptor: Option<Arc<TlsAcceptor>>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    info!("New {} connection from {}", if is_ssl { "TLS" } else { "plain TCP" }, addr);
+    
+    let stream = if is_ssl {
+        if let Some(acceptor) = tls_acceptor {
+            match acceptor.accept(stream).await {
+                Ok(tls_stream) => Stream::Tls(tls_stream),
+                Err(e) => {
+                    error!("TLS handshake failed for {}: {}", addr, e);
+                    return Ok(());
+                }
+            }
+        } else {
+            error!("TLS acceptor not configured for SSL connection from {}", addr);
+            return Ok(());
+        }
+    } else {
+        Stream::Plain(stream)
+    };
+    
+    let mut handler = ConnectionHandler::new(
+        stream,
+        config,
+        token_validator,
+        data_buffer,
+    );
+    
+    if let Err(e) = handler.handle().await {
+        error!("Error handling connection from {}: {}", addr, e);
+    }
+    
+    Ok(())
 }
 
 #[cfg(test)]
@@ -170,8 +174,6 @@ mod tests {
     use std::time::Duration;
     use tokio::net::TcpStream;
     use tokio::time::sleep;
-    use std::sync::Arc;
-    use std::sync::Mutex;
     use std::net::{TcpListener, SocketAddr};
     use log::debug;
     use tokio_native_tls::TlsConnector;
@@ -200,7 +202,7 @@ mod tests {
             version: Some(1),
         };
 
-        let server = Server::new(config).expect("Failed to create server");
+        let (server, shutdown_tx) = Server::new(config).expect("Failed to create server");
         
         // Run server in a separate task
         let server_handle = tokio::spawn({
@@ -218,10 +220,8 @@ mod tests {
             Err(e) => debug!("Failed to connect to server: {}", e),
         }
 
-        // Send SIGTERM to shutdown
-        unsafe {
-            libc::kill(libc::getpid(), libc::SIGTERM);
-        }
+        // Send shutdown signal
+        let _ = shutdown_tx.send(());
 
         // Wait for server to shutdown
         match server_handle.await {
@@ -249,7 +249,7 @@ mod tests {
             version: Some(1),
         };
 
-        let server = Server::new(config).expect("Failed to create server");
+        let (server, shutdown_tx) = Server::new(config).expect("Failed to create server");
         
         // Run server in a separate task
         let server_handle = tokio::spawn({
@@ -279,10 +279,8 @@ mod tests {
             Err(e) => println!("Failed to connect to server: {}", e),
         }
 
-        // Send SIGTERM to shutdown
-        unsafe {
-            libc::kill(libc::getpid(), libc::SIGTERM);
-        }
+        // Send shutdown signal
+        let _ = shutdown_tx.send(());
 
         // Wait for server to shutdown
         match server_handle.await {

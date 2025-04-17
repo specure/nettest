@@ -6,6 +6,7 @@ use crate::config::constants::{MAX_ACCEPT_EARLY, MAX_ACCEPT_LATE};
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use uuid::Uuid;
 
 type HmacSha1 = Hmac<Sha1>;
 
@@ -38,6 +39,12 @@ impl TokenValidator {
     }
 
     async fn validate_with_key(&self, uuid: &str, start_time_str: &str, hmac: &str, key: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
+        // Проверяем формат UUID
+        if Uuid::parse_str(uuid).is_err() {
+            error!("Invalid UUID format: \"{}\"", uuid);
+            return Ok(false);
+        }
+
         // Проверяем время
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)?
@@ -71,5 +78,150 @@ impl TokenValidator {
         let computed_hmac = BASE64.encode(code_bytes);
 
         Ok(computed_hmac == hmac)
+    }
+
+    /// Генерация HMAC для токена
+    pub fn generate_hmac(uuid: &str, start_time_str: &str, key: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
+        let message = format!("{}_{}", uuid, start_time_str);
+        let mut mac = HmacSha1::new_from_slice(key.as_bytes())?;
+        mac.update(message.as_bytes());
+        let result = mac.finalize();
+        let code_bytes = result.into_bytes();
+        Ok(BASE64.encode(code_bytes))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    const TEST_KEY_1: &str = "test_key_1234567890";
+    const TEST_KEY_2: &str = "test_key_1234567892";
+    const TEST_LABEL_1: &str = "test_label_1";
+    const TEST_LABEL_2: &str = "test_label_2";
+
+    fn create_test_validator() -> TokenValidator {
+        let secret_keys = vec![TEST_KEY_1.to_string()];
+        let secret_keys_labels = vec![TEST_LABEL_1.to_string()];
+        TokenValidator::new(secret_keys, secret_keys_labels)
+    }
+
+    fn create_test_validator_with_two_keys() -> TokenValidator {
+        let secret_keys = vec![TEST_KEY_1.to_string(), TEST_KEY_2.to_string()];
+        let secret_keys_labels = vec![TEST_LABEL_1.to_string(), TEST_LABEL_2.to_string()];
+        TokenValidator::new(secret_keys, secret_keys_labels)
+    }
+
+    #[tokio::test]
+    async fn test_valid_token() {
+        let validator = create_test_validator();
+        let uuid = Uuid::new_v4().to_string();
+        let start_time = (SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64)
+            .to_string();
+        
+        // Генерируем правильный HMAC для тестового ключа
+        let hmac = TokenValidator::generate_hmac(&uuid, &start_time, TEST_KEY_1)
+            .expect("Failed to generate HMAC");
+        
+        let result = validator.validate(&uuid, &start_time, &hmac).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_token_signed_with_different_key() {
+        let validator = create_test_validator();
+        let uuid = Uuid::new_v4().to_string();
+        let start_time = (SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64)
+            .to_string();
+        
+        // Генерируем HMAC с другим ключом
+        let hmac = TokenValidator::generate_hmac(&uuid, &start_time, TEST_KEY_2)
+            .expect("Failed to generate HMAC");
+        
+        let result = validator.validate(&uuid, &start_time, &hmac).await;
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_token_validated_with_multiple_keys() {
+        let validator = create_test_validator_with_two_keys();
+        let uuid = Uuid::new_v4().to_string();
+        let start_time = (SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64)
+            .to_string();
+        
+        // Генерируем HMAC с первым ключом
+        let hmac = TokenValidator::generate_hmac(&uuid, &start_time, TEST_KEY_1)
+            .expect("Failed to generate HMAC");
+        
+        let result = validator.validate(&uuid, &start_time, &hmac).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+
+        // Генерируем HMAC со вторым ключом
+        let hmac = TokenValidator::generate_hmac(&uuid, &start_time, TEST_KEY_2)
+            .expect("Failed to generate HMAC");
+        
+        let result = validator.validate(&uuid, &start_time, &hmac).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_invalid_uuid_format() {
+        let validator = create_test_validator();
+        let invalid_uuid = "not-a-uuid";
+        let start_time = "1234567890";
+        let hmac = TokenValidator::generate_hmac(invalid_uuid, start_time, TEST_KEY_1)
+            .expect("Failed to generate HMAC");
+        
+        let result = validator.validate(invalid_uuid, start_time, &hmac).await;
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_token_too_early() {
+        let validator = create_test_validator();
+        let uuid = Uuid::new_v4().to_string();
+        let future_time = (SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64 + MAX_ACCEPT_EARLY as i64 + 1)
+            .to_string();
+        let hmac = TokenValidator::generate_hmac(&uuid, &future_time, TEST_KEY_1)
+            .expect("Failed to generate HMAC");
+        
+        let result = validator.validate(&uuid, &future_time, &hmac).await;
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_token_too_late() {
+        let validator = create_test_validator();
+        let uuid = Uuid::new_v4().to_string();
+        let past_time = (SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64 - MAX_ACCEPT_LATE as i64 - 1)
+            .to_string();
+        let hmac = TokenValidator::generate_hmac(&uuid, &past_time, TEST_KEY_1)
+            .expect("Failed to generate HMAC");
+        
+        let result = validator.validate(&uuid, &past_time, &hmac).await;
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
     }
 }

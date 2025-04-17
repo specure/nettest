@@ -191,6 +191,23 @@ impl ServerConfig {
     }
 }
 
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            listen_addresses: vec!["127.0.0.1:8080".parse().unwrap()],
+            ssl_listen_addresses: vec![],
+            cert_path: None,
+            key_path: None,
+            num_threads: 4,
+            user: None,
+            daemon: false,
+            debug: false,
+            websocket: false,
+            version: Some(1),
+        }
+    }
+}
+
 fn parse_listen_address(addr: &str) -> Result<SocketAddr, Box<dyn Error + Send + Sync>> {
     // Try IPv6 format: [::1]:8080
     if addr.starts_with('[') {
