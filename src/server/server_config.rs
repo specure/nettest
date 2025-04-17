@@ -21,7 +21,7 @@ pub struct ServerConfig {
     pub daemon: bool,
     pub debug: bool,
     pub websocket: bool,
-    pub version: Option<String>,
+    pub version: Option<u8>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -127,7 +127,7 @@ impl ServerConfig {
                         if args[i] != "0.3" {
                             return Err(format!("Error: unsupported version for backwards compatibility: >{}<", args[i]).into());
                         }
-                        config.version = Some(args[i].clone());
+                        config.version = Some(3);
                     }
                 }
                 "--help" | "-h" => {

@@ -197,7 +197,7 @@ mod tests {
             daemon: false,
             debug: true,
             websocket: false,
-            version: Some("1.0".to_string()),
+            version: Some(1),
         };
 
         let server = Server::new(config).expect("Failed to create server");
@@ -246,7 +246,7 @@ mod tests {
             daemon: false,
             debug: true,
             websocket: true,
-            version: Some("1.0".to_string()),
+            version: Some(1),
         };
 
         let server = Server::new(config).expect("Failed to create server");

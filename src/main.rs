@@ -27,7 +27,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     };
 
     info!("starting...");
-    info!("version: {}", config.version.as_deref().unwrap_or("RMBTv2"));
     if config.debug {
         debug!("debug logging on");
     }
