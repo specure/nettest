@@ -94,8 +94,8 @@ impl ConnectionHandler {
                     if command_str.starts_with("GETTIME") {
                         println!("Handling GETTIME command");
                         handle_get_time(&mut self.stream, command_str).await?
-                    } else if command_str == "GETCHUNKS" {
-                        handle_get_chunks(&mut self.stream, self.data_buffer.clone()).await?
+                    } else if command_str.starts_with("GETCHUNKS") {
+                        handle_get_chunks(&mut self.stream, command_str).await?
                     } else if command_str == "PUT" {
                         handle_put(&mut self.stream, self.data_buffer.clone()).await?
                     } else if command_str == "PUTNORESULT" {

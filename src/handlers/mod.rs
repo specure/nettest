@@ -6,6 +6,7 @@ use crate::server::connection_handler::Stream;
 use crate::utils::chunk_validator::validate_chunk_size;
 
 pub mod get_time;
+pub mod get_chunks;
 
 pub async fn handle_get_time(
     stream: &mut Stream,
@@ -14,23 +15,8 @@ pub async fn handle_get_time(
     get_time::handle_get_time(stream, command).await
 }
 
-pub async fn handle_get_chunks(stream: &mut Stream, data_buffer: Arc<Mutex<Vec<u8>>>) -> Result<(), Box<dyn Error + Send + Sync>> {
-    stream.write_all(RESP_OK.as_bytes()).await?;
-    
-    let data = data_buffer.lock().await;
-    let total_chunks = (data.len() + CHUNK_SIZE - 1) / CHUNK_SIZE;
-    
-    if total_chunks > MAX_CHUNKS {
-        return Err("Too many chunks".into());
-    }
-    
-    validate_chunk_size(CHUNK_SIZE)?;
-    
-    for chunk in data.chunks(CHUNK_SIZE) {
-        stream.write_all(chunk).await?;
-    }
-    
-    Ok(())
+pub async fn handle_get_chunks(stream: &mut Stream,  command: &str,) -> Result<(), Box<dyn Error + Send + Sync>> {
+   get_chunks::handle_get_chunks(stream, command).await
 }
 
 pub async fn handle_put(stream: &mut Stream, data_buffer: Arc<Mutex<Vec<u8>>>) -> Result<(), Box<dyn Error + Send + Sync>> {
