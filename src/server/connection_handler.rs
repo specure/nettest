@@ -3,7 +3,6 @@ use crate::handlers::*;
 use crate::handlers::{
     handle_get_chunks, handle_get_time, handle_ping, handle_put, handle_put_no_result, handle_quit,
 };
-use crate::protocol::*;
 use crate::utils::token_validator::TokenValidator;
 use log::{debug, error, info};
 use std::error::Error;

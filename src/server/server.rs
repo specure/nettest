@@ -37,8 +37,8 @@ impl Server {
 
         let (tx, rx) = oneshot::channel();
         let token_validator = Arc::new(TokenValidator::new(
-            Vec::new(), // Empty secret keys for now
-            Vec::new(), // Empty labels for now
+            config.secret_keys.clone(),
+            config.secret_key_labels.clone(),
         ));
 
         Ok((Self {
@@ -200,6 +200,8 @@ mod tests {
             debug: true,
             websocket: false,
             version: Some(1),
+            secret_keys: vec![],
+            secret_key_labels: vec![],
         };
 
         let (server, shutdown_tx) = Server::new(config).expect("Failed to create server");
@@ -247,6 +249,8 @@ mod tests {
             debug: true,
             websocket: true,
             version: Some(1),
+            secret_keys: vec![],
+            secret_key_labels: vec![],
         };
 
         let (server, shutdown_tx) = Server::new(config).expect("Failed to create server");

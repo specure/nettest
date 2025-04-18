@@ -6,9 +6,10 @@ use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::os::unix::process::CommandExt;
 use std::str::FromStr;
 use std::fs;
-use log::{info, LevelFilter};
+use log::{error, info, LevelFilter};
 use crate::logger;
 use crate::utils::daemon;
+use crate::utils::secret_keys::{self, SecretKey};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ServerConfig {
@@ -22,6 +23,8 @@ pub struct ServerConfig {
     pub debug: bool,
     pub websocket: bool,
     pub version: Option<u8>,
+    pub secret_keys: Vec<String>,
+    pub secret_key_labels: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -46,8 +49,22 @@ impl ServerConfig {
             daemon: false,
             debug: false,
             websocket: false,
-            version: None
+            version: None,
+            secret_keys: Vec::new(),
+            secret_key_labels: Vec::new(),
         };
+
+        // Try to read secret keys from file
+        match secret_keys::read_secret_keys("secret.key") {
+            Ok(keys) => {
+                config.secret_keys = keys.iter().map(|k| k.key.clone()).collect();
+                config.secret_key_labels = keys.iter().map(|k| k.label.clone()).collect();
+            }
+            Err(e) => {
+                error!("Error while opening secret.key: {}", e);
+                return Err(format!("Error while opening secret.key: {}", e).into());
+            }
+        }
 
         let mut i = 1;
         while i < args.len() {
@@ -204,6 +221,8 @@ impl Default for ServerConfig {
             debug: false,
             websocket: false,
             version: Some(1),
+            secret_keys: Vec::new(),
+            secret_key_labels: Vec::new(),
         }
     }
 }

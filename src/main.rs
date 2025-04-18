@@ -5,12 +5,11 @@ use log::{error, info, debug};
 use rand::rngs::OsRng;
 use std::sync::Arc;
 
-mod server;
-mod protocol;
-mod handlers;
-mod utils;
-mod config;
-mod logger;
+pub mod server;
+pub mod handlers;
+pub mod utils;
+pub mod config;
+pub mod logger;
 
 use clap::Parser;
 use env_logger;
