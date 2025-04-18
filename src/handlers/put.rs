@@ -41,6 +41,7 @@ pub async fn handle_put(
     let mut last_report_time = 0u64;
     let mut buffer = vec![0u8; chunk_size];
     let mut found_terminator = false;
+    let mut last_chunk_time = 0u64;
 
     // Читаем данные до тех пор, пока не найдем терминатор (0xFF)
     while !found_terminator {
@@ -60,15 +61,18 @@ pub async fn handle_put(
                     found_terminator = true;
                 }
 
-                // Отправляем промежуточный результат, если прошло достаточно времени
+                // Отправляем промежуточный результат только если:
+                // 1. Прошло достаточно времени с последнего отчета (r = 0.001 секунды)
+                // 2. Получен новый чанк
                 let elapsed_ns = start_time.elapsed().as_nanos() as u64;
-                if elapsed_ns - last_report_time > 1_000_000 { // 1 миллисекунда (r = 0.001 секунды)
+                if elapsed_ns - last_report_time > 1_000_000 && elapsed_ns - last_chunk_time > 1_000_000 {
                     let time_response = format!("{} {} BYTES {}\n", RESP_TIME, elapsed_ns, total_bytes);
                     stream.write_all(time_response.as_bytes()).await?;
                     stream.flush().await?;
                     last_report_time = elapsed_ns;
                     debug!("Sent intermediate result: TIME {} BYTES {}", elapsed_ns, total_bytes);
                 }
+                last_chunk_time = elapsed_ns;
             },
             Err(e) => {
                 error!("Failed to read data: {}", e);

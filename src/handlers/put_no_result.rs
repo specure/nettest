@@ -67,7 +67,7 @@ pub async fn handle_put_no_result(
         }
     }
 
-    // Отправляем финальный результат
+    // Отправляем финальный результат TIME
     let elapsed_ns = start_time.elapsed().as_nanos() as u64;
     let time_response = format!("{} {}\n", RESP_TIME, elapsed_ns);
     stream.write_all(time_response.as_bytes()).await?;
