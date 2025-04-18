@@ -1,39 +1,20 @@
 use crate::config::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RESP_ERR, RESP_OK};
-use crate::server::connection_handler::{ConnectionHandler, Stream};
-use rand::rngs::StdRng;
-use rand::{RngCore, SeedableRng};
+use crate::server::connection_handler::Stream;
+use rand::RngCore;
 use std::error::Error;
-use std::time::Instant;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use std::pin::Pin;
-use std::io;
-use std::task::{Context, Poll};
-use tokio::io::ReadBuf;
-use crate::utils::token_validator::TokenValidator;
-use tokio::time;
-use log::{debug, error, info};
-use tokio::time::timeout;
-use std::time::Duration;
-use crate::server::server_config::ServerConfig;
-use std::sync::Arc;
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::Mutex;
+use tokio::io::AsyncWriteExt;
+use tokio::time::sleep;
+use std::time::{Duration, Instant};
+use log::{debug, error, trace};
 
 pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
     debug!("handle_get_time: starting");
-    let start = Instant::now();
-
-    // Check command name using strncmp-like comparison
-    if !command.starts_with("GETTIME") || command.len() < 7 {
-        stream.write_all(RESP_ERR.as_bytes()).await?;
-        return Ok(());
-    }
 
     // Parse command parts after GETTIME
     let parts: Vec<&str> = command[7..].trim().split_whitespace().collect();
 
     // Validate command format exactly like in C code
-    if parts.len() != 2 && parts.len() != 3 {
+    if parts.len() != 1 && parts.len() != 2 {
         stream.write_all(RESP_ERR.as_bytes()).await?;
         return Ok(());
     }
@@ -48,7 +29,7 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
     };
 
     // Parse and validate chunk size
-    let chunk_size = if parts.len() == 2 {
+    let chunk_size = if parts.len() == 1 {
         MIN_CHUNK_SIZE
     } else {
         match parts[1].parse::<usize>() {
@@ -66,50 +47,69 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
         }
     };
 
-    // Send OK response
-    println!("handle_get_time: sending OK response");
-    stream.write_all(RESP_OK.as_bytes()).await?;
-    stream.flush().await?;
-
-    // Generate random data for chunks
-    let mut rng = StdRng::from_entropy();
-    let mut data = vec![0u8; chunk_size];
-    rng.fill_bytes(&mut data);
-
-    // Send chunks for specified duration
-    let mut total_sent = 0;
-    while start.elapsed().as_secs() < duration {
-        debug!("Sending chunk {} of {}", total_sent + 1, chunk_size);
-        stream.write_all(&data).await?;
-        stream.flush().await?;
-        debug!("Chunk {} sent and flushed", total_sent + 1);
-        total_sent += chunk_size;
+    // Проверяем длительность
+    if duration < 2 {
+        error!("Duration must be at least 2 seconds");
+        stream.write_all(RESP_ERR.as_bytes()).await?;
+        return Ok(());
     }
 
-    debug!("All chunks sent, sending termination byte");
-    // Send final chunk with termination byte (0xFF)
-    data[chunk_size - 1] = 0xFF;
-    stream.write_all(&data).await?;
-    stream.flush().await?;
-    debug!("Termination byte sent and flushed");
+    let mut total_bytes = 0;
+    let start_time = Instant::now();
+    let mut buffer = vec![0u8; chunk_size];
 
-    // Wait for OK from client
-    debug!("Waiting for OK response");
+    debug!("Starting GETTIME: duration={}s, chunk_size={}", duration, chunk_size);
+
+    // Отправляем данные до истечения времени
+    while start_time.elapsed().as_secs() < duration {
+        // Создаем новый генератор для каждого чанка
+        rand::thread_rng().fill_bytes(&mut buffer[..chunk_size - 1]);
+        
+        // Устанавливаем последний байт в 0 для всех чанков, кроме последнего
+        buffer[chunk_size - 1] = 0x00;
+        
+        // Отправляем чанк
+        stream.write_all(&buffer).await?;
+        stream.flush().await?;
+        total_bytes += chunk_size;
+        
+        trace!("Sent chunk: first 32 bytes: {:?}", &buffer[..std::cmp::min(32, chunk_size)]);
+        trace!("Sent chunk: last 32 bytes: {:?}", &buffer[chunk_size.saturating_sub(32)..]);
+        trace!("Last byte: 0x{:02X}", buffer[chunk_size - 1]);
+    }
+
+    // Отправляем последний чанк с терминатором
+    rand::thread_rng().fill_bytes(&mut buffer[..chunk_size - 1]);
+    buffer[chunk_size - 1] = 0xFF; // Устанавливаем терминатор
+    stream.write_all(&buffer).await?;
+    total_bytes += chunk_size;
+    
+    trace!("Sent final chunk: first 32 bytes: {:?}", &buffer[..std::cmp::min(32, chunk_size)]);
+    trace!("Sent final chunk: last 32 bytes: {:?}", &buffer[chunk_size.saturating_sub(32)..]);
+    trace!("Last byte: 0x{:02X}", buffer[chunk_size - 1]);
+
+    debug!("All data sent. Total bytes: {}", total_bytes);
+
+    // Ждем ответ OK от клиента
+    debug!("Waiting for OK response from client");
     let mut response = [0u8; 1024];
     let n = stream.read(&mut response).await?;
     let response_str = String::from_utf8_lossy(&response[..n]);
-    debug!("Received response: '{}' ({} bytes)", response_str, n);
+    debug!("Received response from client: '{}'", response_str.trim());
+    debug!("Response bytes: {:?}", &response[..n]);
+        
     if response_str.trim() != "OK" {
-        error!("Expected 'OK', got '{}'", response_str);
-        return Err("Expected OK response".into());
+        error!("Expected OK response, got: {}", response_str);
+        return Err("Invalid response from client".into());
     }
 
-    debug!("OK response received, calculating elapsed time");
-    // Send TIME response
-    let elapsed = start.elapsed().as_micros();
-    let response = format!("TIME {}", elapsed);
-    debug!("Sending TIME response: {}", response);
-    stream.write_all(response.as_bytes()).await?;
+    // Отправляем TIME ответ
+    debug!("Sending TIME response");
+    let time_ns = start_time.elapsed().as_nanos();
+    let time_response = format!("TIME {}\n", time_ns);
+    debug!("Sending TIME response: '{}'", time_response.trim());
+    debug!("TIME response bytes: {:?}", time_response.as_bytes());
+    stream.write_all(time_response.as_bytes()).await?;
     stream.flush().await?;
     debug!("TIME response sent and flushed");
 

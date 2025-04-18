@@ -1,3 +1,6 @@
+#[path = "../test_utils/mod.rs"]
+mod test_utils;
+
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::net::{TcpListener, TcpStream};
@@ -14,7 +17,8 @@ use hmac::{Hmac, Mac};
 use sha1::Sha1;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use std::fs;
-use crate::utils::test_utils::{TestServer, find_free_port};
+use crate::test_utils::{find_free_port, TestServer};
+
 
 type HmacSha1 = Hmac<Sha1>;
 

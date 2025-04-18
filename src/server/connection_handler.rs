@@ -123,18 +123,22 @@ impl ConnectionHandler {
         match self.config.version {
             Some(3) => {
                 self.stream.write_all("RMBTv0.3\n".as_bytes()).await?;
+                self.stream.flush().await?;
             }
             None => {
                 self.stream.write_all("RMBTv1.0\n".as_bytes()).await?;
+                self.stream.flush().await?;
             }
             _ => {
                 // This should never happen as we validate version in Config::set_protocol_version
                 self.stream.write_all("RMBTv1.0\n".as_bytes()).await?;
+                self.stream.flush().await?;
             }
         }
         self.stream
             .write_all("ACCEPT TOKEN QUIT\n".as_bytes())
             .await?;
+        self.stream.flush().await?;
         Ok(())
     }
 

@@ -32,6 +32,7 @@ impl TokenValidator {
         for (i, key) in self.secret_keys.iter().enumerate() {
             if self.validate_with_key(uuid, start_time_str, hmac, key).await? {
                 info!("Token was accepted by key {}", self.secret_keys_labels[i]);
+                debug!("Token was accepted by key {}", self.secret_keys[i]);
                 return Ok(true);
             }
         }
