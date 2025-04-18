@@ -1,6 +1,9 @@
-use crate::config::constants::{RESP_BYE, RESP_PONG};
+use crate::config::constants::{RESP_BYE, RESP_PONG, RESP_TIME, RESP_ERR};
 use crate::server::connection_handler::Stream;
 use std::error::Error;
+use std::time::Instant;
+use tokio::io::AsyncReadExt;
+use log::{info, debug, error};
 
 mod get_time;
 mod get_chunks;
@@ -27,11 +30,44 @@ pub async fn handle_put_no_result(stream: &mut Stream,  command: &str,) -> Resul
 }
 
 pub async fn handle_ping(stream: &mut Stream) -> Result<(), Box<dyn Error + Send + Sync>> {
+    // Начало измерения времени
+    let start_time = Instant::now();
+    
+    // Отправляем PONG клиенту
     stream.write_all(RESP_PONG.as_bytes()).await?;
+    stream.flush().await?;
+    
+    // Читаем ответ OK от клиента
+    let mut response = vec![0u8; 1024];
+    let n = stream.read(&mut response).await?;
+    let response_str = String::from_utf8_lossy(&response[..n]);
+    
+    // Конец измерения времени
+    let elapsed_ns = start_time.elapsed().as_nanos() as u64;
+    
+    // Проверяем ответ клиента
+    if !response_str.trim().eq("OK") {
+        error!("Expected OK from client, got: {}", response_str);
+        stream.write_all(RESP_ERR.as_bytes()).await?;
+        return Err("Invalid client response".into());
+    }
+    
+    // Отправляем время выполнения
+    let time_response = format!("{} {}\n", RESP_TIME, elapsed_ns);
+    stream.write_all(time_response.as_bytes()).await?;
+    stream.flush().await?;
+    
+    info!("PING completed in {} ns", elapsed_ns);
+    
     Ok(())
 }
 
 pub async fn handle_quit(stream: &mut Stream) -> Result<(), Box<dyn Error + Send + Sync>> {
+    // Отправляем BYE клиенту
     stream.write_all(RESP_BYE.as_bytes()).await?;
+    stream.flush().await?;
+    
+    info!("Client requested QUIT, connection will be closed");
+    
     Ok(())
 } 
