@@ -38,16 +38,28 @@ pub async fn handle_ping(stream: &mut Stream) -> Result<(), Box<dyn Error + Send
     stream.flush().await?;
     
     // Читаем ответ OK от клиента
-    let mut response = vec![0u8; 1024];
-    let n = stream.read(&mut response).await?;
-    let response_str = String::from_utf8_lossy(&response[..n]);
+    let mut buf = [0u8; 1024];
+    let mut bytes_read = 0;
+    while bytes_read < buf.len() {
+        match stream.read(&mut buf[bytes_read..bytes_read + 1]).await? {
+            0 => break, // EOF
+            n => {
+                bytes_read += n;
+                if buf[bytes_read - 1] == b'\n' {
+                    break;
+                }
+            }
+        }
+    }
+    
+    let response = String::from_utf8_lossy(&buf[..bytes_read]).trim().to_string();
     
     // Конец измерения времени
     let elapsed_ns = start_time.elapsed().as_nanos() as u64;
     
     // Проверяем ответ клиента
-    if !response_str.trim().eq("OK") {
-        error!("Expected OK from client, got: {}", response_str);
+    if response != "OK" {
+        error!("Expected OK from client, got: {}", response);
         stream.write_all(RESP_ERR.as_bytes()).await?;
         return Err("Invalid client response".into());
     }
