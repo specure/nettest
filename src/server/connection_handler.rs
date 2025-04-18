@@ -96,10 +96,10 @@ impl ConnectionHandler {
                         handle_get_time(&mut self.stream, command_str).await?
                     } else if command_str.starts_with("GETCHUNKS") {
                         handle_get_chunks(&mut self.stream, command_str).await?
-                    } else if command_str == "PUT" {
-                        handle_put(&mut self.stream, self.data_buffer.clone()).await?
+                    }else if command_str.starts_with( "PUT" ) {
+                        handle_put(&mut self.stream, command_str).await?
                     } else if command_str == "PUTNORESULT" {
-                        handle_put_no_result(&mut self.stream, self.data_buffer.clone()).await?
+                        handle_put_no_result(&mut self.stream, command_str).await?
                     } else if command_str == "PING" {
                         handle_ping(&mut self.stream).await?
                     } else if command_str == "QUIT" {
