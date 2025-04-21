@@ -39,12 +39,13 @@ pub async fn handle_put_no_result(
     let start_time = Instant::now();
     let mut total_bytes = 0;
     let mut buffer = vec![0u8; chunk_size];
-    let mut found_terminator = false;
+    let mut last_byte = 0u8;
 
-    // Читаем данные до тех пор, пока не найдем терминатор (0xFF)
-    while !found_terminator {
+    // Читаем данные до тех пор, пока не найдем терминатор (0xFF) или соединение не закроется
+    loop {
         match stream.read(&mut buffer).await {
             Ok(n) => {
+                info!("Received {} bytes PREUPLOAD", n);
                 if n == 0 {
                     debug!("Connection closed by client during data transfer");
                     break;
@@ -53,16 +54,20 @@ pub async fn handle_put_no_result(
                 total_bytes += n;
                 debug!("Received {} bytes, total: {}", n, total_bytes);
 
-                // Проверяем последний байт
-                if n > 0 && buffer[n - 1] == 0xFF {
-                    debug!("Found termination byte in last position");
-                    found_terminator = true;
+                // Проверяем последний байт в полученных данных
+                let last_pos = n - 1;
+                last_byte = buffer[last_pos];
+                debug!("Last byte at position {} is 0x{:02X}", last_pos, last_byte);
+                if last_byte == 0xFF {
+                    debug!("Found termination byte at last position {}", last_pos);
+                    total_bytes -= (n - last_pos - 1); // Корректируем общее количество байт
+                    break;
                 }
             },
             Err(e) => {
                 error!("Failed to read data: {}", e);
-                stream.write_all(RESP_ERR.as_bytes()).await?;
-                return Err(e.into());
+                // Не отправляем ошибку, так как клиент мог просто закрыть соединение
+                break;
             }
         }
     }
@@ -70,13 +75,18 @@ pub async fn handle_put_no_result(
     // Отправляем финальный результат TIME
     let elapsed_ns = start_time.elapsed().as_nanos() as u64;
     let time_response = format!("{} {}\n", RESP_TIME, elapsed_ns);
-    stream.write_all(time_response.as_bytes()).await?;
-    stream.flush().await?;
-
+    info!("Sending TIME response: {}", time_response);
+    
+    // Пробуем отправить TIME, но игнорируем ошибку, если соединение уже закрыто
+    if let Err(e) = stream.write_all(time_response.as_bytes()).await {
+        debug!("Failed to send TIME response: {}", e);
+    }
+    
     info!(
-        "PUTNORESULT completed: received {} bytes in {} ns",
+        "PUTNORESULT completed: received {} bytes in {} ns, found_terminator: {}",
         total_bytes,
-        elapsed_ns
+        elapsed_ns,
+        last_byte == 0xFF
     );
 
     Ok(())

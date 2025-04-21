@@ -169,23 +169,36 @@ impl ConnectionHandler {
                 Ok(0) => break, // Connection closed
                 Ok(n) => {
                     let command = String::from_utf8_lossy(&buffer[..n]);
-                    let command_str = command.trim();
+                    // Берем только первую строку как команду
+                    let command_str = command.lines().next().unwrap_or("").trim();
+
+                    // Игнорируем пустые команды и бинарные данные
+                    if command_str.is_empty() {
+                        debug!("Ignoring empty command or binary data");
+                        continue;
+                    }
+
                     println!("Received command: {}", command_str);
-                    if command_str.starts_with("GETTIME") {
+
+                    // Если это PUT или PUTNORESULT, передаем все прочитанные данные в обработчик
+                    if command_str.starts_with("PUT") || command_str.starts_with("PUTNORESULT") {
+                        if command_str.starts_with("PUTNORESULT") {
+                            handle_put_no_result(&mut self.stream, command_str).await?;
+                        } else {
+                            handle_put(&mut self.stream, command_str).await?;
+                        }
+                    } else if command_str.starts_with("GETTIME") {
                         println!("Handling GETTIME command");
                         handle_get_time(&mut self.stream, command_str).await?
                     } else if command_str.starts_with("GETCHUNKS") {
                         handle_get_chunks(&mut self.stream, command_str).await?
-                    }else if command_str.starts_with( "PUT" ) {
-                        handle_put(&mut self.stream, command_str).await?
-                    } else if command_str == "PUTNORESULT" {
-                        handle_put_no_result(&mut self.stream, command_str).await?
                     } else if command_str == "PING" {
                         handle_ping(&mut self.stream).await?
                     } else if command_str == "QUIT" {
                         handle_quit(&mut self.stream).await?;
                         break;
                     } else {
+                        debug!("Unknown command: {}", command_str);
                         self.stream.write_all(RESP_ERR.as_bytes()).await?;
                     }
                 }
