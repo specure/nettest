@@ -12,7 +12,7 @@ pub async fn handle_put(
     let parts: Vec<&str> = command.split_whitespace().collect();
     if parts.len() > 2 {
         stream.write_all(RESP_ERR.as_bytes()).await?;
-        return Err("Invalid number of arguments for PUT".into());
+        return Err(format!("Invalid number of arguments for PUT: {:?}", parts).into());
     }
 
     // Определяем размер чанка
@@ -22,7 +22,7 @@ pub async fn handle_put(
             Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => size,
             _ => {
                 stream.write_all(RESP_ERR.as_bytes()).await?;
-                return Err("Invalid chunk size".into());
+                return Ok(());
             }
         }
     } else {

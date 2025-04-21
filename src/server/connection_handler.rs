@@ -194,6 +194,9 @@ impl ConnectionHandler {
                     return Err(e.into());
                 }
             }
+            tokio::time::sleep(tokio::time::Duration::from_millis(2)).await;
+
+            self.stream.write_all(ACCEPT_COMMANDS.as_bytes()).await?;
         }
 
         Ok(())
