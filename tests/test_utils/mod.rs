@@ -75,7 +75,7 @@ impl TestServer {
 
     pub async fn send_token(stream: &mut TokioTcpStream, key: &str) -> Result<(), Box<dyn std::error::Error>> {
         let token = Self::generate_token(key);
-        debug!("Sending token: {}", token);
+        info!("Sending token: {}", token);
         stream.write_all(format!("TOKEN {}\n", token).as_bytes())
             .await?;
 

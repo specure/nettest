@@ -13,6 +13,8 @@ use tokio::sync::oneshot;
 use crate::server::connection_handler::ConnectionHandler;
 use crate::server::connection_handler::Stream;
 use tokio::net::TcpStream;
+use crate::utils::use_http::{define_stream};
+use tokio_tungstenite;
 
 pub struct Server {
     config: Arc<ServerConfig>,
@@ -136,35 +138,24 @@ async fn handle_connection(
     tls_acceptor: Option<Arc<TlsAcceptor>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     info!("New {} connection from {}", if is_ssl { "TLS" } else { "plain TCP" }, addr);
-    
-    let stream = if is_ssl {
-        if let Some(acceptor) = tls_acceptor {
-            match acceptor.accept(stream).await {
-                Ok(tls_stream) => Stream::Tls(tls_stream),
-                Err(e) => {
-                    error!("TLS handshake failed for {}: {}", addr, e);
-                    return Ok(());
-                }
-            }
-        } else {
-            error!("TLS acceptor not configured for SSL connection from {}", addr);
-            return Ok(());
-        }
-    } else {
-        Stream::Plain(stream)
-    };
-    
+
+    let mut stream = stream;
+
+    let stream = define_stream(stream, tls_acceptor).await?;
+
+    info!("Connection established  {}", stream.to_string());
+
     let mut handler = ConnectionHandler::new(
         stream,
         config,
         token_validator,
         data_buffer,
     );
-    
+
     if let Err(e) = handler.handle().await {
         error!("Error handling connection from {}: {}", addr, e);
     }
-    
+
     Ok(())
 }
 

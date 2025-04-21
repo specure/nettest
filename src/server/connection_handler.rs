@@ -1,4 +1,4 @@
-use crate::config::constants::{CHUNK_SIZE, ERR, MAX_CHUNKS, MAX_CHUNK_SIZE, OK, PONG, RESP_ERR, RESP_OK};
+use crate::config::constants::{ACCEPT_COMMANDS, CHUNK_SIZE, ERR, MAX_CHUNKS, MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, OK, PONG, RESP_ERR, RESP_OK};
 use crate::handlers::*;
 use crate::handlers::{
     handle_get_chunks, handle_get_time, handle_ping, handle_put, handle_put_no_result, handle_quit,
@@ -12,39 +12,106 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use tokio_native_tls::TlsStream;
 use tokio::net::TcpStream;
+use tokio_tungstenite::WebSocketStream;
+use futures::{SinkExt, StreamExt};
 use crate::server::server_config::ServerConfig;
+use std::net::SocketAddr;
 
+#[derive(Debug)]
 pub enum Stream {
     Plain(TcpStream),
     Tls(TlsStream<TcpStream>),
+    WebSocket(WebSocketStream<TcpStream>),
+    WebSocketTls(WebSocketStream<TlsStream<TcpStream>>),
 }
 
 impl Stream {
-    pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Box<dyn Error + Send + Sync>> {
+    pub async fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
-            Stream::Plain(stream) => Ok(stream.read(buf).await?),
-            Stream::Tls(stream) => Ok(stream.read(buf).await?),
+            Stream::Plain(stream) => stream.read(buf).await,
+            Stream::Tls(stream) => stream.read(buf).await,
+            Stream::WebSocket(stream) => {
+                if let Some(msg) = stream.next().await {
+                    match msg {
+                        Ok(msg) => {
+                            let data = msg.into_data();
+                            let len = data.len().min(buf.len());
+                            buf[..len].copy_from_slice(&data[..len]);
+                            Ok(len)
+                        }
+                        Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
+                    }
+                } else {
+                    Ok(0)
+                }
+            }
+            Stream::WebSocketTls(stream) => {
+                if let Some(msg) = stream.next().await {
+                    match msg {
+                        Ok(msg) => {
+                            let data = msg.into_data();
+                            let len = data.len().min(buf.len());
+                            buf[..len].copy_from_slice(&data[..len]);
+                            Ok(len)
+                        }
+                        Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
+                    }
+                } else {
+                    Ok(0)
+                }
+            }
         }
     }
 
-    pub async fn write(&mut self, buf: &[u8]) -> Result<usize, Box<dyn Error + Send + Sync>> {
+    pub async fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
-            Stream::Plain(stream) => Ok(stream.write(buf).await?),
-            Stream::Tls(stream) => Ok(stream.write(buf).await?),
+            Stream::Plain(stream) => stream.write(buf).await,
+            Stream::Tls(stream) => stream.write(buf).await,
+            Stream::WebSocket(stream) => {
+                stream.send(tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())).await
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                Ok(buf.len())
+            }
+            Stream::WebSocketTls(stream) => {
+                stream.send(tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())).await
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                Ok(buf.len())
+            }
         }
     }
 
-    pub async fn write_all(&mut self, buf: &[u8]) -> Result<(), Box<dyn Error + Send + Sync>> {
+    pub async fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
         match self {
-            Stream::Plain(stream) => Ok(stream.write_all(buf).await?),
-            Stream::Tls(stream) => Ok(stream.write_all(buf).await?),
+            Stream::Plain(stream) => stream.write_all(buf).await,
+            Stream::Tls(stream) => stream.write_all(buf).await,
+            Stream::WebSocket(stream) => {
+                stream.send(tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())).await
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                Ok(())
+            }
+            Stream::WebSocketTls(stream) => {
+                stream.send(tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())).await
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                Ok(())
+            }
         }
     }
 
-    pub async fn flush(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+    pub async fn flush(&mut self) -> std::io::Result<()> {
         match self {
-            Stream::Plain(stream) => Ok(stream.flush().await?),
-            Stream::Tls(stream) => Ok(stream.flush().await?),
+            Stream::Plain(stream) => stream.flush().await,
+            Stream::Tls(stream) => stream.flush().await,
+            Stream::WebSocket(_) => Ok(()),
+            Stream::WebSocketTls(_) => Ok(()),
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            Stream::Plain(_) => "Plain".to_string(),
+            Stream::Tls(_) => "TLS".to_string(),
+            Stream::WebSocket(_) => "WebSocket".to_string(),
+            Stream::WebSocketTls(_) => "WebSocketTLS".to_string(),
         }
     }
 }
@@ -77,14 +144,27 @@ impl ConnectionHandler {
             return Err(e);
         }
 
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+
         if let Err(e) = self.handle_token().await {
             eprintln!("Token validation failed: {}", e);
             return Err(e);
         }
 
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+        // Отправляем информацию о размерах чанков
+        let chunk_size_msg = format!("CHUNKSIZE {} {} {}\n", CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE); //todo compare version
+        self.stream.write_all(chunk_size_msg.as_bytes()).await?;
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+        self.stream.write_all(ACCEPT_COMMANDS.as_bytes()).await?;
         // Main command loop
         loop {
             let mut buffer = [0u8; 1024];
+
             match self.stream.read(&mut buffer).await {
                 Ok(0) => break, // Connection closed
                 Ok(n) => {
@@ -120,30 +200,36 @@ impl ConnectionHandler {
     }
 
     async fn send_greeting(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        match self.config.version {
-            Some(3) => {
-                self.stream.write_all("RMBTv0.3\n".as_bytes()).await?;
-                self.stream.flush().await?;
-            }
-            None => {
-                self.stream.write_all("RMBTv1.0\n".as_bytes()).await?;
-                self.stream.flush().await?;
-            }
-            _ => {
-                // This should never happen as we validate version in Config::set_protocol_version
-                self.stream.write_all("RMBTv1.0\n".as_bytes()).await?;
-                self.stream.flush().await?;
-            }
-        }
-        self.stream
-            .write_all("ACCEPT TOKEN QUIT\n".as_bytes())
-            .await?;
+        // Отправляем приветствие
+        let greeting = match self.config.version {
+            Some(3) => "RMBTv0.3\n",
+            None => "RMBTv1.0\n",
+            _ => "RMBTv1.0\n",
+        };
+
+        info!("Sending greeting message: {}", greeting);
+        let written = self.stream.write(greeting.as_bytes()).await?;
+        info!("Written {} bytes for greeting", written);
         self.stream.flush().await?;
+        info!("Greeting message sent and flushed");
+
+        // Добавляем небольшую задержку
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+        // Отправляем ACCEPT TOKEN QUIT отдельным сообщением
+        let accept_token = "ACCEPT TOKEN QUIT";
+        info!("Sending accept token message: {}", accept_token);
+        let written = self.stream.write(accept_token.as_bytes()).await?;
+        info!("Written {} bytes for accept token", written);
+        self.stream.flush().await?;
+        info!("Accept token message sent and flushed");
+
         Ok(())
     }
 
     async fn handle_token(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Читаем строку с токеном
+        info!("Waiting for token...");
         let mut buffer = [0u8; 1024];
         let n = self.stream.read(&mut buffer).await?;
         if n == 0 {
@@ -151,6 +237,8 @@ impl ConnectionHandler {
         }
 
         let token_line = String::from_utf8_lossy(&buffer[..n]);
+        debug!("Received token line: {}", token_line.to_string());
+
         let token_line = token_line.trim();
 
         // Проверяем формат строки TOKEN uuid_starttime_hmac

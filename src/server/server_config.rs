@@ -8,8 +8,7 @@ use std::str::FromStr;
 use std::fs;
 use log::{error, info, LevelFilter};
 use crate::logger;
-use crate::utils::daemon;
-use crate::utils::secret_keys::{self, SecretKey};
+use crate::utils::{daemon, secret_keys};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ServerConfig {

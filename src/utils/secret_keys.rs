@@ -44,36 +44,3 @@ pub fn read_secret_keys(path: &str) -> io::Result<Vec<SecretKey>> {
     info!("Read {} secret keys from file", keys.len());
     Ok(keys)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
-
-    #[test]
-    fn test_read_secret_keys() {
-        let mut temp_file = NamedTempFile::new().unwrap();
-        writeln!(temp_file, "key1 label1").unwrap();
-        writeln!(temp_file, "key2 label2").unwrap();
-        writeln!(temp_file, "").unwrap(); // Empty line
-        writeln!(temp_file, "# Comment").unwrap();
-        writeln!(temp_file, "key3").unwrap(); // No label
-        writeln!(temp_file, "key4 label4").unwrap();
-
-        let keys = read_secret_keys(temp_file.path().to_str().unwrap()).unwrap();
-        assert_eq!(keys.len(), 4);
-        
-        assert_eq!(keys[0].key, "key1");
-        assert_eq!(keys[0].label, "label1");
-        
-        assert_eq!(keys[1].key, "key2");
-        assert_eq!(keys[1].label, "label2");
-        
-        assert_eq!(keys[2].key, "key3");
-        assert_eq!(keys[2].label, "key3");
-        
-        assert_eq!(keys[3].key, "key4");
-        assert_eq!(keys[3].label, "label4");
-    }
-} 

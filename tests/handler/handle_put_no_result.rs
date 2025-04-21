@@ -28,6 +28,19 @@ fn test_handle_put_no_result() {
     rt.block_on(async {
         let mut stream = server.connect(false).await.expect("Failed to connect to server");
         
+        // Отправляем HTTP запрос с Upgrade: rmbt
+        let http_request = "GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: rmbt\r\nConnection: Upgrade\r\n\r\n";
+        stream.write_all(http_request.as_bytes()).await.expect("Failed to send HTTP request");
+        stream.flush().await.expect("Failed to flush HTTP request");
+        
+        // Читаем ответ на HTTP запрос
+        let mut buf = [0u8; 1024];
+        let n = stream.read(&mut buf).await.expect("Failed to read HTTP response");
+        let response = String::from_utf8_lossy(&buf[..n]);
+        debug!("Received HTTP response: {}", response);
+        assert!(response.contains("101 Switching Protocols"), "Server should upgrade to RMBT");
+        assert!(response.contains("Upgrade: rmbt"), "Server should upgrade to RMBT");
+        
         // Читаем приветствие сервера
         let mut buf = [0u8; 1024];
         let n = stream.read(&mut buf).await.expect("Failed to read version");
