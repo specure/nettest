@@ -172,9 +172,10 @@ impl ConnectionHandler {
                     // Берем только первую строку как команду
                     let command_str = command.lines().next().unwrap_or("").trim();
 
-                    // Игнорируем пустые команды и бинарные данные
-                    if command_str.is_empty() {
-                        debug!("Ignoring empty command or binary data");
+                    // Пропускаем бинарные данные, которые не похожи на команду
+                    if command_str.is_empty() || !command_str.chars().all(|c| c.is_ascii_alphanumeric() || c.is_ascii_whitespace() || c == '.') {
+                        debug!("Received binary data, sending OK");
+                        self.stream.write_all(RESP_OK.as_bytes()).await?;
                         continue;
                     }
 

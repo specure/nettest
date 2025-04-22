@@ -31,9 +31,12 @@ pub async fn handle_put_no_result(
     
     info!("Starting PUTNORESULT process: chunk_size={}", chunk_size);
 
-    // Отправляем OK клиенту
+    // Отправляем OK клиенту после проверки размера чанка
     stream.write_all(RESP_OK.as_bytes()).await?;
     stream.flush().await?;
+
+    // Добавляем небольшую задержку перед началом чтения данных
+    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
     // Начинаем измерение времени
     let start_time = Instant::now();
@@ -71,6 +74,9 @@ pub async fn handle_put_no_result(
             }
         }
     }
+
+    // Добавляем небольшую задержку перед отправкой TIME
+    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
     // Отправляем финальный результат TIME
     let elapsed_ns = start_time.elapsed().as_nanos() as u64;
