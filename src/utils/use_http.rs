@@ -22,6 +22,7 @@ pub async fn define_stream(mut stream: TcpStream, tls_acceptor: Option<Arc<TlsAc
     // let mut first_byte = [0u8; 1];
     // let n = stream.peek(&mut first_byte).await?;
     let mut isSSL = false;
+    // stream.set_nodelay(true)?;
 
     // if n > 0 && first_byte[0] == 0x16 {
     //     info!("Received TLS handshake instead of HTTP request");

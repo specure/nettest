@@ -62,7 +62,6 @@ pub async fn handle_put_no_result(
                 debug!("Last byte at position {} is 0x{:02X}", last_pos, last_byte);
                 if last_byte == 0xFF {
                     debug!("Found termination byte at last position {}", last_pos);
-                    total_bytes -= (n - last_pos - 1); // Корректируем общее количество байт
                     break;
                 }
             },

@@ -65,7 +65,7 @@ impl Stream {
 
     pub async fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         //TODO test parameter
-        tokio::time::sleep(tokio::time::Duration::from_millis(2)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
         match self {
             Stream::Plain(stream) => stream.write(buf).await,

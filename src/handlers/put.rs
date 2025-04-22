@@ -1,8 +1,10 @@
 use std::time::Instant;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, Interest};
 use log::{info, debug, error};
 use crate::server::connection_handler::Stream;
 use crate::config::constants::{CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE, RESP_OK, RESP_ERR, RESP_TIME};
+use std::net::TcpStream;
+// use std::net::Interest;
 
 pub async fn handle_put(
     stream: &mut Stream,
@@ -24,7 +26,7 @@ pub async fn handle_put(
     } else {
         CHUNK_SIZE
     };
-    
+
     info!("Starting PUT process: chunk_size={}", chunk_size);
 
     // Отправляем OK клиенту
@@ -35,7 +37,7 @@ pub async fn handle_put(
     let mut total_bytes = 0;
     let mut buffer = vec![0u8; chunk_size];
     let mut last_byte = 0;
-
+    let mut last_time_ns: i64 = -1;
     // Читаем данные до тех пор, пока получаем данные и не нашли терминатор
     loop {
         match stream.read(&mut buffer).await {
@@ -45,39 +47,35 @@ pub async fn handle_put(
                     break;
                 }
 
-                // Обрабатываем бинарные данные
-                info!("Received {} bytes", n);
-                total_bytes += n;
-                debug!("Received {} bytes, total: {}", n, total_bytes);
+                debug!("Buffer size: {}, Read bytes: {}", buffer.len(), n);
+                if n < chunk_size {
+                    debug!("Read less than chunk size: {} < {}", n, chunk_size);
+                }
 
                 // Вычисляем позицию последнего байта в текущем чанке
-                let pos_last = chunk_size - 1 - (total_bytes % chunk_size);
+                 let pos_last = n - 1;
+
                 debug!("Last byte position in chunk: {}", pos_last);
-                
-                // Проверяем последний байт только если прочитали достаточно данных
-                if n > pos_last {
-                    last_byte = buffer[pos_last];
-                    debug!("Last byte at position {} is 0x{:02X}", pos_last, last_byte);
-                    if last_byte == 0xFF {
-                        debug!("Found termination byte at position {}", pos_last);
-                        total_bytes -= 1; // Исключаем терминатор из общего количества
+                last_byte = buffer[pos_last];
+                // Добавляем к общему счетчику после проверки последнего байта
+                total_bytes += n;
+                info!("Received {} bytes, total: {}", n, total_bytes);
+
+                // Отправляем TIME только если прошло больше 1мс с последней отправки
+                let current_time_ns = start_time.elapsed().as_nanos() as i64;
+                if last_time_ns == -1 || (current_time_ns - last_time_ns > 1_000_000) {
+                    last_time_ns = current_time_ns;
+                    let time_response = format!("{} {} BYTES {}\n", RESP_TIME, current_time_ns, total_bytes);
+                    info!("Sending TIME response: {}", time_response);
+                    if let Err(e) = stream.write_all(time_response.as_bytes()).await {
+                        debug!("Failed to send TIME response: {}", e);
                         break;
                     }
-                }
-
-                // Отправляем TIME после каждого чанка данных
-                let elapsed_ns = start_time.elapsed().as_nanos() as u64;
-                let time_response = format!("{} {} BYTES {}\n", RESP_TIME, elapsed_ns, total_bytes);
-                info!("Sending TIME response: {}", time_response);
-                if let Err(e) = stream.write_all(time_response.as_bytes()).await {
-                    debug!("Failed to send TIME response: {}", e);
-                    break;
-                }
-
-                // Если получили все данные, выходим из цикла
-                if total_bytes >= chunk_size {
-                    debug!("Received all data: {} bytes", total_bytes);
-                    break;
+                    // Принудительно отправляем все буферизованные данные
+                    if let Err(e) = stream.flush().await {
+                        debug!("Failed to flush stream: {}", e);
+                        break;
+                    }
                 }
             },
             Err(e) => {
@@ -100,10 +98,11 @@ pub async fn handle_put(
     stream.write_all(RESP_OK.as_bytes()).await?;
     
     info!(
-        "PUT completed: received {} bytes in {} ns, last_byte: 0x{:02X}",
+        "PUT completed: received {} bytes in {} ns, last_byte: 0x{:02X}, chunk_size: {}",
         total_bytes,
         elapsed_ns,
-        last_byte
+        last_byte,
+        chunk_size
     );
 
     Ok(())
