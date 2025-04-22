@@ -4,6 +4,7 @@ use std::error::Error;
 use std::time::Instant;
 use tokio::io::AsyncReadExt;
 use log::{info, debug, error};
+use crate::config::constants::{CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE, RESP_OK};
 
 mod get_time;
 mod get_chunks;
@@ -82,4 +83,15 @@ pub async fn handle_quit(stream: &mut Stream) -> Result<(), Box<dyn Error + Send
     info!("Client requested QUIT, connection will be closed");
     
     Ok(())
+}
+
+pub fn is_command(data: &[u8]) -> Option<String> {
+    if let Ok(command_str) = String::from_utf8(data.to_vec()) {
+        let trimmed = command_str.trim();
+        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+        if parts.len() >= 3 {
+            return Some(trimmed.to_string());
+        }
+    }
+    None
 } 

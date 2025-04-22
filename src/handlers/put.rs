@@ -10,10 +10,6 @@ pub async fn handle_put(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Парсим команду: PUT [chunk_size]
     let parts: Vec<&str> = command.split_whitespace().collect();
-    if parts.len() > 2 {
-        stream.write_all(RESP_ERR.as_bytes()).await?;
-        return Err(format!("Invalid number of arguments for PUT: {:?}", parts).into());
-    }
 
     // Определяем размер чанка
     let chunk_size = if parts.len() == 2 {
@@ -33,18 +29,15 @@ pub async fn handle_put(
 
     // Отправляем OK клиенту
     stream.write_all(RESP_OK.as_bytes()).await?;
-    stream.flush().await?;
 
     // Начинаем измерение времени
     let start_time = Instant::now();
     let mut total_bytes = 0;
-    let mut last_report_time = 0u64;
     let mut buffer = vec![0u8; chunk_size];
-    let mut found_terminator = false;
-    let mut last_chunk_time = 0u64;
+    let mut last_byte = 0;
 
-    // Читаем данные до тех пор, пока не найдем терминатор (0xFF)
-    while !found_terminator {
+    // Читаем данные до тех пор, пока получаем данные и не нашли терминатор
+    loop {
         match stream.read(&mut buffer).await {
             Ok(n) => {
                 if n == 0 {
@@ -52,46 +45,65 @@ pub async fn handle_put(
                     break;
                 }
 
+                // Обрабатываем бинарные данные
+                info!("Received {} bytes", n);
                 total_bytes += n;
                 debug!("Received {} bytes, total: {}", n, total_bytes);
 
-                // Проверяем последний байт
-                if n > 0 && buffer[n - 1] == 0xFF {
-                    debug!("Found termination byte in last position");
-                    found_terminator = true;
+                // Вычисляем позицию последнего байта в текущем чанке
+                let pos_last = chunk_size - 1 - (total_bytes % chunk_size);
+                debug!("Last byte position in chunk: {}", pos_last);
+                
+                // Проверяем последний байт только если прочитали достаточно данных
+                if n > pos_last {
+                    last_byte = buffer[pos_last];
+                    debug!("Last byte at position {} is 0x{:02X}", pos_last, last_byte);
+                    if last_byte == 0xFF {
+                        debug!("Found termination byte at position {}", pos_last);
+                        total_bytes -= 1; // Исключаем терминатор из общего количества
+                        break;
+                    }
                 }
 
-                // Отправляем промежуточный результат только если:
-                // 1. Прошло достаточно времени с последнего отчета (r = 0.001 секунды)
-                // 2. Получен новый чанк
+                // Отправляем TIME после каждого чанка данных
                 let elapsed_ns = start_time.elapsed().as_nanos() as u64;
-                if elapsed_ns - last_report_time > 1_000_000 && elapsed_ns - last_chunk_time > 1_000_000 {
-                    let time_response = format!("{} {} BYTES {}\n", RESP_TIME, elapsed_ns, total_bytes);
-                    stream.write_all(time_response.as_bytes()).await?;
-                    stream.flush().await?;
-                    last_report_time = elapsed_ns;
-                    debug!("Sent intermediate result: TIME {} BYTES {}", elapsed_ns, total_bytes);
+                let time_response = format!("{} {} BYTES {}\n", RESP_TIME, elapsed_ns, total_bytes);
+                info!("Sending TIME response: {}", time_response);
+                if let Err(e) = stream.write_all(time_response.as_bytes()).await {
+                    debug!("Failed to send TIME response: {}", e);
+                    break;
                 }
-                last_chunk_time = elapsed_ns;
+
+                // Если получили все данные, выходим из цикла
+                if total_bytes >= chunk_size {
+                    debug!("Received all data: {} bytes", total_bytes);
+                    break;
+                }
             },
             Err(e) => {
                 error!("Failed to read data: {}", e);
-                stream.write_all(RESP_ERR.as_bytes()).await?;
-                return Err(e.into());
+                break;
             }
         }
     }
 
-    // Отправляем финальный результат
+    // Отправляем финальный TIME с BYTES
     let elapsed_ns = start_time.elapsed().as_nanos() as u64;
-    let time_response = format!("{} {}\n", RESP_TIME, elapsed_ns);
-    stream.write_all(time_response.as_bytes()).await?;
-    stream.flush().await?;
+    let time_response = format!("{} {} BYTES {}\n", RESP_TIME, elapsed_ns, total_bytes);
+    info!("Sending final TIME response: {}", time_response);
+    
+    if let Err(e) = stream.write_all(time_response.as_bytes()).await {
+        debug!("Failed to send final TIME response: {}", e);
+    }
 
+    // Отправляем OK только после получения всех данных и терминатора
+    stream.write_all(RESP_OK.as_bytes()).await?;
+    
     info!(
-        "PUT completed: received {} bytes in {} ns",
+        "PUT completed: received {} bytes in {} ns, last_byte: 0x{:02X}",
         total_bytes,
-        elapsed_ns
+        elapsed_ns,
+        last_byte
     );
 
     Ok(())
