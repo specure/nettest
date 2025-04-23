@@ -1,4 +1,5 @@
 use crate::server::connection_handler::Stream;
+use crate::server::connection_handler::Stream::{Plain, Tls, WebSocket};
 use crate::utils::websocket::{generate_handshake_response, Handshake};
 use log::{debug, error, info, trace};
 use regex::Regex;
@@ -15,13 +16,16 @@ const RMBT_UPGRADE: &str = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: rmbt\r\
 const GREETING: &str = "RMBTv1.2.0\n";
 const ACCEPT_TOKEN_NL: &str = "ACCEPT TOKEN QUIT\r\n";
 
-pub async fn define_stream(mut stream: TcpStream, tls_acceptor: Option<Arc<TlsAcceptor>>) -> Result<Stream, Box<dyn Error + Send + Sync>> {
+pub async fn define_stream(
+    mut tcp_stream: TcpStream,
+    tls_acceptor: Option<Arc<TlsAcceptor>>,
+) -> Result<Stream, Box<dyn Error + Send + Sync>> {
     info!("Handling HTTP request");
 
     // Читаем только первый байт для проверки на TLS handshake
     // let mut first_byte = [0u8; 1];
     // let n = stream.peek(&mut first_byte).await?;
-    let mut isSSL = false;
+    let mut isSSL = tls_acceptor.is_some();
     // stream.set_nodelay(true)?;
 
     // if n > 0 && first_byte[0] == 0x16 {
@@ -31,32 +35,33 @@ pub async fn define_stream(mut stream: TcpStream, tls_acceptor: Option<Arc<TlsAc
     // }
 
     // Читаем HTTP запрос
+
+    let mut stream: Stream;
+
+    if let Some(acceptor) = tls_acceptor {
+        // Если есть TLS acceptor, используем его
+        stream = Tls(acceptor.accept(tcp_stream).await?);
+    } else {
+        // Иначе просто используем TCP stream
+        stream = Plain(tcp_stream);
+    }
+
     let mut buffer = [0u8; MAX_LINE_LENGTH];
     let n = stream.read(&mut buffer).await?;
 
-    if n <= 0 {
-        error!("initialization error: connection reset rmbtws: {} {}", n, std::io::Error::last_os_error());
-        return Ok(Stream::Plain(stream)); //todo error
+    if n < 4 {
+        // Проверяем минимальную длину для "GET "
+        error!("Received data too short: {} bytes", n);
+        return Err("Invalid request: data too short".into());
     }
 
-    // Выводим полученные данные в ASCII формате и hex формате
-    let received_data = String::from_utf8_lossy(&buffer[..n]);
-    error!("Received data (ASCII): {}", received_data);
-    error!("Received data (HEX): {:?}", &buffer[..n].iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<Vec<String>>()
-        .join(" "));
-    error!("First 4 bytes: {:?}", &buffer[..4].iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<Vec<String>>()
-        .join(" "));
+    // Безопасное сравнение первых 4 байт
+    let is_get = buffer[0] == b'G' && buffer[1] == b'E' && buffer[2] == b'T' && buffer[3] == b' ';
 
-    // Проверяем, начинается ли запрос с "GET "
-    if !received_data.starts_with("GET ") {
-        error!("initialization error: connection reset rmbt: {} {}", n, std::io::Error::last_os_error());
-        return Ok(Stream::Plain(stream)); //todo error
+    if !is_get {
+        error!("Not a GET request");
+        return Err("Invalid request: not a GET request".into());
     }
-
     // Преобразуем буфер в строку для поиска заголовков
     let request = String::from_utf8_lossy(&buffer[..n]);
 
@@ -71,7 +76,7 @@ pub async fn define_stream(mut stream: TcpStream, tls_acceptor: Option<Arc<TlsAc
         info!("No HTTP upgrade to websocket/rmbt");
         stream.write_all(RMBT_UPGRADE.as_bytes()).await?;
         stream.flush().await?;
-        return Ok(Stream::Plain(stream));
+        return Ok(stream);
     }
 
     if is_rmbt {
@@ -79,21 +84,7 @@ pub async fn define_stream(mut stream: TcpStream, tls_acceptor: Option<Arc<TlsAc
         // Отправляем HTTP upgrade ответ
         stream.write_all(RMBT_UPGRADE.as_bytes()).await?;
         stream.flush().await?;
-
-        return if isSSL {
-            match tls_acceptor {
-                Some(acceptor) => {
-                    debug!("Accepting TLS connection");
-                    Ok(Stream::Tls(acceptor.accept(stream).await?))
-                }
-                None => {
-                    error!("TLS acceptor is not available");
-                    Err("Missing acceptor".into()) //todo error
-                }
-            }
-        } else {
-            Ok(Stream::Plain(stream))
-        };
+        return Ok(stream);
     }
 
     if is_websocket {
@@ -110,27 +101,9 @@ pub async fn define_stream(mut stream: TcpStream, tls_acceptor: Option<Arc<TlsAc
         let response = generate_handshake_response(&handshake)?;
         stream.write_all(response.as_bytes()).await?;
         stream.flush().await?;
-
-        // Convert to WebSocket stream
-        return if isSSL {
-            match tls_acceptor {
-                Some(acceptor) => {
-                    debug!("Accepting TLS connection");
-                    let ws_stream = tokio_tungstenite::accept_async(acceptor.accept(stream).await?).await?;
-                    Ok(Stream::WebSocketTls(ws_stream))
-                }
-                None => {
-                    error!("TLS acceptor is not available");
-                    Err("Missing acceptor".into()) //todo error
-                }
-            }
-        } else {
-            let ws_stream = tokio_tungstenite::accept_async(stream).await?;
-            Ok(Stream::WebSocket(ws_stream))
-        };
+        return Ok((stream)); //TODO
     }
 
     // Этот код никогда не должен выполниться, но компилятор требует возврата
-    Ok(Stream::Plain(stream))
+    return Ok(stream);
 }
-

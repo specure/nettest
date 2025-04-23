@@ -112,7 +112,7 @@ impl Server {
                         let tls_acceptor = self.tls_acceptor.clone();
                         tokio::spawn(async move {
                             if let Err(e) = handle_connection(stream, addr, is_ssl, token_validator, config, data_buffer, tls_acceptor).await {
-                                eprintln!("Error handling connection: {}", e);
+                                eprintln!("Error handling connection bbbbbb: {}", e);
                             }
                         });
                     }
@@ -153,7 +153,7 @@ async fn handle_connection(
     );
 
     if let Err(e) = handler.handle().await {
-        error!("Error handling connection from {}: {}", addr, e);
+        error!("Error handling connection from ababababa {}: {}", addr, e);
     }
 
     Ok(())

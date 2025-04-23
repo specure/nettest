@@ -47,19 +47,17 @@ pub async fn handle_put(
                     break;
                 }
 
-                debug!("Buffer size: {}, Read bytes: {}", buffer.len(), n);
-                if n < chunk_size {
-                    debug!("Read less than chunk size: {} < {}", n, chunk_size);
-                }
-
-                // Вычисляем позицию последнего байта в текущем чанке
-                 let pos_last = n - 1;
-
-                debug!("Last byte position in chunk: {}", pos_last);
-                last_byte = buffer[pos_last];
-                // Добавляем к общему счетчику после проверки последнего байта
                 total_bytes += n;
-                info!("Received {} bytes, total: {}", n, total_bytes);
+                debug!("Received {} bytes, total: {}", n, total_bytes);
+
+                // Проверяем последний байт в полученных данных
+                let last_pos = n - 1;
+                last_byte = buffer[last_pos];
+                debug!("Last byte at position {} is 0x{:02X}", last_pos, last_byte);
+                if last_byte == 0xFF {
+                    debug!("Found termination byte at last position {}", last_pos);
+                    break;
+                }
 
                 // Отправляем TIME только если прошло больше 1мс с последней отправки
                 let current_time_ns = start_time.elapsed().as_nanos() as i64;
@@ -71,15 +69,12 @@ pub async fn handle_put(
                         debug!("Failed to send TIME response: {}", e);
                         break;
                     }
-                    // Принудительно отправляем все буферизованные данные
-                    if let Err(e) = stream.flush().await {
-                        debug!("Failed to flush stream: {}", e);
-                        break;
-                    }
                 }
             },
+
             Err(e) => {
                 error!("Failed to read data: {}", e);
+                // Не отправляем ошибку, так как клиент мог просто закрыть соединение
                 break;
             }
         }
@@ -93,9 +88,9 @@ pub async fn handle_put(
     if let Err(e) = stream.write_all(time_response.as_bytes()).await {
         debug!("Failed to send final TIME response: {}", e);
     }
-
-    // Отправляем OK только после получения всех данных и терминатора
-    stream.write_all(RESP_OK.as_bytes()).await?;
+    //
+    // // Отправляем OK только после получения всех данных и терминатора
+    // stream.write_all(RESP_OK.as_bytes()).await?;
     
     info!(
         "PUT completed: received {} bytes in {} ns, last_byte: 0x{:02X}, chunk_size: {}",
