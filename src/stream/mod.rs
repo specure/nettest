@@ -3,6 +3,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_native_tls::TlsStream;
 use tokio_tungstenite::WebSocketStream;
+use log::{info, error};
 
 #[derive(Debug)]
 pub enum Stream {
@@ -13,6 +14,44 @@ pub enum Stream {
 }
 
 impl Stream {
+    pub async fn upgrade_to_websocket(self) -> std::io::Result<Stream> {
+        match self {
+            Stream::Plain(tcp_stream) => {
+                info!("Attempting to upgrade plain TCP stream to WebSocket");
+                match tokio_tungstenite::accept_async(tcp_stream).await {
+                    Ok(ws_stream) => {
+                        info!("Successfully upgraded plain TCP stream to WebSocket");
+                        Ok(Stream::WebSocket(ws_stream))
+                    }
+                    Err(e) => {
+                        error!("Failed to upgrade plain TCP stream to WebSocket: {:?}", e);
+                        Err(std::io::Error::new(std::io::ErrorKind::Other, e))
+                    }
+                }
+            }
+            Stream::Tls(tls_stream) => {
+                info!("Attempting to upgrade TLS stream to WebSocket");
+                match tokio_tungstenite::accept_async(tls_stream).await {
+                    Ok(ws_stream) => {
+                        info!("Successfully upgraded TLS stream to WebSocket");
+                        Ok(Stream::WebSocketTls(ws_stream))
+                    }
+                    Err(e) => {
+                        error!("Failed to upgrade TLS stream to WebSocket: {:?}", e);
+                        Err(std::io::Error::new(std::io::ErrorKind::Other, e))
+                    }
+                }
+            }
+            _ => {
+                error!("Cannot upgrade non-TCP stream to WebSocket");
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Cannot upgrade non-TCP stream to WebSocket"
+                ))
+            }
+        }
+    }
+
     pub async fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
 
         // Добавляем небольшую задержку перед отправкой TIME

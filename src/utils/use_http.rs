@@ -1,5 +1,5 @@
 use crate::stream::Stream;
-use crate::stream::Stream::{Plain, Tls};
+use crate::stream::Stream::{Plain, Tls, WebSocket};
 use crate::utils::websocket::{generate_handshake_response, Handshake};
 use log::{debug, error, info, trace};
 use regex::Regex;
@@ -23,10 +23,8 @@ pub async fn define_stream(
     let mut stream: Stream;
 
     if let Some(acceptor) = tls_acceptor {
-        // Если есть TLS acceptor, используем его
         stream = Tls(acceptor.accept(tcp_stream).await?);
     } else {
-        // Иначе просто используем TCP stream
         stream = Plain(tcp_stream);
     }
 
@@ -48,6 +46,7 @@ pub async fn define_stream(
     }
     // Преобразуем буфер в строку для поиска заголовков
     let request = String::from_utf8_lossy(&buffer[..n]);
+    debug!("Received HTTP request: {}", request);
 
     // Проверяем заголовки Upgrade через регулярные выражения
     let ws_regex = Regex::new(r"(?i)upgrade:\s*websocket").unwrap();
@@ -83,11 +82,25 @@ pub async fn define_stream(
 
         // Generate and send handshake response
         let response = generate_handshake_response(&handshake)?;
+        debug!("Sending WebSocket handshake response: {}", response);
         stream.write_all(response.as_bytes()).await?;
         stream.flush().await?;
-        return Ok((stream)); //TODO
-    }
+        debug!("WebSocket handshake response sent");
 
-    // Этот код никогда не должен выполниться, но компилятор требует возврата
-    return Ok(stream);
+        info!("Upgrading to WebSocket");
+
+        match stream.upgrade_to_websocket().await {
+            Ok(ws_stream) => {
+                info!("WebSocket upgraded");
+                Ok(ws_stream)
+            }
+            Err(e) => {
+                error!("WebSocket upgrade failed: {}", e);
+                Err(Box::new(e) as Box<dyn Error + Send + Sync>)
+            }
+        }
+    } else {
+        // Этот код никогда не должен выполниться, но компилятор требует возврата
+        Ok(stream)
+    }
 }
