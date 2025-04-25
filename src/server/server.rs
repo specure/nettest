@@ -139,7 +139,7 @@ async fn handle_connection(
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     info!("New {} connection from {}", if is_ssl { "TLS" } else { "plain TCP" }, addr);
 
-    let mut stream = stream;
+    let stream = stream;
 
     let stream = define_stream(stream, tls_acceptor).await?;
 
@@ -152,11 +152,25 @@ async fn handle_connection(
         data_buffer,
     );
 
-    if let Err(e) = handler.handle().await {
-        error!("Error handling connection from ababababa {}: {}", addr, e);
-    }
+    match handler.handle().await {
+        Ok(_) => {
+            info!("Connection from {} closed normally", addr);
+            Ok(())
+        }
+        Err(e) => {
+            let is_connection_closed = e.to_string().contains("connection closed") ||
+                e.to_string().contains("broken pipe") ||
+                e.to_string().contains("Connection reset by peer");
 
-    Ok(())
+            if is_connection_closed {
+                info!("Connection from {} closed by client (error: {})", addr, e);
+                Ok(())
+            } else {
+                error!("Error handling connection from {}: {}", addr, e);
+                Err(e)
+            }
+        }
+    }
 }
 
 #[cfg(test)]

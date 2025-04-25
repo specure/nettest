@@ -84,14 +84,20 @@ pub async fn handle_put(
     let elapsed_ns = start_time.elapsed().as_nanos() as u64;
     let time_response = format!("{} {} BYTES {}\n", RESP_TIME, elapsed_ns, total_bytes);
     info!("Sending final TIME response: {}", time_response);
-    
-    if let Err(e) = stream.write_all(time_response.as_bytes()).await {
-        debug!("Failed to send final TIME response: {}", e);
+
+    match stream.write_all(time_response.as_bytes()).await {
+        Ok(_) => {
+            info!("Final TIME response sent successfully");
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
+            info!("Client closed connection before final TIME response could be sent");
+        }
+        Err(e) => {
+            error!("Failed to send final TIME response: {}", e);
+            return Err(e.into());
+        }
     }
-    //
-    // // Отправляем OK только после получения всех данных и терминатора
-    // stream.write_all(RESP_OK.as_bytes()).await?;
-    
+
     info!(
         "PUT completed: received {} bytes in {} ns, last_byte: 0x{:02X}, chunk_size: {}",
         total_bytes,

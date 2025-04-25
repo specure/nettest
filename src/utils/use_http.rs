@@ -66,16 +66,16 @@ pub async fn define_stream(
     let request = String::from_utf8_lossy(&buffer[..n]);
 
     // Проверяем заголовки Upgrade через регулярные выражения
-    let ws_regex = Regex::new(r"(?i)^upgrade:\s*websocket").unwrap();
-    let rmbt_regex = Regex::new(r"(?i)^upgrade:\s*rmbt").unwrap();
+    let ws_regex = Regex::new(r"(?i)upgrade:\s*websocket").unwrap();
+    let rmbt_regex = Regex::new(r"(?i)upgrade:\s*rmbt").unwrap();
 
     let is_websocket = ws_regex.is_match(&request);
     let is_rmbt = rmbt_regex.is_match(&request);
 
     if !is_websocket && !is_rmbt {
         info!("No HTTP upgrade to websocket/rmbt");
-        stream.write_all(RMBT_UPGRADE.as_bytes()).await?;
-        stream.flush().await?;
+        // stream.write_all(RMBT_UPGRADE.as_bytes()).await?;
+        // stream.flush().await?;
         return Ok(stream);
     }
 
@@ -88,7 +88,7 @@ pub async fn define_stream(
     }
 
     if is_websocket {
-        debug!("Upgrading to WebSocket");
+        info!("Upgrading to WebSocket");
 
         // Parse WebSocket handshake
         let handshake = Handshake::parse(&request)?;

@@ -27,6 +27,9 @@ pub enum Stream {
 
 impl Stream {
     pub async fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+
+        // Добавляем небольшую задержку перед отправкой TIME
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
         match self {
             Stream::Plain(stream) => stream.read(buf).await,
             Stream::Tls(stream) => stream.read(buf).await,
@@ -34,7 +37,11 @@ impl Stream {
                 if let Some(msg) = stream.next().await {
                     match msg {
                         Ok(msg) => {
-                            let data = msg.into_data();
+                            let data = match msg {
+                                tokio_tungstenite::tungstenite::Message::Binary(data) => data,
+                                tokio_tungstenite::tungstenite::Message::Text(text) => text.into_bytes(),
+                                _ => return Ok(0),
+                            };
                             let len = data.len().min(buf.len());
                             buf[..len].copy_from_slice(&data[..len]);
                             Ok(len)
@@ -49,7 +56,11 @@ impl Stream {
                 if let Some(msg) = stream.next().await {
                     match msg {
                         Ok(msg) => {
-                            let data = msg.into_data();
+                            let data = match msg {
+                                tokio_tungstenite::tungstenite::Message::Binary(data) => data,
+                                tokio_tungstenite::tungstenite::Message::Text(text) => text.into_bytes(),
+                                _ => return Ok(0),
+                            };
                             let len = data.len().min(buf.len());
                             buf[..len].copy_from_slice(&data[..len]);
                             Ok(len)
@@ -65,18 +76,20 @@ impl Stream {
 
     pub async fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         //TODO test parameter
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
         match self {
             Stream::Plain(stream) => stream.write(buf).await,
             Stream::Tls(stream) => stream.write(buf).await,
             Stream::WebSocket(stream) => {
-                stream.send(tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())).await
+                let message = tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec());
+                stream.send(message).await
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                 Ok(buf.len())
             }
             Stream::WebSocketTls(stream) => {
-                stream.send(tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())).await
+                let message = tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec());
+                stream.send(message).await
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                 Ok(buf.len())
             }
@@ -84,7 +97,7 @@ impl Stream {
     }
 
     pub async fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
         match self {
             Stream::Plain(stream) => stream.write_all(buf).await,
@@ -145,13 +158,13 @@ impl ConnectionHandler {
 
     pub async fn handle(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         if let Err(e) = self.send_greeting().await {
-            eprintln!("Failed to send greeting: {}", e);
+            error!("Failed to send greeting: {}", e);
             return Err(e);
         }
 
 
         if let Err(e) = self.handle_token().await {
-            eprintln!("Token validation failed: {}", e);
+            error!("Token validation failed: {}", e);
             return Err(e);
         }
 
@@ -161,24 +174,21 @@ impl ConnectionHandler {
         self.stream.write_all(chunk_size_msg.as_bytes()).await?;
 
 
-        self.stream.write_all(ACCEPT_COMMANDS.as_bytes()).await?;
         // Main command loop
         loop {
+            self.stream.write_all(ACCEPT_COMMANDS.as_bytes()).await?;
+
             let mut buffer = [0u8; 1024];
 
             match self.stream.read(&mut buffer).await {
-                Ok(0) => break, // Connection closed
+                Ok(0) => {
+                    info!("Client closed connection gracefully");
+                    break;
+                }
                 Ok(n) => {
                     let command = String::from_utf8_lossy(&buffer[..n]);
                     // Берем только первую строку как команду
                     let command_str = command.lines().next().unwrap_or("").trim();
-
-                    // Пропускаем бинарные данные, которые не похожи на команду
-                    if command_str.is_empty() || !command_str.chars().all(|c| c.is_ascii_alphanumeric() || c.is_ascii_whitespace() || c == '.') {
-                        debug!("Received binary data, sending OK");
-                        self.stream.write_all(RESP_ERR.as_bytes()).await?;
-                        continue;
-                    }
 
                     println!("Received command: {}", command_str);
 
@@ -205,12 +215,27 @@ impl ConnectionHandler {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Read error: {}", e);
-                    return Err(e.into());
+                    match e.kind() {
+                        std::io::ErrorKind::ConnectionReset => {
+                            info!("Client reset connection");
+                            break;
+                        }
+                        std::io::ErrorKind::ConnectionAborted => {
+                            info!("Client aborted connection");
+                            break;
+                        }
+                        std::io::ErrorKind::BrokenPipe => {
+                            info!("Broken pipe - client closed connection");
+                            break;
+                        }
+                        _ => {
+                            error!("Error reading from stream: {}", e);
+                            return Err(e.into());
+                        }
+                    }
                 }
             }
 
-            self.stream.write_all(ACCEPT_COMMANDS.as_bytes()).await?;
         }
 
         Ok(())
@@ -258,6 +283,7 @@ impl ConnectionHandler {
 
         // Проверяем формат строки TOKEN uuid_starttime_hmac
         if !token_line.starts_with("TOKEN ") {
+            error!("{}", token_line.to_string());
             return Err("Invalid token format: must start with 'TOKEN '".into());
         }
 
@@ -296,69 +322,6 @@ impl ConnectionHandler {
         }
     }
 
-    pub async fn handle_client(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let mut buffer = vec![0u8; 1024];
-        let mut command_buffer = String::new();
-
-        loop {
-            match self.stream.read(&mut buffer).await {
-                Ok(n) => {
-                    if n == 0 {
-                        debug!("Connection closed by client");
-                        break;
-                    }
-
-                    // Пытаемся прочитать команду
-                    if let Ok(command_str) = String::from_utf8(buffer[..n].to_vec()) {
-                        // Пропускаем бинарные данные, которые не похожи на команду
-                        let parts: Vec<&str> = command_str.split_whitespace().collect();
-                        if parts.len() < 3 {
-                            debug!("Received binary data or incomplete command, sending OK");
-                            self.stream.write_all(RESP_ERR.as_bytes()).await?;
-                        }
-
-                        // Проверяем длину каждой части команды
-                        if parts[0].len() > 50 || parts[1].len() > 12 || parts[2].len() > 12 {
-                            debug!("Command parts too long, sending OK");
-                            self.stream.write_all(RESP_ERR.as_bytes()).await?;
-                        }
-
-                        println!("Received command: {}", command_str);
-
-                        // Если это PUT или PUTNORESULT, передаем все прочитанные данные в обработчик
-                        if command_str.starts_with("PUT") || command_str.starts_with("PUTNORESULT") {
-                            if command_str.starts_with("PUTNORESULT") {
-                                handle_put_no_result(&mut self.stream, &command_str).await?;
-                            } else {
-                                handle_put(&mut self.stream, &command_str).await?;
-                            }
-                        } else if command_str.starts_with("GETTIME") {
-                            println!("Handling GETTIME command");
-                            handle_get_time(&mut self.stream, &command_str).await?
-                        } else if command_str.starts_with("GETCHUNKS") {
-                            handle_get_chunks(&mut self.stream, &command_str).await?
-                        } else if command_str == "PING" {
-                            handle_ping(&mut self.stream).await?
-                        } else if command_str == "QUIT" {
-                            handle_quit(&mut self.stream).await?;
-                            break;
-                        } else {
-                            debug!("Unknown command: {}", command_str);
-                            self.stream.write_all(RESP_ERR.as_bytes()).await?;
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Read error: {}", e);
-                    return Err(e.into());
-                }
-            }
-
-            self.stream.write_all(ACCEPT_COMMANDS.as_bytes()).await?;
-        }
-
-        Ok(())
-    }
 }
 
 #[cfg(test)]
