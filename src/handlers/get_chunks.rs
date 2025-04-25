@@ -1,9 +1,8 @@
 use std::time::Instant;
-use tokio::io::AsyncWriteExt;
 use log::{info, debug, error};
-use crate::server::connection_handler::Stream;
 use crate::config::constants::{CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE, MAX_CHUNKS, RESP_ERR};
 use rand::RngCore;
+use crate::stream::Stream;
 
 pub async fn handle_get_chunks(
     stream: &mut Stream,

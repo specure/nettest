@@ -1,4 +1,3 @@
-use std::process;
 use libc::daemon;
 
 pub fn daemonize() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

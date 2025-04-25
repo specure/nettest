@@ -1,14 +1,12 @@
-use crate::server::connection_handler::Stream;
-use crate::server::connection_handler::Stream::{Plain, Tls, WebSocket};
+use crate::stream::Stream;
+use crate::stream::Stream::{Plain, Tls};
 use crate::utils::websocket::{generate_handshake_response, Handshake};
 use log::{debug, error, info, trace};
 use regex::Regex;
 use std::error::Error;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_native_tls::TlsAcceptor;
-use tokio_tungstenite;
 
 pub const MAX_LINE_LENGTH: usize = 1024;
 const CONNECTION_UPGRADE: &str = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n";
@@ -17,24 +15,10 @@ const GREETING: &str = "RMBTv1.2.0\n";
 const ACCEPT_TOKEN_NL: &str = "ACCEPT TOKEN QUIT\r\n";
 
 pub async fn define_stream(
-    mut tcp_stream: TcpStream,
+    tcp_stream: TcpStream,
     tls_acceptor: Option<Arc<TlsAcceptor>>,
 ) -> Result<Stream, Box<dyn Error + Send + Sync>> {
     info!("Handling HTTP request");
-
-    // Читаем только первый байт для проверки на TLS handshake
-    // let mut first_byte = [0u8; 1];
-    // let n = stream.peek(&mut first_byte).await?;
-    let mut isSSL = tls_acceptor.is_some();
-    // stream.set_nodelay(true)?;
-
-    // if n > 0 && first_byte[0] == 0x16 {
-    //     info!("Received TLS handshake instead of HTTP request");
-    //     isSSL = true;
-    //     stream.read(&mut first_byte).await?;
-    // }
-
-    // Читаем HTTP запрос
 
     let mut stream: Stream;
 

@@ -10,6 +10,7 @@ pub mod handlers;
 pub mod utils;
 pub mod config;
 pub mod logger;
+pub mod stream;
 
 use clap::Parser;
 use env_logger;
