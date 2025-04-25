@@ -46,7 +46,6 @@ pub async fn define_stream(
     }
     // Преобразуем буфер в строку для поиска заголовков
     let request = String::from_utf8_lossy(&buffer[..n]);
-    debug!("Received HTTP request: {}", request);
 
     // Проверяем заголовки Upgrade через регулярные выражения
     let ws_regex = Regex::new(r"(?i)upgrade:\s*websocket").unwrap();
