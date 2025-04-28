@@ -176,7 +176,6 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use tokio::net::TcpStream;
-    use tokio::time::sleep;
     use std::net::{TcpListener, SocketAddr};
     use log::debug;
     use tokio_native_tls::TlsConnector;
@@ -215,9 +214,6 @@ mod tests {
                 server.run().await
             }
         });
-
-        // Give the server time to start
-        sleep(Duration::from_millis(500)).await;
 
         // Try to connect to the server
         match TcpStream::connect(format!("127.0.0.1:{}", port)).await {
@@ -264,10 +260,6 @@ mod tests {
                 server.run().await
             }
         });
-
-        // Give the server time to start
-        sleep(Duration::from_millis(500)).await;
-
         // Try to connect to the server using TLS
         let tls_connector = NativeTlsConnector::builder()
             .danger_accept_invalid_certs(true) // Для тестов разрешаем невалидные сертификаты

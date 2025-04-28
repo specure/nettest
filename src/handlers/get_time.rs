@@ -1,7 +1,6 @@
 use crate::config::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RESP_ERR, RESP_OK};
 use rand::RngCore;
 use std::error::Error;
-use tokio::time::sleep;
 use std::time::{Duration, Instant};
 use log::{debug, error, trace};
 use crate::stream::Stream;
