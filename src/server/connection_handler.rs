@@ -39,17 +39,19 @@ impl ConnectionHandler {
     }
 
     pub async fn handle(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        info!("Handling connection");
         if let Err(e) = self.send_greeting().await {
             error!("Failed to send greeting: {}", e);
             return Err(e);
         }
+        info!("Greeting sent");
 
 
         if let Err(e) = self.handle_token().await {
             error!("Token validation failed: {}", e);
             return Err(e);
         }
-
+        info!("Token validated");
 
         // Отправляем информацию о размерах чанков
         let chunk_size_msg = format!("CHUNKSIZE {} {} {}\n", CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE); //todo compare version
@@ -128,7 +130,7 @@ impl ConnectionHandler {
         let greeting = match self.config.version {
             Some(3) => "RMBTv0.3\n",
             None => "RMBTv1.0\n",
-            _ => "RMBTv1.0\n",
+            _ => "RMBTv1.3.3\n",
         };
 
         info!("Sending greeting message: {}", greeting);
@@ -139,7 +141,7 @@ impl ConnectionHandler {
 
 
         // Отправляем ACCEPT TOKEN QUIT отдельным сообщением
-        let accept_token = "ACCEPT TOKEN QUIT";
+        let accept_token = "ACCEPT TOKEN QUIT\n";
         info!("Sending accept token message: {}", accept_token);
         let written = self.stream.write(accept_token.as_bytes()).await?;
         info!("Written {} bytes for accept token", written);

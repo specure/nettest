@@ -46,15 +46,19 @@ pub async fn handle_ping(stream: &mut Stream) -> Result<(), Box<dyn Error + Send
     stream.write_all(RESP_PONG.as_bytes()).await?;
     stream.flush().await?;
 
+    info!("Send PONG 2");
+
     // Читаем ответ OK от клиента
-    let mut buf = [0u8; 1024];
+    let mut buf = [0u8; 1024]; // Фиксированный размер буфера как в C-коде
     let mut bytes_read = 0;
+
     while bytes_read < buf.len() {
-        match stream.read(&mut buf[bytes_read..bytes_read + 1]).await? {
+        match stream.read(&mut buf[bytes_read..]).await? {
             0 => break, // EOF
             n => {
                 bytes_read += n;
-                if buf[bytes_read - 1] == b'\n' {
+                if let Some(pos) = buf[..bytes_read].iter().position(|&b| b == b'\n') {
+                    bytes_read = pos + 1;
                     break;
                 }
             }
@@ -68,13 +72,18 @@ pub async fn handle_ping(stream: &mut Stream) -> Result<(), Box<dyn Error + Send
     // Конец измерения времени
     let elapsed_ns = start_time.elapsed().as_nanos() as u64;
 
+    info!("Probably Received OK from client");
+    
     // Проверяем ответ клиента
-    if response != "OK" {
+    if !response.trim().eq("OK") {
         error!("Expected OK from client, got: {}", response);
         stream.write_all(RESP_ERR.as_bytes()).await?;
         return Err("Invalid client response".into());
+    } else {
+        info!("Received OK from client");
     }
 
+    info!("Send PING response time: {} ns", elapsed_ns);
     // Отправляем время выполнения
     let time_response = format!("{} {}\n", RESP_TIME, elapsed_ns);
     stream.write_all(time_response.as_bytes()).await?;

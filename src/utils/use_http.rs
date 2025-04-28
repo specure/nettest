@@ -12,7 +12,6 @@ pub const MAX_LINE_LENGTH: usize = 1024;
 const CONNECTION_UPGRADE: &str = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n";
 const RMBT_UPGRADE: &str = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: rmbt\r\nConnection: Upgrade\r\n\r\n";
 const GREETING: &str = "RMBTv1.2.0\n";
-const ACCEPT_TOKEN_NL: &str = "ACCEPT TOKEN QUIT\r\n";
 
 pub async fn define_stream(
     tcp_stream: TcpStream,
