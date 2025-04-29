@@ -1,7 +1,7 @@
 use crate::stream::Stream;
-use crate::stream::Stream::{Plain, Tls, WebSocket};
+use crate::stream::Stream::{Plain, Tls};
 use crate::utils::websocket::{generate_handshake_response, Handshake};
-use log::{debug, error, info, trace};
+use log::{debug, error, info};
 use regex::Regex;
 use std::error::Error;
 use std::sync::Arc;
@@ -9,9 +9,7 @@ use tokio::net::TcpStream;
 use tokio_native_tls::TlsAcceptor;
 
 pub const MAX_LINE_LENGTH: usize = 1024;
-const CONNECTION_UPGRADE: &str = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n";
 const RMBT_UPGRADE: &str = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: rmbt\r\nConnection: Upgrade\r\n\r\n";
-const GREETING: &str = "RMBTv1.2.0\n";
 
 pub async fn define_stream(
     tcp_stream: TcpStream,

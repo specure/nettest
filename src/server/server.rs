@@ -4,9 +4,6 @@ use tokio_native_tls::TlsAcceptor;
 use std::error::Error;
 use std::net::SocketAddr;
 use log::{info, error};
-use tokio::sync::Mutex;
-use tokio::io::AsyncReadExt;
-use tokio::io::AsyncWriteExt;
 use crate::utils::token_validator::TokenValidator;
 use crate::server::server_config::ServerConfig;
 use tokio::sync::oneshot;
@@ -17,7 +14,6 @@ use crate::utils::use_http::{define_stream};
 pub struct Server {
     config: Arc<ServerConfig>,
     tls_acceptor: Option<Arc<TlsAcceptor>>,
-    data_buffer: Arc<Mutex<Vec<u8>>>,
     token_validator: Arc<TokenValidator>,
     shutdown_signal: oneshot::Receiver<()>,
 }
@@ -44,7 +40,6 @@ impl Server {
         Ok((Self {
             config: Arc::new(config),
             tls_acceptor,
-            data_buffer: Arc::new(Mutex::new(Vec::new())),
             token_validator,
             shutdown_signal: rx,
         }, tx))
@@ -106,10 +101,9 @@ impl Server {
                     if let Some((stream, addr, is_ssl)) = result.0 {
                         let token_validator = self.token_validator.clone();
                         let config = self.config.clone();
-                        let data_buffer = self.data_buffer.clone();
                         let tls_acceptor = self.tls_acceptor.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = handle_connection(stream, addr, is_ssl, token_validator, config, data_buffer, tls_acceptor).await {
+                            if let Err(e) = handle_connection(stream, addr, is_ssl, token_validator, config, tls_acceptor).await {
                                 eprintln!("Error handling connection bbbbbb: {}", e);
                             }
                         });
@@ -132,7 +126,6 @@ async fn handle_connection(
     is_ssl: bool,
     token_validator: Arc<TokenValidator>,
     config: Arc<ServerConfig>,
-    data_buffer: Arc<Mutex<Vec<u8>>>,
     tls_acceptor: Option<Arc<TlsAcceptor>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     info!("New {} connection from {}", if is_ssl { "TLS" } else { "plain TCP" }, addr);
@@ -147,7 +140,6 @@ async fn handle_connection(
         stream,
         config,
         token_validator,
-        data_buffer,
     );
 
     match handler.handle().await {

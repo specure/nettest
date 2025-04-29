@@ -1,5 +1,4 @@
-use crate::config::constants::{ACCEPT_COMMANDS, CHUNK_SIZE, ERR, MAX_CHUNKS, MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, OK, PONG, RESP_ERR, RESP_OK};
-use crate::handlers::*;
+use crate::config::constants::{ACCEPT_COMMANDS, CHUNK_SIZE, MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RESP_ERR};
 use crate::handlers::{
     handle_get_chunks, handle_get_time, handle_ping, handle_put, handle_put_no_result, handle_quit,
 };
@@ -7,20 +6,13 @@ use crate::utils::token_validator::TokenValidator;
 use log::{debug, error, info};
 use std::error::Error;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tokio::sync::Mutex;
-use tokio_native_tls::TlsStream;
-use tokio::net::TcpStream;
-use tokio_tungstenite::WebSocketStream;
 use crate::server::server_config::ServerConfig;
-use std::net::SocketAddr;
 use crate::stream::Stream;
 
 pub struct ConnectionHandler {
     stream: Stream,
     config: Arc<ServerConfig>,
     token_validator: Arc<TokenValidator>,
-    data_buffer: Arc<Mutex<Vec<u8>>>,
 }
 
 impl ConnectionHandler {
@@ -28,13 +20,11 @@ impl ConnectionHandler {
         stream: Stream,
         config: Arc<ServerConfig>,
         token_validator: Arc<TokenValidator>,
-        data_buffer: Arc<Mutex<Vec<u8>>>,
     ) -> Self {
         Self {
             stream,
             config,
             token_validator,
-            data_buffer,
         }
     }
 
@@ -229,13 +219,11 @@ mod tests {
 
         let config = Arc::new(ServerConfig::default());
         let token_validator = Arc::new(TokenValidator::new(vec![], vec![]));
-        let data_buffer = Arc::new(Mutex::new(Vec::new()));
 
         let mut handler = ConnectionHandler::new(
             Stream::Plain(server),
             config,
             token_validator,
-            data_buffer,
         );
 
         // Test connection handling
@@ -260,13 +248,11 @@ mod tests {
 
         let config = Arc::new(ServerConfig::default());
         let token_validator = Arc::new(TokenValidator::new(vec![], vec![]));
-        let data_buffer = Arc::new(Mutex::new(Vec::new()));
 
         let mut handler = ConnectionHandler::new(
             Stream::Plain(server),
             config,
             token_validator,
-            data_buffer,
         );
 
         // Test quit command
@@ -291,13 +277,11 @@ mod tests {
 
         let config = Arc::new(ServerConfig::default());
         let token_validator = Arc::new(TokenValidator::new(vec![], vec![]));
-        let data_buffer = Arc::new(Mutex::new(Vec::new()));
 
         let mut handler = ConnectionHandler::new(
             Stream::Plain(server),
             config,
             token_validator,
-            data_buffer,
         );
 
         // Test ping command

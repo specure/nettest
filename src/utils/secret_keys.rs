@@ -1,8 +1,6 @@
 use std::fs;
 use std::io::{self, BufRead};
-use log::{info, error};
-
-const MAX_SECRET_KEY_LINE_LENGTH: usize = 256;
+use log::info;
 
 pub struct SecretKey {
     pub key: String,

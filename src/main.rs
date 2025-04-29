@@ -3,7 +3,6 @@ use crate::server::server_config::ServerConfig;
 use std::error::Error;
 use log::{error, info, debug};
 use rand::rngs::OsRng;
-use std::sync::Arc;
 
 pub mod server;
 pub mod handlers;
@@ -11,12 +10,6 @@ pub mod utils;
 pub mod config;
 pub mod logger;
 pub mod stream;
-
-use clap::Parser;
-use env_logger;
-use log::LevelFilter;
-use crate::utils::daemon;
-use crate::utils::token_validator::TokenValidator;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {

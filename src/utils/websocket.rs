@@ -1,5 +1,4 @@
 use std::error::Error;
-use regex::Regex;
 use sha1::{Sha1, Digest};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 

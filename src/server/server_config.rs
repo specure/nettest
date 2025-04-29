@@ -3,8 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::ffi::CString;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
-use std::os::unix::process::CommandExt;
-use std::str::FromStr;
 use std::fs;
 use log::{error, info, LevelFilter};
 use crate::logger;

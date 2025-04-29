@@ -1,12 +1,17 @@
-use libc::daemon;
+use std::process;
+use nix::unistd::{fork, ForkResult, setsid};
 
 pub fn daemonize() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    println!("Forking daemon...");
-    
-    // daemon(0, 0) - no chdir, no close
-    if unsafe { daemon(0, 0) } == -1 {
-        return Err(format!("Failed to daemonize: {}", std::io::Error::last_os_error()).into());
+    match unsafe { fork() } {
+        Ok(ForkResult::Parent { .. }) => {
+            process::exit(0);
+        }
+        Ok(ForkResult::Child) => {
+            if let Err(e) = setsid() {
+                return Err(format!("Failed to create new session: {}", e).into());
+            }
+            Ok(())
+        }
+        Err(e) => Err(format!("Failed to fork: {}", e).into()),
     }
-
-    Ok(())
 } 

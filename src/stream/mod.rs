@@ -4,11 +4,6 @@ use tokio::net::TcpStream;
 use tokio_native_tls::TlsStream;
 use tokio_tungstenite::WebSocketStream;
 use log::{info, error, debug};
-use std::io::{Read, Write};
-use std::net::SocketAddr;
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use tokio::io::{AsyncRead, AsyncWrite};
 
 const CHUNK_SIZE: usize = 4096;
 

@@ -1,7 +1,6 @@
-use crate::config::constants::{CHUNK_SIZE, MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RESP_OK};
 use crate::config::constants::{RESP_BYE, RESP_ERR, RESP_PONG, RESP_TIME};
 use crate::stream::Stream;
-use log::{debug, error, info};
+use log::{error, info};
 use std::error::Error;
 use std::time::Instant;
 
