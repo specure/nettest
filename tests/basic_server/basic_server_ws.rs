@@ -1,16 +1,12 @@
 use crate::test_utils::{find_free_port, generate_token, TestServer};
-use std::time::Duration;
+use log::{info, LevelFilter};
 use tokio::net::TcpStream;
-use tokio::time::timeout;
-use tokio::io::{AsyncWriteExt, AsyncReadExt};
-use std::env;
-use log::{debug, info, LevelFilter};
-use env_logger::Builder;
-use tokio_tungstenite::{WebSocketStream, MaybeTlsStream};
 use tokio_tungstenite::tungstenite::{Message, handshake::client::Request};
 use futures_util::{SinkExt, StreamExt};
 use tokio_native_tls::TlsConnector;
 use native_tls::TlsConnector as NativeTlsConnector;
+use std::env;
+use env_logger::Builder;
 
 const DEFAULT_PLAIN_PORT: u16 = 8080;
 const DEFAULT_TLS_PORT: u16 = 443;
@@ -27,21 +23,9 @@ fn setup_logging() {
 #[tokio::test]
 async fn test_ws_upgrade() {
     setup_logging();
-    // Get ports from environment or use random free ports
-    let (plain_port, tls_port) = if env::var("TEST_USE_DEFAULT_PORTS").is_ok() {
-        (DEFAULT_PLAIN_PORT, DEFAULT_TLS_PORT)
-    } else {
-        (find_free_port(), find_free_port())
-    };
-
-    info!("Using ports: plain={}, tls={}", plain_port, tls_port);
-
-    // Start server only if not using default ports
-    let _server = if plain_port != DEFAULT_PLAIN_PORT || tls_port != DEFAULT_TLS_PORT {
-        Some(TestServer::new(plain_port, tls_port))
-    } else {
-        None
-    };
+    
+    // Создаем тестовый сервер (он может быть dummy если используем дефолтные порты)
+    let server = TestServer::new(None, None).unwrap();
 
     // Create TLS connector with custom configuration
     let mut tls_connector = NativeTlsConnector::builder();
@@ -50,14 +34,22 @@ async fn test_ws_upgrade() {
     let tls_connector = TlsConnector::from(tls_connector.build().unwrap());
 
     // Connect to the TLS port first
-    info!("Connecting to TLS port {}", tls_port);
-    let tcp_stream = TcpStream::connect(format!("127.0.0.1:{}", tls_port)).await.unwrap();
-    let tls_stream = tls_connector.connect("localhost", tcp_stream).await.unwrap();
+    info!("Connecting to TLS port {}", server.tls_port());
+    let tcp_stream = TcpStream::connect(format!("{}:{}", server.host(), server.tls_port())).await.unwrap();
+    
+    // Determine host based on environment variable
+    let host = if env::var("TEST_USE_DEFAULT_PORTS").is_ok() {
+        "dev.measurementservers.net"
+    } else {
+        "localhost"
+    };
+    
+    let tls_stream = tls_connector.connect(host, tcp_stream).await.unwrap();
 
     // Create WebSocket request
     let request = Request::builder()
-        .uri(format!("wss://127.0.0.1:{}/rmbt", tls_port))
-        .header("Host", format!("127.0.0.1:{}", tls_port))
+        .uri(format!("wss://{}:{}/rmbt", host, server.tls_port()))
+        .header("Host", format!("{}:{}", host, server.tls_port()))
         .header("Connection", "Upgrade")
         .header("Upgrade", "websocket")
         .header("Sec-WebSocket-Version", "13")
@@ -93,7 +85,6 @@ async fn test_ws_upgrade() {
     let response = read.next().await.expect("Failed to read token response").expect("Failed to read token response");
     let response_text = response.to_text().expect("Response is not text");
     info!("Received token response: {}", response_text);
-    
     assert!(response_text.contains("OK"), "Server should accept valid token");
 
     // Read CHUNKSIZE message
