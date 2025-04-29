@@ -112,4 +112,5 @@ async fn test_rmbt_upgrade() {
     info!("Received token response: {}", response);
     
     assert!(response.contains("OK"), "Server should accept valid token");
+
 }

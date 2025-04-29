@@ -96,6 +96,24 @@ async fn test_ws_upgrade() {
     
     assert!(response_text.contains("OK"), "Server should accept valid token");
 
+    // Read CHUNKSIZE message
+    let chunksize_response = read.next().await.expect("Failed to read CHUNKSIZE").expect("Failed to read CHUNKSIZE");
+    let chunksize_text = chunksize_response.to_text().expect("CHUNKSIZE is not text");
+    info!("Received CHUNKSIZE message: {}", chunksize_text);
+    assert!(chunksize_text.contains("CHUNKSIZE"), "Server should send CHUNKSIZE message");
+
+    // Read ACCEPT message with all commands
+    let accept_response = read.next().await.expect("Failed to read ACCEPT").expect("Failed to read ACCEPT");
+    let accept_text = accept_response.to_text().expect("ACCEPT is not text");
+    info!("Received ACCEPT message: {}", accept_text);
+    assert!(accept_text.contains("ACCEPT"), "Server should send ACCEPT message");
+    assert!(accept_text.contains("GETCHUNKS"), "Server should accept GETCHUNKS command");
+    assert!(accept_text.contains("GETTIME"), "Server should accept GETTIME command");
+    assert!(accept_text.contains("PUT"), "Server should accept PUT command");
+    assert!(accept_text.contains("PUTNORESULT"), "Server should accept PUTNORESULT command");
+    assert!(accept_text.contains("PING"), "Server should accept PING command");
+    assert!(accept_text.contains("QUIT"), "Server should accept QUIT command");
+
     // Close WebSocket connection
     write.close().await.expect("Failed to close WebSocket connection");
     info!("Closed WebSocket connection");
