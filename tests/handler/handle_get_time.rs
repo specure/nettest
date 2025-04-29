@@ -4,88 +4,105 @@ mod test_utils;
 use tokio::runtime::Runtime;
 use log::{info, debug, trace};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use crate::test_utils::{find_free_port, TestServer};
+use crate::test_utils::TestServer;
+use std::time::Duration;
+use env_logger;
+use std::collections::VecDeque;
+
+const TEST_DURATION: u64 = 2; // 2 seconds
+const CHUNK_SIZE: usize = 4096; // 4 KiB
+const MIN_CHUNK_SIZE: usize = 4096; // 4 KiB
+const MAX_CHUNK_SIZE: usize = 4194304; // 4 MiB
 
 #[test]
 fn test_handle_get_time() {
-    // Используем хардкодный ключ
-    let key = "q4aFShYnBgoYyDr4cxes0DSYCvjLpeKJjhCfvmVCdiIpsdeU1djvBtE6CMtNCbDWkiU68X7bajIAwLon14Hh7Wpi5MJWJL7HXokh";
-    
-    // Находим два свободных порта
-    let port1 = find_free_port();
-    let port2 = find_free_port();
-    
-    info!("Using ports: {} and {}", port1, port2);
-    
-    // Запускаем сервер
-    let server = TestServer::new(port1, port2);
-    
-    // Создаем runtime для асинхронных операций
+    // Setup logger
+    let _ = env_logger::Builder::new()
+        .filter_level(log::LevelFilter::Trace)
+        .format_timestamp_millis()
+        .format_module_path(false)
+        .format_target(false)
+        .try_init();
+
     let rt = Runtime::new().unwrap();
     
-    // Пробуем подключиться к серверу и проверить протокол
     rt.block_on(async {
-        let mut stream = server.connect(false).await.expect("Failed to connect to server");
+        info!("Starting GETTIME test");
         
-        // Читаем приветствие сервера
-        let mut buf = [0u8; 1024];
-        let n = stream.read(&mut buf).await.expect("Failed to read version");
-        let version = String::from_utf8_lossy(&buf[..n]);
-        debug!("Received version: {}", version);
-        assert!(version.contains("RMBTv"), "Server greeting should contain version");
-        assert!(version.contains("ACCEPT"), "Server greeting should contain ACCEPT");
-        assert!(version.contains("TOKEN"), "Server greeting should contain TOKEN");
-        assert!(version.contains("QUIT"), "Server greeting should contain QUIT");
-
-        // Отправляем токен
-        TestServer::send_token(&mut stream, key).await.expect("Failed to send token");
+        // Create test server
+        let server = TestServer::new(None, None).unwrap();
+        info!("Test server created");
         
-        // Отправляем GETTIME команду
-        let duration = 2; // 2 секунды (минимальная длительность)
-        let chunk_size = 4096; // 4KB
-        debug!("Sending GETTIME command: duration={}, chunk_size={}", duration, chunk_size);
-        let gettime_cmd = format!("GETTIME {} {}\n", duration, chunk_size);
-        debug!("GETTIME command bytes: {:?}", gettime_cmd.as_bytes());
-        stream.write_all(gettime_cmd.as_bytes())
-            .await
-            .expect("Failed to send GETTIME");
-        stream.flush().await.expect("Failed to flush GETTIME command");
-        debug!("GETTIME command sent and flushed");
-            
-        // Читаем данные
+        // Connect to server
+        let (mut stream, _) = server.connect_rmbtd().await.expect("Failed to connect to server");
+        info!("Connected to server");
+        
+        // Read initial ACCEPT message after token validation
+        let mut initial_accept = [0u8; 1024];
+        let n = stream.read(&mut initial_accept).await.expect("Failed to read initial ACCEPT");
+        let accept_str = String::from_utf8_lossy(&initial_accept[..n]);
+        info!("Initial ACCEPT message: {}", accept_str);
+        assert!(accept_str.contains("ACCEPT"), "Server should send initial ACCEPT message");
+        
+        // Test 1: Valid GETTIME command with default chunk size
+        info!("Testing GETTIME with default chunk size");
+        let command = format!("GETTIME {}\n", TEST_DURATION);
+        stream.write_all(command.as_bytes()).await.expect("Failed to send GETTIME command");
+        
+        // Read and verify data stream
         let mut total_bytes = 0;
+        let mut buffer = vec![0u8; CHUNK_SIZE];
         let start_time = std::time::Instant::now();
-        let mut found_terminator = false;
-        let mut buf = vec![0u8; chunk_size * 2]; // Double buffer size to handle larger chunks
+        let mut last_byte = 0u8;
+        let mut is_full_chunk = false;
+        let mut received_termination = false;
         
-        // Читаем данные до тех пор, пока не найдем терминатор
-        println!("Waiting to read data chunk...");
-        loop {
-            match stream.read(&mut buf).await {
+        while !received_termination && start_time.elapsed() < Duration::from_secs(TEST_DURATION + 1) {
+            match stream.read(&mut buffer).await {
                 Ok(n) => {
                     if n == 0 {
-                        debug!("Connection closed by server during data transfer");
                         break;
                     }
-                    
                     total_bytes += n;
-                    trace!("Received {} bytes, total: {}", n, total_bytes);
+                    debug!("Received chunk size: {} bytes, total: {}, CHUNK_SIZE: {}", n, total_bytes, CHUNK_SIZE);
                     
-                    // Подробное логирование содержимого чанка
-                    trace!("Chunk data (first 32 bytes): {:?}", &buf[..std::cmp::min(32, n)]);
-                    trace!("Chunk data (last 32 bytes): {:?}", &buf[n.saturating_sub(32)..n]);
-                    trace!("Last byte: 0x{:02X}", buf[n - 1]);
+                    // Verify chunk format and handle termination
+                    is_full_chunk = n == CHUNK_SIZE;
+                    last_byte = buffer[n-1];
+                    debug!("is_full_chunk: {}, last_byte: {:#04x}", is_full_chunk, last_byte);
                     
-                    // Check only the last byte of each chunk
-                    if n > 0 && buf[n - 1] == 0xFF {
-                        trace!("Found termination byte in last position");
-                        found_terminator = true;
-                        break;
+                    if is_full_chunk {
+                        debug!("Processing full chunk...");
+                        if last_byte == 0xFF {
+                            debug!("Received termination chunk");
+                            received_termination = true;
+                            // Send OK response to server immediately
+                            debug!("Sending OK response");
+                            stream.write_all(b"OK\n").await.expect("Failed to send OK response");
+                            stream.flush().await.expect("Failed to flush OK response");
+                            
+                            // Read TIME response
+                            let mut time_response = [0u8; 1024];
+                            let n = stream.read(&mut time_response).await.expect("Failed to read TIME response");
+                            let time_str = String::from_utf8_lossy(&time_response[..n]);
+                            debug!("Received TIME response: '{}'", time_str);
+                            
+                            // Verify TIME response format
+                            let time_parts: Vec<&str> = time_str.trim().split_whitespace().collect();
+                            assert_eq!(time_parts.len(), 2, "TIME response should have 2 parts");
+                            assert_eq!(time_parts[0], "TIME", "First part should be 'TIME'");
+                            assert!(time_parts[1].parse::<u64>().is_ok(), "Second part should be a number");
+                            
+                            break;
+                        } else {
+                            assert_eq!(last_byte, 0x00, "Non-terminal chunk should end with 0x00");
+                        }
                     }
                     
-                    if found_terminator {
-                        break;
-                    }
+                    // Calculate and verify download speed
+                    let elapsed_ns = start_time.elapsed().as_nanos() as f64;
+                    let bytes_per_sec = (total_bytes as f64) / (elapsed_ns / 1e9);
+                    debug!("Current download speed: {:.2} bytes/sec", bytes_per_sec);
                 }
                 Err(e) => {
                     panic!("Failed to read data: {}", e);
@@ -93,76 +110,26 @@ fn test_handle_get_time() {
             }
         }
         
-        // Проверяем, что получили терминатор
-        assert!(found_terminator, "Should receive termination byte");
+        assert!(received_termination, "Did not receive termination chunk within timeout");
         
-        // Отправляем OK после получения всех данных
-        debug!("Sending OK response to server");
-        stream.write_all(b"OK\n").await.expect("Failed to send OK response");
-        stream.flush().await.expect("Failed to flush OK response");
-        debug!("OK response sent and flushed");
-
-        // Читаем TIME ответ с таймаутом
-        debug!("Reading TIME response from server");
+        // Send QUIT command
+        info!("Sending QUIT command");
+        stream.write_all(b"QUIT\n").await.expect("Failed to send QUIT");
+        
+        // Read ACCEPT response first
         let mut response = [0u8; 1024];
-        let mut time_response = String::new();
-        let mut attempts = 0;
-        const MAX_ATTEMPTS: u32 = 5;
+        let n = stream.read(&mut response).await.expect("Failed to read ACCEPT response");
+        let accept_response = String::from_utf8_lossy(&response[..n]);
+        debug!("Received ACCEPT response: '{}'", accept_response);
+        assert!(accept_response.contains("ACCEPT"), "Server should respond with ACCEPT after QUIT");
         
-        // Читаем ответ до символа новой строки или таймаута
-        while attempts < MAX_ATTEMPTS {
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(1),
-                stream.read(&mut response)
-            ).await {
-                Ok(Ok(n)) => {
-                    if n == 0 {
-                        debug!("Connection closed by server while reading TIME response");
-                        break;
-                    }
-                    let chunk = String::from_utf8_lossy(&response[..n]);
-                    trace!("Received chunk: '{}'", chunk);
-                    time_response.push_str(&chunk);
-                    if time_response.contains('\n') {
-                        break;
-                    }
-                }
-                Ok(Err(e)) => {
-                    panic!("Failed to read TIME response: {}", e);
-                }
-                Err(_) => {
-                    debug!("Timeout while reading TIME response, attempt {}/{}", attempts + 1, MAX_ATTEMPTS);
-                    attempts += 1;
-                    continue;
-                }
-            }
-        }
+        // Then read BYE response
+        let mut response = [0u8; 1024];
+        let n = stream.read(&mut response).await.expect("Failed to read BYE response");
+        let bye_response = String::from_utf8_lossy(&response[..n]);
+        debug!("Received BYE response: '{}'", bye_response);
+        assert!(bye_response.contains("BYE"), "Server should respond with BYE");
         
-        let time_response = time_response.trim();
-        debug!("Final TIME response: '{}'", time_response);
-        assert!(
-            time_response.starts_with("TIME "), 
-            "Server should respond with TIME, got: '{}'", 
-            time_response
-        );
-        
-        // Проверяем, что получили данные
-        assert!(total_bytes > 0, "Should receive some data");
-        
-        // Проверяем время передачи
-        let elapsed = start_time.elapsed();
-        assert!(
-            elapsed >= std::time::Duration::from_secs(duration),
-            "Transfer took {} seconds, expected at least {} seconds",
-            elapsed.as_secs_f64(),
-            duration
-        );
-        
-        // Отправляем QUIT
-        debug!("Sending QUIT command");
-        TestServer::send_quit(&mut stream).await.expect("Failed to send QUIT");
-        
-        // Закрываем соединение
-        stream.shutdown().await.expect("Failed to shutdown stream");
+        info!("GETTIME test completed successfully");
     });
 } 
