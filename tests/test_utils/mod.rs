@@ -5,6 +5,7 @@ use log::info;
 use tokio::net::TcpStream;
 use uuid::Uuid;
 use tokio_tungstenite::tungstenite::{Message, handshake::client::Request};
+use tokio_tungstenite::WebSocketStream;
 use futures_util::{SinkExt, StreamExt};
 use tokio_native_tls::TlsConnector;
 use native_tls::TlsConnector as NativeTlsConnector;
@@ -91,7 +92,7 @@ impl TestServer {
         &self.host
     }
 
-    pub async fn connect_ws(&self) -> Result<(impl SinkExt<Message> + Unpin, impl StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin), Box<dyn std::error::Error>> {
+    pub async fn connect_ws(&self) -> Result<(WebSocketStream<TlsStream<TcpStream>>, u32), Box<dyn Error + Send + Sync>> {
         // Create TLS connector with custom configuration
         let mut tls_connector = NativeTlsConnector::builder();
         tls_connector.danger_accept_invalid_certs(true);
@@ -119,7 +120,49 @@ impl TestServer {
         info!("WebSocket connection established");
 
         // Split the WebSocket stream into sender and receiver
-        Ok(ws_stream.split())
+        let (mut write, mut read) = ws_stream.split();
+
+        // Read greeting message
+        let greeting = read.next().await.expect("Failed to read greeting").expect("Failed to read greeting");
+        let greeting_text = greeting.to_text().expect("Greeting is not text");
+        info!("Received greeting: {}", greeting_text);
+        assert!(greeting_text.contains("RMBTv"), "Server should send version in greeting");
+
+        // Read ACCEPT TOKEN message
+        let accept_token = read.next().await.expect("Failed to read ACCEPT TOKEN").expect("Failed to read ACCEPT TOKEN");
+        let accept_token_text = accept_token.to_text().expect("ACCEPT TOKEN is not text");
+        info!("Received ACCEPT TOKEN message: {}", accept_token_text);
+        assert!(accept_token_text.contains("ACCEPT TOKEN"), "Server should send ACCEPT TOKEN message");
+
+        // Send token
+        let token = generate_token()?;
+        info!("Sending token: {}", token);
+        write.send(Message::Text(token)).await.expect("Failed to send token");
+
+        // Read token response
+        let response = read.next().await.expect("Failed to read token response").expect("Failed to read token response");
+        let response_text = response.to_text().expect("Response is not text");
+        info!("Received token response: {}", response_text);
+        assert!(response_text.contains("OK"), "Server should accept valid token");
+
+        // Read CHUNKSIZE message
+        let chunksize_response = read.next().await.expect("Failed to read CHUNKSIZE").expect("Failed to read CHUNKSIZE");
+        let chunksize_text = chunksize_response.to_text().expect("CHUNKSIZE is not text");
+        info!("Received CHUNKSIZE message: {}", chunksize_text);
+        assert!(chunksize_text.contains("CHUNKSIZE"), "Server should send CHUNKSIZE message");
+
+        // Parse chunk size
+        let chunk_size = chunksize_text
+            .split_whitespace()
+            .nth(1)
+            .unwrap()
+            .parse::<u32>()
+            .expect("Failed to parse chunk size");
+
+        // Recombine the stream
+        let ws_stream = write.reunite(read).expect("Failed to reunite WebSocket stream");
+
+        Ok((ws_stream, chunk_size))
     }
 
     pub async fn connect_rmbtd(&self) -> Result<(TlsStream<TcpStream>, u32), Box<dyn Error + Send + Sync>> {
