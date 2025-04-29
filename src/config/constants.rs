@@ -31,7 +31,6 @@ pub const MAX_ACCEPT_EARLY: u32 = 20;  // 20 секунд
 pub const MAX_ACCEPT_LATE: u32 = 90;   // 90 секунд
 
 pub const  OK: &str = "OK\n";
-pub const ERR: &str = "ERR\n";
 pub const BYE: &str = "BYE\n";
 pub const PONG: &str = "PONG\n";
 

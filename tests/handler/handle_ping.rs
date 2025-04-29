@@ -4,72 +4,135 @@ mod test_utils;
 use tokio::runtime::Runtime;
 use log::{info, debug, trace};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use crate::test_utils::{find_free_port, TestServer};
+use crate::test_utils::TestServer;
+use std::time::Duration;
+use env_logger;
+use std::collections::VecDeque;
+use tokio::time::sleep;
+use tokio::time::timeout;
+
+const MIN_PINGS: u32 = 10;
+const MAX_PINGS: u32 = 200;
+const PING_DURATION: u64 = 2; // 2 seconds to ensure we can complete MIN_PINGS
+const DELAY_MS: u64 = 50; // 50ms delay
+const READ_TIMEOUT: Duration = Duration::from_millis(10); // 10ms timeout for reading
 
 #[test]
 fn test_handle_ping() {
-    // Используем хардкодный ключ
-    let key = "q4aFShYnBgoYyDr4cxes0DSYCvjLpeKJjhCfvmVCdiIpsdeU1djvBtE6CMtNCbDWkiU68X7bajIAwLon14Hh7Wpi5MJWJL7HXokh";
-    
-    // Находим два свободных порта
-    let port1 = find_free_port();
-    let port2 = find_free_port();
-    
-    info!("Using ports: {} and {}", port1, port2);
-    
-    // Запускаем сервер
-    let server = TestServer::new(port1, port2);
-    
-    // Создаем runtime для асинхронных операций
+    // Setup logger
+    let _ = env_logger::Builder::new()
+        .filter_level(log::LevelFilter::Trace)
+        .format_timestamp_millis()
+        .format_module_path(false)
+        .format_target(false)
+        .try_init();
+
     let rt = Runtime::new().unwrap();
     
-    // Пробуем подключиться к серверу и проверить протокол
     rt.block_on(async {
-        let mut stream = server.connect(false).await.expect("Failed to connect to server");
+        info!("Starting PING test");
         
-        // Читаем приветствие сервера
-        let mut buf = [0u8; 1024];
-        let n = stream.read(&mut buf).await.expect("Failed to read version");
-        let version = String::from_utf8_lossy(&buf[..n]);
-        debug!("Received version: {}", version);
-        assert!(version.contains("RMBTv"), "Server greeting should contain version");
-        assert!(version.contains("ACCEPT"), "Server greeting should contain ACCEPT");
-        assert!(version.contains("TOKEN"), "Server greeting should contain TOKEN");
-        assert!(version.contains("QUIT"), "Server greeting should contain QUIT");
-
-        // Отправляем токен
-        TestServer::send_token(&mut stream, key).await.expect("Failed to send token");
+        // Create test server
+        let server = TestServer::new(None, None).unwrap();
+        info!("Test server created");
         
-        // Отправляем PING команду
-        debug!("Sending PING command");
-        stream.write_all(b"PING\n").await.expect("Failed to send PING");
-        stream.flush().await.expect("Failed to flush PING command");
+        // Connect to server
+        let (mut stream, _) = server.connect_rmbtd().await.expect("Failed to connect to server");
+        info!("Connected to server");
         
-        // Читаем PONG ответ от сервера
-        let mut response = [0u8; 1024];
-        let n = stream.read(&mut response).await.expect("Failed to read PONG response");
-        let pong_response = String::from_utf8_lossy(&response[..n]);
-        debug!("Received response: {}", pong_response);
-        assert!(pong_response.contains("PONG"), "Server should respond with PONG");
+        // Read initial ACCEPT message after token validation
+        let mut initial_accept = [0u8; 1024];
+        let n = stream.read(&mut initial_accept).await.expect("Failed to read initial ACCEPT");
+        let accept_str = String::from_utf8_lossy(&initial_accept[..n]);
+        info!("Initial ACCEPT message: {}", accept_str);
+        assert!(accept_str.contains("ACCEPT"), "Server should send initial ACCEPT message");
         
-        // Отправляем OK
-        debug!("Sending OK response");
-        stream.write_all(b"OK\n").await.expect("Failed to send OK");
-        stream.flush().await.expect("Failed to flush OK response");
+        // Run test for 1 second
+        let start_time = std::time::Instant::now();
+        let test_duration = Duration::from_secs(PING_DURATION);
+        let mut total_pings = 0;
+        let mut server_times = VecDeque::new();
         
-        // Отправляем QUIT команду
-        debug!("Sending QUIT command");
-        stream.write_all(b"QUIT\n").await.expect("Failed to send QUIT");
-        stream.flush().await.expect("Failed to flush QUIT command");
-
-        // Читаем BYE ответ
-        let mut response = [0u8; 1024];
-        let n = stream.read(&mut response).await.expect("Failed to read BYE response");
-        let bye_response = String::from_utf8_lossy(&response[..n]);
-        debug!("Received response to QUIT: {}", bye_response);
-        assert!(bye_response.contains("BYE"), "Server should respond with BYE");
+        info!("Starting PING loop for {} seconds", PING_DURATION);
         
-        // Закрываем соединение
-        stream.shutdown().await.expect("Failed to shutdown stream");
+        while start_time.elapsed() < test_duration && total_pings < MAX_PINGS {
+            trace!("PING iteration #{}", total_pings + 1);
+            
+            // Send PING command
+            debug!("Sending PING command #{}", total_pings + 1);
+            stream.write_all(b"PING\n").await.expect("Failed to send PING");
+            trace!("PING command sent");
+            
+            // Read PONG response
+            let mut response = [0u8; 1024];
+            let n = stream.read(&mut response).await.expect("Failed to read PONG response");
+            let pong_response = String::from_utf8_lossy(&response[..n]);
+            debug!("Received PONG response (raw bytes): {:?}", &response[..n]);
+            debug!("Received PONG response: {}", pong_response);
+            
+            // Send OK immediately after receiving PONG
+            debug!("Sending OK response");
+            stream.write_all(b"OK\n").await.expect("Failed to send OK");
+            stream.flush().await.expect("Failed to flush OK response");
+            trace!("OK response sent");
+            
+            if pong_response.contains("ERR") {
+                debug!("Received {} response, stopping PING test", pong_response);
+                break;
+            }
+            
+            assert!(pong_response.contains("PONG"), "Server should respond with PONG");
+            trace!("PONG response received");
+            
+            // Read TIME response
+            let mut time_response = [0u8; 1024];
+            let n = stream.read(&mut time_response).await.expect("Failed to read TIME response");
+            let time_str = String::from_utf8_lossy(&time_response[..n]);
+            debug!("Received TIME response (raw bytes): {:?}", &time_response[..n]);
+            debug!("Received TIME response: {}", time_str);
+            trace!("TIME response received");
+            
+            // Parse time
+            let time_ns = time_str.trim()
+                .split_whitespace()
+                .nth(1)
+                .expect("No time value in response")
+                .parse::<u64>()
+                .expect("Failed to parse time");
+            
+            assert!(time_ns > 0, "Time should be positive");
+            server_times.push_back(time_ns);
+            trace!("Time parsed: {} ns", time_ns);
+            
+            // Read ACCEPT_GETCHUNKS response
+            let mut accept_response = [0u8; 1024];
+            let n = stream.read(&mut accept_response).await.expect("Failed to read ACCEPT_GETCHUNKS response");
+            let accept_str = String::from_utf8_lossy(&accept_response[..n]);
+            debug!("Received ACCEPT_GETCHUNKS response: {}", accept_str);
+            assert!(accept_str.contains("ACCEPT"), "Server should send ACCEPT_GETCHUNKS message");
+            
+            total_pings += 1;
+            trace!("PING iteration #{} completed", total_pings);
+        }
+        
+        info!("PING loop completed after {} iterations", total_pings);
+        
+        // Verify minimum number of pings
+        assert!(total_pings >= MIN_PINGS, "Should receive at least {} PING responses", MIN_PINGS);
+        assert!(total_pings <= MAX_PINGS, "Should not receive more than {} PING responses", MAX_PINGS);
+        
+        // Sort server times to find median
+        let mut sorted_times: Vec<u64> = server_times.into_iter().collect();
+        sorted_times.sort();
+        
+        let median_time = if sorted_times.len() % 2 == 0 {
+            let mid = sorted_times.len() / 2;
+            (sorted_times[mid - 1] + sorted_times[mid]) / 2
+        } else {
+            sorted_times[sorted_times.len() / 2]
+        };
+        
+        info!("Test completed: {} pings, median server time: {} ns", 
+               total_pings, median_time);
     });
 } 

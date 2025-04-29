@@ -85,7 +85,7 @@ impl ConnectionHandler {
                         break;
                     } else {
                         debug!("Unknown command: {}", command_str);
-                        self.stream.write_all(RESP_ERR.as_bytes()).await?;
+                        self.stream.write_all((RESP_ERR.to_owned() + command_str).as_bytes()).await?;
                     }
                 }
                 Err(e) => {
@@ -191,7 +191,7 @@ impl ConnectionHandler {
             Ok(())
         } else {
             error!("Token was not accepted");
-            self.stream.write_all("ERR\n".as_bytes()).await?;
+            self.stream.write_all(RESP_ERR.as_bytes()).await?;
             Err("Invalid token".into())
         }
     }

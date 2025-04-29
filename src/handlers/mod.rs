@@ -45,7 +45,7 @@ pub async fn handle_ping(stream: &mut Stream) -> Result<(), Box<dyn Error + Send
     stream.write_all(RESP_PONG.as_bytes()).await?;
     stream.flush().await?;
 
-    info!("Send PONG 2");
+    info!("Sent PONG to client");
 
     // Читаем ответ OK от клиента
     let mut buf = [0u8; 1024]; // Фиксированный размер буфера как в C-коде

@@ -218,7 +218,6 @@ impl TestServer {
         let token = generate_token()?;
         info!("Sending token: {}", token);
         tls_stream.write_all(token.as_bytes()).await?;
-        tls_stream.write_all(b"\n").await?;
         tls_stream.flush().await?;
 
         // Read token response
