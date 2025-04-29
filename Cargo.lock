@@ -1392,7 +1392,9 @@ checksum = "c83b561d025642014097b66e6c1bb422783339e0909e4429cde4749d1990bc38"
 dependencies = [
  "futures-util",
  "log",
+ "native-tls",
  "tokio",
+ "tokio-native-tls",
  "tungstenite",
 ]
 
@@ -1449,6 +1451,7 @@ dependencies = [
  "http",
  "httparse",
  "log",
+ "native-tls",
  "rand",
  "sha1",
  "thiserror",
@@ -1670,6 +1673,7 @@ dependencies = [
  "clap",
  "env_logger",
  "futures",
+ "futures-util",
  "getrandom 0.2.15",
  "hmac",
  "libc",
@@ -1687,6 +1691,7 @@ dependencies = [
  "tokio-native-tls",
  "tokio-tungstenite",
  "toml",
+ "tungstenite",
  "uuid",
 ]
 
