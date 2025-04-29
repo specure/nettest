@@ -96,4 +96,7 @@ async fn test_ws_upgrade() {
     
     assert!(response_text.contains("OK"), "Server should accept valid token");
 
+    // Close WebSocket connection
+    write.close().await.expect("Failed to close WebSocket connection");
+    info!("Closed WebSocket connection");
 }
