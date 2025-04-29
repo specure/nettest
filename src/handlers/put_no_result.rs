@@ -46,21 +46,16 @@ pub async fn handle_put_no_result(
     loop {
         match stream.read(&mut buffer).await {
             Ok(n) => {
-                info!("Received {} bytes PREUPLOAD", n);
                 if n == 0 {
-                    debug!("Connection closed by client during data transfer");
                     break;
                 }
 
                 total_bytes += n;
-                debug!("Received {} bytes, total: {}", n, total_bytes);
 
                 // Проверяем последний байт в полученных данных
                 let last_pos = n - 1;
                 last_byte = buffer[last_pos];
-                debug!("Last byte at position {} is 0x{:02X}", last_pos, last_byte);
                 if last_byte == 0xFF {
-                    debug!("Found termination byte at last position {}", last_pos);
                     break;
                 }
             },
@@ -71,24 +66,22 @@ pub async fn handle_put_no_result(
             }
         }
     }
-
-
     // Отправляем финальный результат TIME
     let elapsed_ns = start_time.elapsed().as_nanos() as u64;
-    let time_response = format!("{} {}\n", RESP_TIME, elapsed_ns);
-    info!("Sending TIME response: {}", time_response);
-    
-    // Пробуем отправить TIME, но игнорируем ошибку, если соединение уже закрыто
-    if let Err(e) = stream.write_all(time_response.as_bytes()).await {
-        debug!("Failed to send TIME response: {}", e);
-    }
-    
+
     info!(
         "PUTNORESULT completed: received {} bytes in {} ns, found_terminator: {}",
         total_bytes,
         elapsed_ns,
         last_byte == 0xFF
     );
+
+    let time_response = format!("{} {}\n", RESP_TIME, elapsed_ns);
+    // Пробуем отправить TIME, но игнорируем ошибку, если соединение уже закрыто
+    if let Err(e) = stream.write_all(time_response.as_bytes()).await {
+        debug!("Failed to send TIME response: {}", e);
+    }
+
 
     Ok(())
 } 
