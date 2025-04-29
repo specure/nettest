@@ -2,6 +2,7 @@ use std::process::{Command, Child};
 use std::net::TcpStream;
 use std::thread;
 use std::time::Duration;
+use std::error::Error;
 use log::{info, debug};
 use tokio::net::TcpStream as TokioTcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -25,17 +26,20 @@ impl TestServer {
     pub fn new(plain_port: u16, tls_port: u16) -> Self {
         info!("Starting test server on ports: {} (plain) and {} (tls)", plain_port, tls_port);
 
-        let process = Command::new("cargo")
+        let mut process = Command::new("cargo")
             .args([
                 "run", "--",
                 "-l", &plain_port.to_string(),
                 "-D",
                 "-L", &tls_port.to_string(),
                 "-c", "measurementservers.crt",
-                "-k", "measurementservers.key"
+                "-k", "measurementservers.key",
+                "-w"
             ])
             .spawn()
             .expect("Failed to start server");
+
+        info!("Server process started with PID: {}", process.id());
 
         // Даем серверу время на запуск
         thread::sleep(Duration::from_secs(2));
@@ -65,7 +69,7 @@ impl TestServer {
         format!("{}_{}_{}", uuid, timestamp, hmac)
     }
 
-    pub async fn connect(&self, use_tls: bool) -> Result<TokioTcpStream, Box<dyn std::error::Error>> {
+    pub async fn connect(&self, use_tls: bool) -> Result<TokioTcpStream, Box<dyn Error>> {
         let port = if use_tls { self.tls_port } else { self.plain_port };
         let stream = TokioTcpStream::connect(format!("127.0.0.1:{}", port))
             .await
@@ -73,10 +77,10 @@ impl TestServer {
         Ok(stream)
     }
 
-    pub async fn send_token(stream: &mut TokioTcpStream, key: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn send_token(stream: &mut TokioTcpStream, key: &str) -> Result<(), Box<dyn Error>> {
         let token = Self::generate_token(key);
         info!("Sending token: {}", token);
-        stream.write_all(format!("TOKEN {}\n", token).as_bytes())
+        stream.write_all(format!("{}\n", token).as_bytes())
             .await?;
 
         let mut buf = [0u8; 1024];
@@ -88,7 +92,7 @@ impl TestServer {
         Ok(())
     }
 
-    pub async fn send_quit(stream: &mut TokioTcpStream) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn send_quit(stream: &mut TokioTcpStream) -> Result<(), Box<dyn Error>> {
         stream.write_all(b"QUIT\n").await?;
 
         let mut buf = [0u8; 1024];
@@ -146,3 +150,31 @@ pub fn find_free_port() -> u16 {
     drop(listener);
     port
 } 
+
+
+
+const TEST_KEY: &str = "q4aFShYnBgoYyDr4cxes0DSYCvjLpeKJjhCfvmVCdiIpsdeU1djvBtE6CMtNCbDWkiU68X7bajIAwLon14Hh7Wpi5MJWJL7HXokh";
+
+pub fn generate_token() -> Result<String, Box<dyn Error + Send + Sync>> {
+    // Генерируем UUID
+    let uuid = Uuid::new_v4().to_string();
+    
+    // Получаем текущее время
+    let start_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)?
+        .as_secs()
+        .to_string();
+    
+    // Генерируем HMAC
+    let message = format!("{}_{}", uuid, start_time);
+    let mut mac = HmacSha1::new_from_slice(TEST_KEY.as_bytes())?;
+    mac.update(message.as_bytes());
+    let result = mac.finalize();
+    let code_bytes = result.into_bytes();
+    let hmac = BASE64.encode(code_bytes);
+    
+    // Формируем токен
+    Ok(format!("TOKEN {}_{}_{}\n", uuid, start_time, hmac))
+
+    
+}

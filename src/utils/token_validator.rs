@@ -36,7 +36,7 @@ impl TokenValidator {
         }
         
         error!("Got illegal token: \"{}\"", token_uuid);
-        Ok(true)
+        Ok(false)
     }
 
     async fn validate_with_key(&self, token_uuid: &str, start_time_str: &str, hmac: &str, key: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {

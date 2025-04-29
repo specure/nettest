@@ -9,7 +9,7 @@ use tokio::net::TcpStream;
 use tokio_native_tls::TlsAcceptor;
 
 pub const MAX_LINE_LENGTH: usize = 1024;
-const RMBT_UPGRADE: &str = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: rmbt\r\nConnection: Upgrade\r\n\r\n";
+const RMBT_UPGRADE: &str = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: RMBT\r\nConnection: Upgrade\r\n\r\n";
 
 pub async fn define_stream(
     tcp_stream: TcpStream,
@@ -59,7 +59,7 @@ pub async fn define_stream(
     }
 
     if is_rmbt {
-        debug!("Upgrading to RMBT");
+        info!("Upgrading to RMBT");
         // Отправляем HTTP upgrade ответ
         stream.write_all(RMBT_UPGRADE.as_bytes()).await?;
         stream.flush().await?;
@@ -96,6 +96,7 @@ pub async fn define_stream(
             }
         }
     } else {
+        info!("No HTTP upgrade to websocket/rmbt");
         // Этот код никогда не должен выполниться, но компилятор требует возврата
         Ok(stream)
     }

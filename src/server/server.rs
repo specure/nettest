@@ -166,9 +166,8 @@ async fn handle_connection(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
     use tokio::net::TcpStream;
-    use std::net::{TcpListener, SocketAddr};
+    use std::net::{TcpListener};
     use log::debug;
     use tokio_native_tls::TlsConnector;
     use native_tls::TlsConnector as NativeTlsConnector;
