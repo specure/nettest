@@ -4,134 +4,116 @@ mod test_utils;
 use tokio::runtime::Runtime;
 use log::{info, debug, trace};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use crate::test_utils::{find_free_port, TestServer};
+use crate::test_utils::TestServer;
 use rand::RngCore;
+use std::time::Duration;
+use env_logger;
+
+const CHUNK_SIZE: usize = 4096; // 4 KiB
+const MIN_CHUNK_SIZE: usize = 4096; // 4 KiB
+const MAX_CHUNK_SIZE: usize = 4194304; // 4 MiB
 
 #[test]
 fn test_handle_put_no_result() {
-    // Используем хардкодный ключ
-    let key = "q4aFShYnBgoYyDr4cxes0DSYCvjLpeKJjhCfvmVCdiIpsdeU1djvBtE6CMtNCbDWkiU68X7bajIAwLon14Hh7Wpi5MJWJL7HXokh";
-    
-    // Находим два свободных порта
-    let port1 = find_free_port();
-    let port2 = find_free_port();
-    
-    info!("Using ports: {} and {}", port1, port2);
-    
-    // Запускаем сервер
-    let server = TestServer::new(port1, port2);
-    
-    // Создаем runtime для асинхронных операций
+    // Setup logger
+    let _ = env_logger::Builder::new()
+        .filter_level(log::LevelFilter::Trace)
+        .format_timestamp_millis()
+        .format_module_path(false)
+        .format_target(false)
+        .try_init();
+
     let rt = Runtime::new().unwrap();
     
-    // Пробуем подключиться к серверу и проверить протокол
     rt.block_on(async {
-        let mut stream = server.connect(false).await.expect("Failed to connect to server");
+        info!("Starting PUTNORESULT test");
         
-        // Отправляем HTTP запрос с Upgrade: rmbt
-        let http_request = "GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: rmbt\r\nConnection: Upgrade\r\n\r\n";
-        stream.write_all(http_request.as_bytes()).await.expect("Failed to send HTTP request");
-        stream.flush().await.expect("Failed to flush HTTP request");
+        // Create test server
+        let server = TestServer::new(None, None).unwrap();
+        info!("Test server created");
         
-        // Читаем ответ на HTTP запрос
-        let mut buf = [0u8; 1024];
-        let n = stream.read(&mut buf).await.expect("Failed to read HTTP response");
-        let response = String::from_utf8_lossy(&buf[..n]);
-        debug!("Received HTTP response: {}", response);
-        assert!(response.contains("101 Switching Protocols"), "Server should upgrade to RMBT");
-        assert!(response.contains("Upgrade: rmbt"), "Server should upgrade to RMBT");
+        // Connect to server
+        let (mut stream, _) = server.connect_rmbtd().await.expect("Failed to connect to server");
+        info!("Connected to server");
         
-        // Читаем приветствие сервера
-        let mut buf = [0u8; 1024];
-        let n = stream.read(&mut buf).await.expect("Failed to read version");
-        let version = String::from_utf8_lossy(&buf[..n]);
-        debug!("Received version: {}", version);
-        assert!(version.contains("RMBTv"), "Server greeting should contain version");
-        assert!(version.contains("ACCEPT"), "Server greeting should contain ACCEPT");
-        assert!(version.contains("TOKEN"), "Server greeting should contain TOKEN");
-        assert!(version.contains("QUIT"), "Server greeting should contain QUIT");
-
-        // Отправляем токен
-        TestServer::send_token(&mut stream, key).await.expect("Failed to send token");
-        
-        // Отправляем PUTNORESULT команду
-        let chunk_size = 4096; // 4KB
-        debug!("Sending PUTNORESULT command: chunk_size={}", chunk_size);
-        let put_cmd = format!("PUTNORESULT {}\n", chunk_size);
-        debug!("PUTNORESULT command bytes: {:?}", put_cmd.as_bytes());
-        stream.write_all(put_cmd.as_bytes())
-            .await
-            .expect("Failed to send PUTNORESULT");
-        stream.flush().await.expect("Failed to flush PUTNORESULT command");
-        debug!("PUTNORESULT command sent and flushed");
-        
-        // Читаем OK ответ от сервера
-        let mut response = [0u8; 1024];
-        let n = stream.read(&mut response).await.expect("Failed to read OK response");
-        let ok_response = String::from_utf8_lossy(&response[..n]);
-        debug!("Received response: {}", ok_response);
-        assert!(ok_response.contains("OK"), "Server should respond with OK");
-        
-        // Отправляем данные
-        let chunks = 3; // Количество чанков
+        // Test 1: Valid PUTNORESULT command with default chunk size
+        info!("Testing PUTNORESULT with default chunk size");
+        let mut current_chunks = 1;
         let mut total_bytes = 0;
         let mut rng = rand::thread_rng();
         
-        debug!("Sending {} chunks of {} bytes each", chunks, chunk_size);
-        
-        // Отправляем чанки
-        for i in 0..chunks {
-            let mut chunk = vec![0u8; chunk_size];
+        while current_chunks <= 8 {
+            // Read ACCEPT response
+            let mut accept_response = [0u8; 1024];
+            let n = stream.read(&mut accept_response).await.expect("Failed to read ACCEPT response");
+            let accept_str = String::from_utf8_lossy(&accept_response[..n]);
+            debug!("Received ACCEPT response: '{}'", accept_str);
+            assert!(accept_str.contains("ACCEPT"), "Server should respond with ACCEPT");
+           
+            // Send PUTNORESULT command with current chunk size
+            let command = format!("PUTNORESULT {}\n", CHUNK_SIZE * current_chunks);
+            stream.write_all(command.as_bytes()).await.expect("Failed to send PUTNORESULT command");
             
-            // Заполняем чанк случайными данными
-            rng.fill_bytes(&mut chunk[..chunk_size - 1]);
+            // Read OK response
+            let mut response = [0u8; 1024];
+            let n = stream.read(&mut response).await.expect("Failed to read OK response");
+            let ok_response = String::from_utf8_lossy(&response[..n]);
+            debug!("Received OK response: '{}'", ok_response);
+            assert!(ok_response.contains("OK"), "Server should respond with OK");
             
-            // Устанавливаем последний байт
-            if i == chunks - 1 {
-                // Последний чанк имеет терминатор 0xFF
-                chunk[chunk_size - 1] = 0xFF;
-            } else {
-                // Обычные чанки имеют 0x00
-                chunk[chunk_size - 1] = 0x00;
+            // Send data chunks
+            for i in 0..current_chunks {
+                let mut chunk = vec![0u8; CHUNK_SIZE];
+                rng.fill_bytes(&mut chunk);
+                
+                // Set last byte: 0x00 for non-terminal chunks, 0xFF for terminal chunk
+                if i == current_chunks - 1 {
+                    chunk[CHUNK_SIZE - 1] = 0xFF;
+                    debug!("Sending terminal chunk with 0xFF");
+                } else {
+                    chunk[CHUNK_SIZE - 1] = 0x00;
+                    debug!("Sending non-terminal chunk with 0x00");
+                }
+                
+                stream.write_all(&chunk).await.expect("Failed to send chunk");
+                total_bytes += CHUNK_SIZE;
+                debug!("Sent chunk {}, total bytes: {}", i + 1, total_bytes);
             }
             
-            // Отправляем чанк
-            stream.write_all(&chunk).await.expect("Failed to send chunk");
-            stream.flush().await.expect("Failed to flush chunk");
+            // Read TIME response
+            let mut time_response = [0u8; 1024];
+            let n = stream.read(&mut time_response).await.expect("Failed to read TIME response");
+            let time_str = String::from_utf8_lossy(&time_response[..n]);
+            debug!("Received TIME response: '{}'", time_str);
             
-            total_bytes += chunk_size;
-            debug!("Sent chunk {}/{}: {} bytes, total: {}", 
-                   i + 1, chunks, chunk_size, total_bytes);
+            // Verify TIME response format
+            let time_parts: Vec<&str> = time_str.trim().split_whitespace().collect();
+            assert_eq!(time_parts.len(), 2, "TIME response should have 2 parts");
+            assert_eq!(time_parts[0], "TIME", "First part should be 'TIME'");
+            assert!(time_parts[1].parse::<u64>().is_ok(), "Second part should be a number");
             
-            // Подробное логирование содержимого чанка
-            trace!("Chunk data (first 32 bytes): {:?}", &chunk[..std::cmp::min(32, chunk_size)]);
-            trace!("Chunk data (last 32 bytes): {:?}", &chunk[chunk_size.saturating_sub(32)..chunk_size]);
-            trace!("Last byte: 0x{:02X}", chunk[chunk_size - 1]);
+            // Double the number of chunks for next iteration
+            current_chunks *= 2;
         }
         
-        // Проверяем, что отправили данные
-        assert!(total_bytes > 0, "Should send some data");
-
-        // Читаем TIME ответ от сервера
-        let mut response = [0u8; 1024];
-        let n = stream.read(&mut response).await.expect("Failed to read TIME response");
-        let time_response = String::from_utf8_lossy(&response[..n]);
-        debug!("Received TIME response: {}", time_response);
-        assert!(time_response.contains("TIME"), "Server should respond with TIME");
-
-        // Отправляем QUIT команду
-        debug!("Sending QUIT command");
+        // Send QUIT command
+        info!("Sending QUIT command");
         stream.write_all(b"QUIT\n").await.expect("Failed to send QUIT");
-        stream.flush().await.expect("Failed to flush QUIT command");
-
-        // Читаем BYE ответ
+        
+        // Read ACCEPT response first
+        let mut response = [0u8; 1024];
+        let n = stream.read(&mut response).await.expect("Failed to read ACCEPT response");
+        let accept_response = String::from_utf8_lossy(&response[..n]);
+        debug!("Received ACCEPT response: '{}'", accept_response);
+        assert!(accept_response.contains("ACCEPT"), "Server should respond with ACCEPT after QUIT");
+        
+        // Then read BYE response
         let mut response = [0u8; 1024];
         let n = stream.read(&mut response).await.expect("Failed to read BYE response");
         let bye_response = String::from_utf8_lossy(&response[..n]);
-        debug!("Received response to QUIT: {}", bye_response);
+        debug!("Received BYE response: '{}'", bye_response);
         assert!(bye_response.contains("BYE"), "Server should respond with BYE");
         
-        // Закрываем соединение
-        stream.shutdown().await.expect("Failed to shutdown stream");
+        info!("PUTNORESULT test completed successfully");
     });
 } 
