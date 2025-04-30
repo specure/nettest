@@ -84,7 +84,7 @@ pub async fn handle_put(
 
     // Send final TIME response
     let total_time_ns = start_time.elapsed().as_nanos() as i64;
-    let final_time_response = format!("{} {} BYTES {}\n", RESP_TIME, total_time_ns, total_bytes);
+    let final_time_response = format!("{} {}\n", RESP_TIME, total_time_ns);
     if let Err(e) = stream.write_all(final_time_response.as_bytes()).await {
         error!("Failed to send final TIME response: {}", e);
     }

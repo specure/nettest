@@ -58,7 +58,7 @@ pub async fn handle_put_no_result(
         // Check if we got a complete chunk
         if bytes_read == chunk_size {
             total_bytes += bytes_read;
-            
+
             // Check the last byte of the chunk for terminator
             let terminator = buffer[chunk_size - 1];
             if terminator == 0xFF {
