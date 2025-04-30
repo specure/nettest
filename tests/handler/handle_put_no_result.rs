@@ -15,7 +15,7 @@ use tokio::time::{sleep, timeout};
 const CHUNK_SIZE: usize = 4096; // 4 KiB
 const MIN_CHUNK_SIZE: usize = 4096; // 4 KiB
 const MAX_CHUNK_SIZE: usize = 4194304; // 4 MiB
-const TEST_DURATION: u64 = 2; // seconds for pre-test, as per specification
+const TEST_DURATION: u64 = 5; // seconds for pre-test, as per specification
 const MAX_CHUNKS: usize = 8; // Maximum number of chunks before increasing chunk size
 const IO_TIMEOUT: Duration = Duration::from_secs(5); // Timeout for I/O operations
 

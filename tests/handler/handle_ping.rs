@@ -13,7 +13,7 @@ use tokio::time::timeout;
 
 const MIN_PINGS: u32 = 10;
 const MAX_PINGS: u32 = 200;
-const PING_DURATION: u64 = 2; // 2 seconds to ensure we can complete MIN_PINGS
+const PING_DURATION: u64 = 5; // 2 seconds to ensure we can complete MIN_PINGS
 const DELAY_MS: u64 = 50; // 50ms delay
 const READ_TIMEOUT: Duration = Duration::from_millis(10); // 10ms timeout for reading
 

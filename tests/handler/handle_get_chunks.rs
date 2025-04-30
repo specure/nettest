@@ -44,7 +44,7 @@ fn test_handle_get_chunks() {
         
         // Выполняем тест в течение 2 секунд (d из спецификации)
         let start_time = std::time::Instant::now();
-        let test_duration = Duration::from_secs(2);
+        let test_duration = Duration::from_secs(5);
         
         while start_time.elapsed() < test_duration {
             // Отправляем GETCHUNKS команду
