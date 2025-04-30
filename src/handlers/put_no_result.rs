@@ -2,7 +2,6 @@ use std::time::Instant;
 use log::{info, debug, error};
 use crate::config::constants::{CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE, RESP_OK, RESP_ERR, RESP_TIME};
 use crate::stream::Stream;
-use std::time::Duration;
 
 pub async fn handle_put_no_result(
     stream: &mut Stream,
@@ -14,17 +13,19 @@ pub async fn handle_put_no_result(
         return Err("Invalid number of arguments for PUTNORESULT".into());
     }
 
-    let mut chunk_size = CHUNK_SIZE;
-
-    if parts.len() == 2 {
+    // Определяем размер чанка
+    let chunk_size = if parts.len() == 2 {
+        // Если указан размер чанка, проверяем его
         match parts[1].parse::<usize>() {
-            Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => chunk_size = size,
+            Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => size,
             _ => {
                 stream.write_all(RESP_ERR.as_bytes()).await?;
                 return Err("Invalid chunk size".into());
             }
         }
-    }
+    } else {
+        CHUNK_SIZE
+    };
     
     info!("Starting PUTNORESULT process: chunk_size={}", chunk_size);
 

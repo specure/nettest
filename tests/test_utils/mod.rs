@@ -18,7 +18,7 @@ use sha1::Sha1;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::env;
-use std::sync::{Arc, Mutex, Once};
+use std::sync::{Mutex};
 use lazy_static::lazy_static;
 use std::sync::atomic::{AtomicBool, Ordering, AtomicUsize};
 use libc::atexit;

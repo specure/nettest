@@ -196,8 +196,6 @@ impl ConnectionHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::SocketAddr;
-    use std::str::FromStr;
     use tokio::net::TcpListener;
     use tokio::net::TcpStream;
 

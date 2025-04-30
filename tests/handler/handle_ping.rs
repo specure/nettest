@@ -8,14 +8,10 @@ use crate::test_utils::TestServer;
 use std::time::Duration;
 use env_logger;
 use std::collections::VecDeque;
-use tokio::time::sleep;
-use tokio::time::timeout;
 
 const MIN_PINGS: u32 = 10;
 const MAX_PINGS: u32 = 200;
 const PING_DURATION: u64 = 5; // 2 seconds to ensure we can complete MIN_PINGS
-const DELAY_MS: u64 = 50; // 50ms delay
-const READ_TIMEOUT: Duration = Duration::from_millis(10); // 10ms timeout for reading
 
 #[test]
 fn test_handle_ping() {

@@ -2,19 +2,16 @@
 mod test_utils;
 
 use tokio::runtime::Runtime;
-use log::{info, debug, trace};
+use log::{info, debug};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::test_utils::TestServer;
 use std::time::Duration;
 use env_logger;
-use std::collections::VecDeque;
 use tokio_tungstenite::tungstenite::Message;
 use futures_util::{StreamExt, SinkExt};
 
 const TEST_DURATION: u64 = 5; // 2 seconds
 const CHUNK_SIZE: usize = 4096; // 4 KiB
-const MIN_CHUNK_SIZE: usize = 4096; // 4 KiB
-const MAX_CHUNK_SIZE: usize = 4194304; // 4 MiB
 
 #[test]
 fn test_handle_get_time() {

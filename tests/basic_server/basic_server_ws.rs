@@ -1,4 +1,7 @@
-use crate::test_utils::{find_free_port, generate_token, TestServer};
+#[path = "../test_utils/mod.rs"]
+mod test_utils;
+
+use crate::test_utils::{generate_token, TestServer};
 use log::{info, LevelFilter};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::{Message, handshake::client::Request};
@@ -8,8 +11,6 @@ use native_tls::TlsConnector as NativeTlsConnector;
 use std::env;
 use env_logger::Builder;
 
-const DEFAULT_PLAIN_PORT: u16 = 8080;
-const DEFAULT_TLS_PORT: u16 = 443;
 
 fn setup_logging() {
     let _ = Builder::new()
@@ -24,7 +25,6 @@ fn setup_logging() {
 async fn test_ws_upgrade() {
     setup_logging();
     
-    // Создаем тестовый сервер (он может быть dummy если используем дефолтные порты)
     let server = TestServer::new(None, None).unwrap();
 
     // Create TLS connector with custom configuration

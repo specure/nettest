@@ -1,16 +1,13 @@
-use crate::test_utils::{find_free_port, generate_token, TestServer};
+use crate::test_utils::{ generate_token, TestServer};
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
-use std::env;
 use log::{info, LevelFilter};
 use env_logger::Builder;
 use tokio_native_tls::TlsConnector;
 use native_tls::TlsConnector as NativeTlsConnector;
 
-const DEFAULT_PLAIN_PORT: u16 = 8080;
-const DEFAULT_TLS_PORT: u16 = 443;
 
 fn setup_logging() {
     let _ = Builder::new()

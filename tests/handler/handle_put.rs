@@ -2,17 +2,15 @@
 mod test_utils;
 
 use tokio::{runtime::Runtime, time::sleep};
-use log::{info, debug, trace};
+use log::{info, debug};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use crate::test_utils::{find_free_port, TestServer};
+use crate::test_utils::TestServer;
 use fastrand::Rng;
 use std::time::{Duration, Instant, SystemTime};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 use tokio_native_tls::TlsStream;
 use tokio::net::TcpStream;
-use std::error::Error;
-use std::sync::Arc;
 use futures_util::{SinkExt, StreamExt};
 use tokio::time::timeout;
 use std::thread;
@@ -21,23 +19,6 @@ const TEST_DURATION: u64 = 5;
 const CHUNK_SIZE: usize = 4096;
 const MAX_CHUNKS: u32 = 8;
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
-
-fn log_test_start(test_name: &str) {
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
-    info!("[{}] [Thread: {:?}] Starting test: {}", now, thread::current().id(), test_name);
-}
-
-fn log_test_end(test_name: &str) {
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
-    info!("[{}] [Thread: {:?}] Completed test: {}", now, thread::current().id(), test_name);
-}
-
 #[test]
 fn test_handle_put_rmbt() {
     // Setup logger
@@ -48,7 +29,6 @@ fn test_handle_put_rmbt() {
         .format_target(false)
         .try_init();
 
-    log_test_start("test_handle_put_rmbt");
 
     let rt = Runtime::new().unwrap();
 
@@ -196,7 +176,6 @@ fn test_handle_put_rmbt() {
         info!("PUT test completed successfully");
     });
 
-    log_test_end("test_handle_put_rmbt");
 }
 
 #[test]
@@ -210,7 +189,6 @@ fn test_handle_put_ws() {
         .filter(Some("tokio"), log::LevelFilter::Info)  // Filter out WouldBlock messages
         .try_init();
 
-    log_test_start("test_handle_put_ws");
 
     let rt = Runtime::new().unwrap();
 
@@ -384,5 +362,4 @@ fn test_handle_put_ws() {
         info!("WebSocket PUT test completed successfully");
     });
 
-    log_test_end("test_handle_put_ws");
 }

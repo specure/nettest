@@ -277,9 +277,6 @@ fn print_help() {
 mod tests {
     use super::*;
     use std::net::{Ipv4Addr, Ipv6Addr};
-    use std::fs::File;
-    use std::io::Write;
-    use tempfile::tempdir;
 
     fn create_test_args(args: &[&str]) -> Vec<String> {
         let mut vec = vec!["test_program".to_string()];

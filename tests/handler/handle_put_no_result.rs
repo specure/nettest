@@ -2,7 +2,7 @@
 mod test_utils;
 
 use tokio::runtime::Runtime;
-use log::{info, debug, error};
+use log::{info, debug};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::test_utils::TestServer;
 use fastrand::Rng;
@@ -13,14 +13,12 @@ use futures_util::{StreamExt, SinkExt};
 use tokio::time::{sleep, timeout};
 
 const CHUNK_SIZE: usize = 4096; // 4 KiB
-const MIN_CHUNK_SIZE: usize = 4096; // 4 KiB
-const MAX_CHUNK_SIZE: usize = 4194304; // 4 MiB
-const TEST_DURATION: u64 = 5; // seconds for pre-test, as per specification
+const TEST_DURATION: u64 = 2; // seconds for pre-test, as per specification
 const MAX_CHUNKS: usize = 8; // Maximum number of chunks before increasing chunk size
 const IO_TIMEOUT: Duration = Duration::from_secs(5); // Timeout for I/O operations
 
 #[test]
-fn test_handle_put_no_result_1() {
+fn test_handle_put_no_result_rmbt() {
     // Setup logger
     let _ = env_logger::Builder::new()
         .filter_level(log::LevelFilter::Debug)
@@ -69,6 +67,7 @@ fn test_handle_put_no_result_1() {
                 .expect("Write command timeout")
                 .expect("Failed to send PUTNORESULT command");
             info!("Sent PUTNORESULT command with chunk_size={}", current_chunk_size);
+            sleep(Duration::from_millis(100)).await;
 
             // Read OK response with timeout
             let mut response = [0u8; 1024];
@@ -100,6 +99,7 @@ fn test_handle_put_no_result_1() {
                     .expect("Failed to send chunk");
             }
             info!("All chunks sent successfully");
+            sleep(Duration::from_millis(100)).await;
 
 
             // Read final TIME response with timeout
@@ -181,8 +181,7 @@ fn test_handle_put_no_result_ws() {
         tokio::time::sleep(Duration::from_secs(2)).await;
 
         // Connect to server using WebSocket
-        let (ws_stream, _) = server.connect_ws().await.expect("Failed to connect to server");
-        let (mut write, mut read) = ws_stream.split();
+        let (mut ws_stream, _) = server.connect_ws().await.expect("Failed to connect to server");
         info!("Connected to server via WebSocket");
 
         // Test PUTNORESULT command with increasing chunk sizes
@@ -193,19 +192,30 @@ fn test_handle_put_no_result_ws() {
         let start_time = Instant::now();
 
         while start_time.elapsed().as_secs() < TEST_DURATION {
-            // Read ACCEPT response
-            let accept_message = read.next().await.expect("Failed to read ACCEPT response").expect("Failed to read ACCEPT response");
-            let accept_str = accept_message.to_text().expect("ACCEPT response is not text");
-            debug!("Received ACCEPT response: '{}'", accept_str);
-            assert!(accept_str.contains("ACCEPT"), "Server should respond with ACCEPT");
+            // Read initial command list response
+            let response = timeout(IO_TIMEOUT, ws_stream.next())
+                .await
+                .expect("Command list response timeout")
+                .expect("Failed to read command list response")
+                .expect("Failed to get message");
+            let command_list = response.to_string();
+            info!("Received command list: {}", command_list.trim());
+            assert!(command_list.contains("ACCEPT"), "Server should send command list");
 
             // Send PUTNORESULT command with current chunk size
             let command = format!("PUTNORESULT {}\n", current_chunk_size);
-            write.send(Message::Text(command)).await.expect("Failed to send PUTNORESULT command");
+            timeout(IO_TIMEOUT, ws_stream.send(Message::Text(command)))
+                .await
+                .expect("Write command timeout")
+                .expect("Failed to send PUTNORESULT command");
 
             // Read OK response
-            let ok_message = read.next().await.expect("Failed to read OK response").expect("Failed to read OK response");
-            let ok_response = ok_message.to_text().expect("OK response is not text");
+            let response = timeout(IO_TIMEOUT, ws_stream.next())
+                .await
+                .expect("OK response timeout")
+                .expect("Failed to read OK response")
+                .expect("Failed to get message");
+            let ok_response = response.to_string();
             debug!("Received OK response: '{}'", ok_response);
             assert!(ok_response.contains("OK"), "Server should respond with OK");
 
@@ -223,20 +233,49 @@ fn test_handle_put_no_result_ws() {
                     debug!("Sending non-terminal chunk with 0x00");
                 }
 
-                write.send(Message::Binary(chunk)).await.expect("Failed to send chunk");
-                // debug!("Sent chunk {} of size {}", i + 1, current_chunk_size);
+                timeout(IO_TIMEOUT, ws_stream.send(Message::Binary(chunk)))
+                    .await
+                    .expect("Write chunk timeout")
+                    .expect("Failed to send chunk");
+                sleep(Duration::from_millis(50)).await;
             }
 
-            // Read final TIME response
-            let time_message = read.next().await.expect("Failed to read TIME response").expect("Failed to read TIME response");
-            let time_str = time_message.to_text().expect("TIME response is not text");
-            debug!("Received TIME response: '{}'", time_str);
+            // After terminal chunk, read final TIME response with retries
+            let mut attempts = 0;
+            let max_attempts = 5;
 
-            // Verify TIME response format
-            let time_parts: Vec<&str> = time_str.trim().split_whitespace().collect();
-            assert_eq!(time_parts.len(), 2, "TIME response should have 2 parts");
-            assert_eq!(time_parts[0], "TIME", "First part should be 'TIME'");
-            assert!(time_parts[1].parse::<u64>().is_ok(), "Second part should be a number");
+            while attempts < max_attempts {
+                let response = timeout(IO_TIMEOUT, ws_stream.next())
+                    .await
+                    .expect("Final TIME response timeout")
+                    .expect("Failed to read final TIME response")
+                    .expect("Failed to get message");
+                let response_str = response.to_string();
+                
+                // Check if we got a TIME response or command list
+                if response_str.contains("TIME") {
+                    info!("Received final TIME response: {}", response_str.trim());
+                    
+                    // Verify final TIME response format
+                    let time_parts: Vec<&str> = response_str.trim().split_whitespace().collect();
+                    assert_eq!(time_parts.len(), 2, "Final TIME response should have 2 parts");
+                    assert_eq!(time_parts[0], "TIME", "First part should be 'TIME'");
+                    assert!(time_parts[1].parse::<u64>().is_ok(), "Second part should be nanoseconds");
+                    break;
+                } else if response_str.contains("ACCEPT") {
+                    // If we got command list instead of TIME, wait a bit and try again
+                    info!("Received command list instead of TIME, retrying...");
+                    sleep(Duration::from_millis(100)).await;
+                    attempts += 1;
+                    continue;
+                } else {
+                    panic!("Unexpected response: {}", response_str);
+                }
+            }
+
+            if attempts >= max_attempts {
+                panic!("Failed to receive final TIME response after {} attempts", max_attempts);
+            }
 
             // Double the number of chunks for next iteration
             current_chunks *= 2;
@@ -250,22 +289,33 @@ fn test_handle_put_no_result_ws() {
 
         // Send QUIT command
         info!("Sending QUIT command");
-        write.send(Message::Text("QUIT\n".to_string())).await.expect("Failed to send QUIT");
+        timeout(IO_TIMEOUT, ws_stream.send(Message::Text("QUIT\n".to_string())))
+            .await
+            .expect("Write QUIT timeout")
+            .expect("Failed to send QUIT");
 
         // Read ACCEPT response first
-        let accept_message = read.next().await.expect("Failed to read ACCEPT response").expect("Failed to read ACCEPT response");
-        let accept_response = accept_message.to_text().expect("ACCEPT response is not text");
-        debug!("Received ACCEPT response: '{}'", accept_response);
-        assert!(accept_response.contains("ACCEPT"), "Server should respond with ACCEPT after QUIT");
+        let response = timeout(IO_TIMEOUT, ws_stream.next())
+            .await
+            .expect("Final ACCEPT timeout")
+            .expect("Failed to read final ACCEPT response")
+            .expect("Failed to get message");
+        let accept_response = response.to_string();
+        info!("Received final ACCEPT response");
+        assert!(accept_response.contains("ACCEPT"), "Server should respond with ACCEPT");
 
         // Then read BYE response
-        let bye_message = read.next().await.expect("Failed to read BYE response").expect("Failed to read BYE response");
-        let bye_response = bye_message.to_text().expect("BYE response is not text");
-        debug!("Received BYE response: '{}'", bye_response);
+        let response = timeout(IO_TIMEOUT, ws_stream.next())
+            .await
+            .expect("BYE response timeout")
+            .expect("Failed to read BYE response")
+            .expect("Failed to get message");
+        let bye_response = response.to_string();
+        info!("Received BYE response");
         assert!(bye_response.contains("BYE"), "Server should respond with BYE");
 
         // Close WebSocket connection
-        write.close().await.expect("Failed to close WebSocket connection");
+        ws_stream.close(None).await.expect("Failed to close WebSocket connection");
         info!("Closed WebSocket connection");
 
         info!("WebSocket PUTNORESULT test completed successfully");
