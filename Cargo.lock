@@ -946,6 +946,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 
 [[package]]
+name = "rmbt_server"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "env_logger",
+ "fastrand",
+ "futures",
+ "futures-util",
+ "hmac",
+ "lazy_static",
+ "libc",
+ "log",
+ "native-tls",
+ "nix",
+ "regex",
+ "serde",
+ "sha1",
+ "tempfile",
+ "tokio",
+ "tokio-native-tls",
+ "tokio-tungstenite",
+ "tungstenite",
+ "uuid",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1408,32 +1434,6 @@ name = "writeable"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e9df38ee2d2c3c5948ea468a8406ff0db0b29ae1ffde1bcf20ef305bcc95c51"
-
-[[package]]
-name = "ws_server"
-version = "0.1.0"
-dependencies = [
- "base64",
- "env_logger",
- "fastrand",
- "futures",
- "futures-util",
- "hmac",
- "lazy_static",
- "libc",
- "log",
- "native-tls",
- "nix",
- "regex",
- "serde",
- "sha1",
- "tempfile",
- "tokio",
- "tokio-native-tls",
- "tokio-tungstenite",
- "tungstenite",
- "uuid",
-]
 
 [[package]]
 name = "yoke"
