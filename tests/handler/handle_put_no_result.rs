@@ -5,7 +5,7 @@ use tokio::runtime::Runtime;
 use log::{info, debug, error};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::test_utils::TestServer;
-use rand::RngCore;
+use fastrand::Rng;
 use std::time::{Duration, Instant};
 use env_logger;
 use tokio_tungstenite::tungstenite::Message;
@@ -48,7 +48,7 @@ fn test_handle_put_no_result_1() {
         // Test PUTNORESULT command with increasing chunk sizes
         let mut current_chunks = 1;
         let mut current_chunk_size = CHUNK_SIZE;
-        let mut rng = rand::thread_rng();
+        let mut rng = Rng::new();
         let start_time = Instant::now();
 
         while start_time.elapsed().as_secs() < TEST_DURATION {
@@ -84,7 +84,7 @@ fn test_handle_put_no_result_1() {
             info!("Sending {} chunks of size {}", current_chunks, current_chunk_size);
             for i in 0..current_chunks {
                 let mut chunk = vec![0u8; current_chunk_size];
-                rng.fill_bytes(&mut chunk);
+                rng.fill(&mut chunk);
 
                 // Set last byte: 0x00 for non-terminal chunks, 0xFF for terminal chunk
                 if i == current_chunks - 1 {
@@ -189,7 +189,7 @@ fn test_handle_put_no_result_ws() {
         info!("Testing PUTNORESULT with increasing chunk sizes");
         let mut current_chunks = 1;
         let mut current_chunk_size = CHUNK_SIZE;
-        let mut rng = rand::thread_rng();
+        let mut rng = Rng::new();
         let start_time = Instant::now();
 
         while start_time.elapsed().as_secs() < TEST_DURATION {
@@ -212,7 +212,7 @@ fn test_handle_put_no_result_ws() {
             // Send data chunks
             for i in 0..current_chunks {
                 let mut chunk = vec![0u8; current_chunk_size];
-                rng.fill_bytes(&mut chunk);
+                rng.fill(&mut chunk);
 
                 // Set last byte: 0x00 for non-terminal chunks, 0xFF for terminal chunk
                 if i == current_chunks - 1 {

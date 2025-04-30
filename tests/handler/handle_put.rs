@@ -5,7 +5,7 @@ use tokio::{runtime::Runtime, time::sleep};
 use log::{info, debug, trace};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::test_utils::{find_free_port, TestServer};
-use rand::RngCore;
+use fastrand::Rng;
 use std::time::{Duration, Instant};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
@@ -50,7 +50,7 @@ fn test_handle_put_rmbt() {
         // Test PUT command with increasing chunk sizes
         let mut current_chunks = 1;
         let mut current_chunk_size = CHUNK_SIZE;
-        let mut rng = rand::thread_rng();
+        let mut rng = Rng::new();
         let start_time = Instant::now();
 
         while start_time.elapsed().as_secs() < TEST_DURATION {
@@ -85,7 +85,7 @@ fn test_handle_put_rmbt() {
             info!("Sending {} chunks of size {}", current_chunks, current_chunk_size);
             for i in 0..current_chunks {
                 let mut chunk = vec![0u8; current_chunk_size];
-                rng.fill_bytes(&mut chunk);
+                rng.fill(&mut chunk);
 
                 // Set last byte: 0x00 for non-terminal chunks, 0xFF for terminal chunk
                 if i == current_chunks - 1 {
@@ -208,7 +208,7 @@ fn test_handle_put_ws() {
         // Test PUT command with increasing chunk sizes
         let mut current_chunks = 1;
         let mut current_chunk_size = CHUNK_SIZE;
-        let mut rng = rand::thread_rng();
+        let mut rng = Rng::new();
         let start_time = Instant::now();
 
         while start_time.elapsed().as_secs() < TEST_DURATION {
@@ -244,7 +244,7 @@ fn test_handle_put_ws() {
             info!("Sending {} chunks of size {}", current_chunks, current_chunk_size);
             for i in 0..current_chunks {
                 let mut chunk = vec![0u8; current_chunk_size];
-                rng.fill_bytes(&mut chunk);
+                rng.fill(&mut chunk);
 
                 // Set last byte: 0x00 for non-terminal chunks, 0xFF for terminal chunk
                 if i == current_chunks - 1 {

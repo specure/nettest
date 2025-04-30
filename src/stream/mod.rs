@@ -1,10 +1,7 @@
-use std::time::Duration;
-
-use futures::{SinkExt, StreamExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
-use tokio::time::sleep;
 use tokio_native_tls::TlsStream;
+use tokio::net::TcpStream;
+use futures::{SinkExt, StreamExt};
 use tokio_tungstenite::WebSocketStream;
 use log::{info, error, debug};
 

@@ -1,7 +1,7 @@
 use std::time::Instant;
 use log::{info, debug, error};
 use crate::config::constants::{CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE, MAX_CHUNKS, RESP_ERR};
-use rand::RngCore;
+use fastrand::Rng;
 use crate::stream::Stream;
 
 pub async fn handle_get_chunks(
@@ -44,11 +44,12 @@ pub async fn handle_get_chunks(
     let start_time = Instant::now();
     let mut buffer = vec![0u8; chunk_size];
     let mut chunks_sent = 0;
+    let mut rng = Rng::new();
 
     // Отправляем указанное количество чанков
     while chunks_sent < chunks {
-        // Генерируем случайные данные для чанка
-        rand::thread_rng().fill_bytes(&mut buffer[..chunk_size - 1]);
+        // Fill buffer with random data
+        rng.fill(&mut buffer[..chunk_size - 1]);
         
         // Устанавливаем последний байт
         chunks_sent += 1;

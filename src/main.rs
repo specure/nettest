@@ -1,8 +1,8 @@
-use crate::server::server::Server;
-use crate::server::server_config::ServerConfig;
 use std::error::Error;
 use log::{error, info, debug};
-use rand::rngs::OsRng;
+use fastrand::Rng;
+use crate::server::server::Server;
+use crate::server::server_config::ServerConfig;
 
 pub mod server;
 pub mod handlers;
@@ -26,11 +26,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         debug!("debug logging on");
     }
 
-    // Initialize random number generator
-    let _rng = OsRng;
-    if config.debug {
-        debug!("random number generator initialized");
-    }
+    // Generate random data for testing
+    let mut rng = Rng::new();
+    let mut test_data = vec![0u8; 1024];
+    rng.fill(&mut test_data);
 
     let (server, _shutdown_tx) = match Server::new(config) {
         Ok(server) => server,

@@ -1,9 +1,9 @@
 use crate::config::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RESP_ERR};
-use rand::RngCore;
 use std::error::Error;
 use std::time::Instant;
 use log::{debug, error, trace};
 use crate::stream::Stream;
+use fastrand::Rng;
 
 pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
     debug!("handle_get_time: starting");
@@ -57,11 +57,12 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
     let mut buffer = vec![0u8; chunk_size];
 
     debug!("Starting GETTIME: duration={}s, chunk_size={}", duration, chunk_size);
+    let mut rng = Rng::new();
 
     // Отправляем данные до истечения времени
     while start_time.elapsed().as_secs() < duration {
-        // Создаем новый генератор для каждого чанка
-        rand::thread_rng().fill_bytes(&mut buffer[..chunk_size - 1]);
+        // Fill buffer with random data
+        rng.fill(&mut buffer[..chunk_size - 1]);
         
         // Устанавливаем последний байт в 0 для всех чанков, кроме последнего
         buffer[chunk_size - 1] = 0x00;
@@ -77,7 +78,8 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
     }
 
     // Отправляем последний чанк с терминатором
-    rand::thread_rng().fill_bytes(&mut buffer[..chunk_size - 1]);
+    let mut rng = Rng::new();
+    rng.fill(&mut buffer[..chunk_size - 1]);
     buffer[chunk_size - 1] = 0xFF; // Устанавливаем терминатор
     stream.write_all(&buffer).await?;
     total_bytes += chunk_size;
