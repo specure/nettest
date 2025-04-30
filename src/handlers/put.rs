@@ -1,6 +1,6 @@
 use std::time::{ Instant};
-use log::{debug};
-use crate::config::constants::{CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE, RESP_OK, RESP_TIME};
+use log::{debug, error};
+use crate::config::constants::{CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE, RESP_OK, RESP_ERR, RESP_TIME};
 use crate::stream::Stream;
 
 pub async fn handle_put(
@@ -10,46 +10,91 @@ pub async fn handle_put(
     let mut parts = command.split_whitespace();
     let _ = parts.next(); // Skip "PUT"
     let chunk_size = if let Some(size) = parts.next() {
-        size.parse::<usize>()?
+        match size.parse::<usize>() {
+            Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => size,
+            _ => {
+                stream.write_all(RESP_ERR.as_bytes()).await?;
+                return Err("Invalid chunk size".into());
+            }
+        }
     } else {
         CHUNK_SIZE
     };
 
-    if chunk_size < MIN_CHUNK_SIZE || chunk_size > MAX_CHUNK_SIZE {
-        return Err("Invalid chunk size".into());
-    }
-
     // Send OK response immediately after PUT command
     stream.write_all(RESP_OK.as_bytes()).await?;
+    stream.flush().await?;
 
     let start_time = Instant::now();
     let mut last_time_ns = -1;
     let mut total_bytes = 0;
-    let mut last_byte = 0;
+    let mut buffer = vec![0u8; chunk_size];
+    let mut found_terminator = false;
 
-    while last_byte != 0xFF {
-        let mut chunk = vec![0u8; chunk_size];
-        let bytes_read = stream.read(&mut chunk).await?;
-        if bytes_read == 0 {
-            break;
+    'read_chunks: loop {
+        // Read exactly chunk_size bytes
+        let mut bytes_read = 0;
+        while bytes_read < chunk_size {
+            match stream.read(&mut buffer[bytes_read..]).await {
+                Ok(n) => {
+                    if n == 0 {
+                        debug!("Client closed connection during chunk read");
+                        break 'read_chunks;
+                    }
+                    bytes_read += n;
+                },
+                Err(e) => {
+                    error!("Failed to read chunk: {}", e);
+                    break 'read_chunks;
+                }
+            }
         }
 
-        total_bytes += bytes_read;
-        last_byte = chunk[bytes_read - 1];
+        // Check if we got a complete chunk
+        if bytes_read == chunk_size {
+            total_bytes += bytes_read;
+            
+            // Check the last byte of the chunk for terminator
+            let terminator = buffer[chunk_size - 1];
+            
+            // Send intermediate TIME response if needed
+            let current_time_ns = start_time.elapsed().as_nanos() as i64;
+            if last_time_ns == -1 || (current_time_ns - last_time_ns > 1_000_000) {
+                last_time_ns = current_time_ns;
+                let time_response = format!("{} {} BYTES {}\n", RESP_TIME, current_time_ns, total_bytes);
+                if let Err(e) = stream.write_all(time_response.as_bytes()).await {
+                    error!("Failed to send intermediate TIME response: {}", e);
+                    break;
+                }
+            }
 
-        let current_time_ns = start_time.elapsed().as_nanos() as i64;
-        if last_time_ns == -1 || (current_time_ns - last_time_ns > 1_000_000) {
-            last_time_ns = current_time_ns;
-            let time_response = format!("{} {} BYTES {}\n", RESP_TIME, current_time_ns, total_bytes);
-            if let Err(e) = stream.write_all(time_response.as_bytes()).await {
-                debug!("Failed to send TIME response: {}", e);
+            // Check terminator
+            if terminator == 0xFF {
+                found_terminator = true;
+                break;
+            } else if terminator != 0x00 {
+                error!("Invalid chunk terminator: {}", terminator);
                 break;
             }
+        } else {
+            error!("Incomplete chunk read: {} bytes instead of {}", bytes_read, chunk_size);
+            break;
         }
     }
 
+    // Send final TIME response
     let total_time_ns = start_time.elapsed().as_nanos() as i64;
-    let final_time_response: String = format!("{} {}\n", RESP_TIME, total_time_ns);
-    stream.write_all(final_time_response.as_bytes()).await?;
+    let final_time_response = format!("{} {}\n", RESP_TIME, total_time_ns);
+    if let Err(e) = stream.write_all(final_time_response.as_bytes()).await {
+        error!("Failed to send final TIME response: {}", e);
+    }
+
+    debug!(
+        "PUT completed: received {} bytes in {} ns, found_terminator: {}",
+        total_bytes,
+        total_time_ns,
+        found_terminator
+    );
+
     Ok(())
 }

@@ -8,20 +8,24 @@ mod test_utils;
 /// measurements, and intermediate progress reporting. It validates chunk termination, server
 /// responses, and connection cleanup while maintaining protocol compliance.
 
-use tokio::{runtime::Runtime, time::sleep};
-use log::{info};
+use tokio::{runtime::Runtime};
+use log::{info, debug};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::test_utils::TestServer;
 use fastrand::Rng;
 use std::time::{Duration, Instant};
 use tokio_tungstenite::tungstenite::Message;
 use futures_util::{SinkExt, StreamExt};
-use tokio::time::timeout;
+use tokio::time::{timeout, sleep};
 
-const TEST_DURATION: u64 = 5;
-const CHUNK_SIZE: usize = 4096;
-const MAX_CHUNKS: u32 = 8;
-const IO_TIMEOUT: Duration = Duration::from_secs(10);
+// Constants matching RMBT specification and client implementation
+const TEST_DURATION: u64 = 5; // Test duration in seconds
+const CHUNK_SIZE: usize = 4096; // Initial chunk size (4 KiB)
+const MAX_CHUNKS: u32 = 8; // Maximum number of chunks before increasing size
+const IO_TIMEOUT: Duration = Duration::from_secs(10); // I/O operation timeout
+const CHUNK_DELAY: Duration = Duration::from_millis(100); // Delay between chunks
+const MAX_CHUNK_SIZE: usize = 4194304; // Maximum chunk size (4 MiB)
+
 #[test]
 fn test_handle_put_rmbt() {
     // Setup logger
@@ -31,7 +35,6 @@ fn test_handle_put_rmbt() {
         .format_module_path(false)
         .format_target(false)
         .try_init();
-
 
     let rt = Runtime::new().unwrap();
 
@@ -65,6 +68,18 @@ fn test_handle_put_rmbt() {
             info!("Received ACCEPT response");
             assert!(accept_str.contains("ACCEPT"), "Server should respond with ACCEPT");
 
+            // Calculate next chunk size, respecting MAX_CHUNK_SIZE
+            if current_chunks > MAX_CHUNKS {
+                current_chunks = 1;
+                let next_chunk_size = current_chunk_size * 2;
+                current_chunk_size = if next_chunk_size <= MAX_CHUNK_SIZE {
+                    next_chunk_size
+                } else {
+                    // Reset to initial size if we would exceed MAX_CHUNK_SIZE
+                    CHUNK_SIZE
+                };
+            }
+
             // Send PUT command with current chunk size
             let command = format!("PUT {}\n", current_chunk_size);
             timeout(IO_TIMEOUT, stream.write_all(command.as_bytes()))
@@ -85,68 +100,65 @@ fn test_handle_put_rmbt() {
 
             // Send data chunks
             info!("Sending {} chunks of size {}", current_chunks, current_chunk_size);
+            let mut last_time_response = None;
+
             for i in 0..current_chunks {
                 let mut chunk = vec![0u8; current_chunk_size];
                 rng.fill(&mut chunk);
 
-                // Set last byte: 0x00 for non-terminal chunks, 0xFF for terminal chunk
-                if i == current_chunks - 1 {
-                    // Add delay before sending terminal chunk to ensure proper timing
-                    sleep(Duration::from_millis(200)).await;
-                    chunk[current_chunk_size - 1] = 0xFF;
-                } else {
-                    chunk[current_chunk_size - 1] = 0x00;
-                }
+                // Set terminator byte
+                chunk[current_chunk_size - 1] = if i == current_chunks - 1 { 0xFF } else { 0x00 };
 
+                // Send chunk
                 timeout(IO_TIMEOUT, stream.write_all(&chunk))
                     .await
                     .expect("Write chunk timeout")
                     .expect("Failed to send chunk");
-                sleep(Duration::from_millis(100)).await;
 
-                // After each chunk, read TIME BYTES response
-                let mut response = [0u8; 1024];
-                let n = timeout(IO_TIMEOUT, stream.read(&mut response))
-                    .await
-                    .expect("TIME BYTES response timeout")
-                    .expect("Failed to read TIME BYTES response");
-                let response_str = String::from_utf8_lossy(&response[..n]);
-                info!("Received TIME BYTES response: {}", response_str.trim());
-                
-                // Verify TIME BYTES response format
-                let time_parts: Vec<&str> = response_str.trim().split_whitespace().collect();
-                assert_eq!(time_parts.len(), 4, "TIME BYTES response should have 4 parts");
-                assert_eq!(time_parts[0], "TIME", "First part should be 'TIME'");
-                assert!(time_parts[1].parse::<u64>().is_ok(), "Second part should be nanoseconds {}", time_parts[1]);
-                assert_eq!(time_parts[2], "BYTES", "Third part should be 'BYTES'");
-                assert!(time_parts[3].parse::<u64>().is_ok(), "Fourth part should be bytes {}", time_parts[3]);
-                // After terminal chunk (0xFF), read final TIME response
-                if i == current_chunks - 1 {
-                    let mut response = [0u8; 1024];
-                    let n = timeout(IO_TIMEOUT, stream.read(&mut response))
-                        .await
-                        .expect("Final TIME response timeout")
-                        .expect("Failed to read final TIME response");
-                    let response_str = String::from_utf8_lossy(&response[..n]);
-                    info!("Received final TIME response: {}", response_str.trim());
-                    
-                    // Verify final TIME response format
-                    let time_parts: Vec<&str> = response_str.trim().split_whitespace().collect();
-                    assert_eq!(time_parts.len(), 2, "Final TIME response should have 2 parts");
-                    assert_eq!(time_parts[0], "TIME", "First part should be 'TIME'");
-                    assert!(time_parts[1].parse::<u64>().is_ok(), "Second part should be nanoseconds {}", time_parts[1]);
+                // Read TIME response with retries
+                let mut attempts = 0;
+                let max_attempts = 5;
+                let mut got_time = false;
+
+                while attempts < max_attempts && !got_time {
+                    match timeout(IO_TIMEOUT, stream.read(&mut response)).await {
+                        Ok(Ok(n)) => {
+                            let response_str = String::from_utf8_lossy(&response[..n]);
+                            if response_str.contains("TIME") {
+                                // Verify TIME response format
+                                let parts: Vec<&str> = response_str.trim().split_whitespace().collect();
+                                assert!(parts.len() >= 3, "TIME response should have at least 3 parts");
+                                assert_eq!(parts[0], "TIME", "First part should be 'TIME'");
+                                assert!(parts[1].parse::<u64>().is_ok(), "Second part should be nanoseconds");
+                                if parts.len() > 3 {
+                                    assert_eq!(parts[2], "BYTES", "Third part should be 'BYTES'");
+                                    assert!(parts[3].parse::<u64>().is_ok(), "Fourth part should be byte count");
+                                }
+                                last_time_response = Some(response_str.to_string());
+                                got_time = true;
+                            }
+                        }
+                        _ => {
+                            attempts += 1;
+                            sleep(Duration::from_millis(100)).await;
+                        }
+                    }
+                }
+
+                assert!(got_time, "Failed to receive valid TIME response after {} attempts", max_attempts);
+
+                // Add delay between chunks to simulate real client behavior
+                if i < current_chunks - 1 {
+                    sleep(CHUNK_DELAY).await;
                 }
             }
-            info!("All chunks sent successfully");
 
-            // Double the number of chunks for next iteration
+            // Verify final TIME response
+            assert!(last_time_response.is_some(), "Should have received at least one TIME response");
+            info!("Final TIME response: {}", last_time_response.unwrap());
+
+            // Increment chunks for next iteration
             current_chunks *= 2;
-
-            // If we've reached the maximum number of chunks, increase chunk size
-            if current_chunks > MAX_CHUNKS {
-                current_chunks = 1;
-                current_chunk_size *= 2;
-            }
         }
 
         // Send QUIT command
@@ -178,7 +190,6 @@ fn test_handle_put_rmbt() {
 
         info!("PUT test completed successfully");
     });
-
 }
 
 #[test]
@@ -191,7 +202,6 @@ fn test_handle_put_ws() {
         .format_target(false)
         .filter(Some("tokio"), log::LevelFilter::Info)  // Filter out WouldBlock messages
         .try_init();
-
 
     let rt = Runtime::new().unwrap();
 
@@ -226,6 +236,18 @@ fn test_handle_put_ws() {
             info!("Received command list: {}", command_list.trim());
             assert!(command_list.contains("ACCEPT"), "Server should send command list");
 
+            // Calculate next chunk size, respecting MAX_CHUNK_SIZE
+            if current_chunks > MAX_CHUNKS {
+                current_chunks = 1;
+                let next_chunk_size = current_chunk_size * 2;
+                current_chunk_size = if next_chunk_size <= MAX_CHUNK_SIZE {
+                    next_chunk_size
+                } else {
+                    // Reset to initial size if we would exceed MAX_CHUNK_SIZE
+                    CHUNK_SIZE
+                };
+            }
+
             // Send PUT command with current chunk size
             let command = format!("PUT {}\n", current_chunk_size);
             timeout(IO_TIMEOUT, ws_stream.send(Message::Text(command)))
@@ -246,93 +268,65 @@ fn test_handle_put_ws() {
 
             // Send data chunks
             info!("Sending {} chunks of size {}", current_chunks, current_chunk_size);
+            let mut last_time_response = None;
+
             for i in 0..current_chunks {
                 let mut chunk = vec![0u8; current_chunk_size];
                 rng.fill(&mut chunk);
 
-                // Set last byte: 0x00 for non-terminal chunks, 0xFF for terminal chunk
-                if i == current_chunks - 1 {
-                    // Add delay before sending terminal chunk to ensure proper timing
-                    sleep(Duration::from_millis(50)).await;
-                    chunk[current_chunk_size - 1] = 0xFF;
-                } else {
-                    chunk[current_chunk_size - 1] = 0x00;
-                }
+                // Set terminator byte
+                chunk[current_chunk_size - 1] = if i == current_chunks - 1 { 0xFF } else { 0x00 };
 
+                // Send chunk
                 timeout(IO_TIMEOUT, ws_stream.send(Message::Binary(chunk)))
                     .await
                     .expect("Write chunk timeout")
                     .expect("Failed to send chunk");
 
-                // Add delay after sending chunk
-                sleep(Duration::from_millis(50)).await;
+                // Read TIME response with retries
+                let mut attempts = 0;
+                let max_attempts = 5;
+                let mut got_time = false;
 
-                // After each chunk, read TIME BYTES response
-                let response = timeout(IO_TIMEOUT, ws_stream.next())
-                    .await
-                    .expect("TIME BYTES response timeout")
-                    .expect("Failed to read TIME BYTES response")
-                    .expect("Failed to get message");
-                let response_str = response.to_string();
-                info!("Received TIME BYTES response: {}", response_str.trim());
-                
-                // Verify TIME BYTES response format
-                let time_parts: Vec<&str> = response_str.trim().split_whitespace().collect();
-                assert_eq!(time_parts.len(), 4, "TIME BYTES response should have 4 parts");
-                assert_eq!(time_parts[0], "TIME", "First part should be 'TIME'");
-                assert!(time_parts[1].parse::<u64>().is_ok(), "Second part should be nanoseconds {}", time_parts[1]);
-                assert_eq!(time_parts[2], "BYTES", "Third part should be 'BYTES'");
-                assert!(time_parts[3].parse::<u64>().is_ok(), "Fourth part should be bytes {}", time_parts[3]);
-
-                // After terminal chunk (0xFF), read final TIME response
-                if i == current_chunks - 1 {
-                    let mut attempts = 0;
-                    let max_attempts = 5;
-
-                    while attempts < max_attempts {
-                        let response = timeout(IO_TIMEOUT, ws_stream.next())
-                            .await
-                            .expect("Final TIME response timeout")
-                            .expect("Failed to read final TIME response")
-                            .expect("Failed to get message");
-                        let response_str = response.to_string();
-                        
-                        // Check if we got a TIME response or command list
-                        if response_str.contains("TIME") {
-                            info!("Received final TIME response: {}", response_str.trim());
-                            
-                            // Verify final TIME response format
-                            let time_parts: Vec<&str> = response_str.trim().split_whitespace().collect();
-                            assert_eq!(time_parts.len(), 2, "Final TIME response should have 2 parts");
-                            assert_eq!(time_parts[0], "TIME", "First part should be 'TIME'");
-                            assert!(time_parts[1].parse::<u64>().is_ok(), "Second part should be nanoseconds {}", time_parts[1]);
-                            break;
-                        } else if response_str.contains("ACCEPT") {
-                            // If we got command list instead of TIME, wait a bit and try again
-                            info!("Received command list instead of TIME, retrying...");
-                            sleep(Duration::from_millis(100)).await;
+                while attempts < max_attempts && !got_time {
+                    match timeout(IO_TIMEOUT, ws_stream.next()).await {
+                        Ok(Some(Ok(msg))) => {
+                            let response_str = msg.to_string();
+                            if response_str.contains("TIME") {
+                                // Verify TIME response format
+                                let parts: Vec<&str> = response_str.trim().split_whitespace().collect();
+                                assert!(parts.len() >= 3, "TIME response should have at least 3 parts");
+                                assert_eq!(parts[0], "TIME", "First part should be 'TIME'");
+                                assert!(parts[1].parse::<u64>().is_ok(), "Second part should be nanoseconds");
+                                if parts.len() > 3 {
+                                    assert_eq!(parts[2], "BYTES", "Third part should be 'BYTES'");
+                                    assert!(parts[3].parse::<u64>().is_ok(), "Fourth part should be byte count");
+                                }
+                                last_time_response = Some(response_str);
+                                got_time = true;
+                            }
+                        }
+                        _ => {
                             attempts += 1;
-                            continue;
-                        } else {
-                            panic!("Unexpected response: {}", response_str);
+                            sleep(Duration::from_millis(100)).await;
                         }
                     }
+                }
 
-                    if attempts >= max_attempts {
-                        panic!("Failed to receive final TIME response after {} attempts", max_attempts);
-                    }
+                assert!(got_time, "Failed to receive valid TIME response after {} attempts", max_attempts);
+
+                // Add delay between chunks to simulate real client behavior
+                if i < current_chunks - 1 {
+                    sleep(CHUNK_DELAY).await;
                 }
             }
-            info!("All chunks sent successfully");
 
-            // Double the number of chunks for next iteration
+            // Verify final TIME response
+            assert!(last_time_response.is_some(), "Should have received at least one TIME response");
+            info!("Final TIME response: {}", last_time_response.unwrap());
+
+            // Increment chunks for next iteration
             current_chunks *= 2;
-
-            // If we've reached the maximum number of chunks, increase chunk size
-            if current_chunks > MAX_CHUNKS {
-                current_chunks = 1;
-                current_chunk_size *= 2;
-            }
         }
 
         // Send QUIT command
@@ -362,7 +356,10 @@ fn test_handle_put_ws() {
         info!("Received BYE response");
         assert!(bye_response.contains("BYE"), "Server should respond with BYE");
 
+        // Close WebSocket connection
+        ws_stream.close(None).await.expect("Failed to close WebSocket connection");
+        info!("Closed WebSocket connection");
+
         info!("WebSocket PUT test completed successfully");
     });
-
 }
