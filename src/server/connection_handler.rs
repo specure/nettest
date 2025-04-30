@@ -43,9 +43,9 @@ impl ConnectionHandler {
         }
         info!("Token validated");
 
-        // Отправляем информацию о размерах чанков
         let chunk_size_msg = format!("CHUNKSIZE {} {} {}\n", CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE); //todo compare version
         self.stream.write_all(chunk_size_msg.as_bytes()).await?;
+        self.stream.flush().await?;
 
 
         // Main command loop
@@ -61,12 +61,10 @@ impl ConnectionHandler {
                 }
                 Ok(n) => {
                     let command = String::from_utf8_lossy(&buffer[..n]);
-                    // Берем только первую строку как команду
                     let command_str = command.lines().next().unwrap_or("").trim();
 
                     println!("Received command: {}", command_str);
 
-                    // Если это PUT или PUTNORESULT, передаем все прочитанные данные в обработчик
                     if command_str.starts_with("PUT") || command_str.starts_with("PUTNORESULT") {
                         if command_str.starts_with("PUTNORESULT") {
                             handle_put_no_result(&mut self.stream, command_str).await?;
@@ -116,7 +114,6 @@ impl ConnectionHandler {
     }
 
     async fn send_greeting(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // Отправляем приветствие
         let greeting = match self.config.version {
             Some(3) => "RMBTv0.3\n",
             None => "RMBTv1.0\n",
@@ -129,8 +126,6 @@ impl ConnectionHandler {
         self.stream.flush().await?;
         info!("Greeting message sent and flushed");
 
-
-        // Отправляем ACCEPT TOKEN QUIT отдельным сообщением
         let accept_token = "ACCEPT TOKEN QUIT\n";
         info!("Sending accept token message: {}", accept_token);
         let written = self.stream.write(accept_token.as_bytes()).await?;
@@ -142,7 +137,7 @@ impl ConnectionHandler {
     }
 
     async fn handle_token(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // Читаем строку с токеном
+        // Read token line
         info!("Waiting for token...");
         let mut buffer = [0u8; 1024];
         let n = self.stream.read(&mut buffer).await?;
@@ -155,7 +150,7 @@ impl ConnectionHandler {
 
         let token_line = token_line.trim();
 
-        // Проверяем формат строки TOKEN uuid_starttime_hmac
+        // Check token format: TOKEN uuid_starttime_hmac
         if !token_line.starts_with("TOKEN ") {
             error!("{}", token_line.to_string());
             return Err("Invalid token format: must start with 'TOKEN '".into());
@@ -170,17 +165,17 @@ impl ConnectionHandler {
         let start_time = token_parts[1];
         let hmac = token_parts[2];
 
-        // Проверяем формат UUID (36 символов, только hex и дефисы)
+        // Check UUID format (36 characters, only hex and dashes)
         if uuid.len() != 36 || !uuid.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
             return Err("Invalid UUID format".into());
         }
 
-        // Проверяем формат времени (только цифры)
+        // Check time format (only digits)
         if !start_time.chars().all(|c| c.is_ascii_digit()) {
             return Err("Invalid time format".into());
         }
 
-        // Проверяем формат HMAC (base64)
+        // Check HMAC format (base64)
         if !hmac.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=') {
             return Err("Invalid HMAC format".into());
         }

@@ -38,17 +38,17 @@ pub async fn handle_put_no_result(
 }
 
 pub async fn handle_ping(stream: &mut Stream) -> Result<(), Box<dyn Error + Send + Sync>> {
-    // Начало измерения времени
+    // Start time measurement
     let start_time = Instant::now();
 
-    // Отправляем PONG клиенту
+    // Send PONG to client
     stream.write_all(RESP_PONG.as_bytes()).await?;
     stream.flush().await?;
 
     info!("Sent PONG to client");
 
-    // Читаем ответ OK от клиента
-    let mut buf = [0u8; 1024]; // Фиксированный размер буфера как в C-коде
+    // Read OK response from client
+    let mut buf = [0u8; 1024]; // Fixed buffer size as in C code
     let mut bytes_read = 0;
 
     while bytes_read < buf.len() {
@@ -68,12 +68,12 @@ pub async fn handle_ping(stream: &mut Stream) -> Result<(), Box<dyn Error + Send
         .trim()
         .to_string();
 
-    // Конец измерения времени
+    // End time measurement
     let elapsed_ns = start_time.elapsed().as_nanos() as u64;
 
     info!("Probably Received OK from client");
     
-    // Проверяем ответ клиента
+    // Check client response
     if !response.trim().eq("OK") {
         error!("Expected OK from client, got: {}", response);
         stream.write_all(RESP_ERR.as_bytes()).await?;
@@ -83,7 +83,7 @@ pub async fn handle_ping(stream: &mut Stream) -> Result<(), Box<dyn Error + Send
     }
 
     info!("Send PING response time: {} ns", elapsed_ns);
-    // Отправляем время выполнения
+    // Send execution time
     let time_response = format!("{} {}\n", RESP_TIME, elapsed_ns);
     stream.write_all(time_response.as_bytes()).await?;
     stream.flush().await?;
@@ -94,7 +94,7 @@ pub async fn handle_ping(stream: &mut Stream) -> Result<(), Box<dyn Error + Send
 }
 
 pub async fn handle_quit(stream: &mut Stream) -> Result<(), Box<dyn Error + Send + Sync>> {
-    // Отправляем BYE клиенту
+    // Send BYE to client
     stream.write_all(RESP_BYE.as_bytes()).await?;
     stream.flush().await?;
 

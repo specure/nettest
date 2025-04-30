@@ -115,40 +115,35 @@ impl TestServer {
             });
         }
 
-        // Определяем порты
-        let (plain_port, tls_port) = if env::var("TEST_USE_DEFAULT_PORTS").is_ok() {
-            (DEFAULT_PLAIN_PORT, DEFAULT_TLS_PORT)
-        } else {
-            (plain_port.unwrap_or_else(find_free_port), tls_port.unwrap_or_else(find_free_port))
-        };
+        // Define ports
+        let port = if env::var("TEST_USE_DEFAULT_PORTS").is_ok() { DEFAULT_PLAIN_PORT } else { find_free_port() };
+        let ws_port = if env::var("TEST_USE_DEFAULT_PORTS").is_ok() { DEFAULT_TLS_PORT } else { find_free_port() };
 
-        info!("Using ports: plain={}, tls={}", plain_port, tls_port);
-
-        // Если используем дефолтные порты - не создаем сервер
+        // If using default ports - don't create server
         if env::var("TEST_USE_DEFAULT_PORTS").is_ok() {
             let instance = TestServerInstance {
                 process: Command::new("echo").spawn().unwrap(), // dummy process
-                plain_port,
-                tls_port,
+                plain_port: port,
+                tls_port: ws_port,
                 host: "dev.measurementservers.net".to_string(),
             };
             *server = Some(instance);
             SERVER_INITIALIZED.store(true, Ordering::SeqCst);
             return Some(Self {
-                plain_port,
-                tls_port,
+                plain_port: port,
+                tls_port: ws_port,
                 host: "dev.measurementservers.net".to_string(),
             });
         }
 
-        info!("Starting test server on ports: {} (plain) and {} (tls)", plain_port, tls_port);
+        info!("Starting test server on ports: {} (plain) and {} (tls)", port, ws_port);
 
         let process = Command::new("cargo")
             .args([
                 "run", "--",
-                "-l", &plain_port.to_string(),
+                "-l", &port.to_string(),
                 "-D",
-                "-L", &tls_port.to_string(),
+                "-L", &ws_port.to_string(),
                 "-c", "measurementservers.crt",
                 "-k", "measurementservers.key",
                 "-w"
@@ -163,22 +158,22 @@ impl TestServer {
 
         let instance = TestServerInstance {
             process,
-            plain_port,
-            tls_port,
+            plain_port: port,
+            tls_port: ws_port,
             host: "127.0.0.1".to_string(),
         };
 
         *server = Some(instance);
         SERVER_INITIALIZED.store(true, Ordering::SeqCst);
 
-        // Регистрируем функцию очистки при первом создании сервера
+        // Register cleanup function on first server creation
         unsafe {
             atexit(cleanup_server);
         }
 
         Some(Self {
-            plain_port,
-            tls_port,
+            plain_port: port,
+            tls_port: ws_port,
             host: "127.0.0.1".to_string(),
         })
     }
@@ -375,58 +370,58 @@ pub fn find_free_port() -> u16 {
     port
 } 
 
-// Используем ключ с сервера
+// Use server key
 const SERVER_KEY: &str = "PWOGfvIOPbvnltvjKHbmU8WGR5ycbEH55htjWDb5t0EhcKqFFgFwLm9tP3uQB5iJ3BwT4tZADvaW9LR8eYSY6OgCPW6dXQxQzdjh";
 
 pub fn generate_token() -> Result<String, Box<dyn Error + Send + Sync>> {
-    // Генерируем UUID и проверяем его формат (36 символов, только hex и дефисы)
+    // Generate UUID and verify its format (36 characters, only hex and dashes)
     let uuid = Uuid::new_v4().to_string();
     if uuid.len() != 36 || !uuid.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
         return Err("Invalid UUID format".into());
     }
     
-    // Получаем текущее время в секундах
+    // Get current time in seconds
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)?
         .as_secs();
     
-    // Компенсируем разницу во времени только если используем дефолтные порты (реальный сервер)
+    // Compensate time difference only when using default ports (real server)
     let start_time = if env::var("TEST_USE_DEFAULT_PORTS").is_ok() {
-        // Вычитаем 30 секунд для компенсации разницы с сервером
+        // Subtract 30 seconds to compensate for server time difference
         (now - 30).to_string()
     } else {
         now.to_string()
     };
     
-    // Проверяем формат времени (только цифры)
+    // Verify time format (digits only)
     if !start_time.chars().all(|c| c.is_ascii_digit()) {
         return Err("Invalid time format".into());
     }
     
-    // Формируем сообщение для HMAC (максимум 128 байт как в C коде)
+    // Form message for HMAC (max 128 bytes as in C code)
     let message = format!("{}_{}", uuid, start_time);
     if message.len() > 128 {
         return Err("Message too long".into());
     }
 
-    // Генерируем HMAC-SHA1 как в Java коде
+    // Generate HMAC-SHA1 as in Java code
     let mut mac = HmacSha1::new_from_slice(SERVER_KEY.as_bytes())?;
     mac.update(message.as_bytes());
     let result = mac.finalize();
     let code_bytes = result.into_bytes();
     
-    // Кодируем в base64 как в Java коде
+    // Encode in base64 as in Java code
     let hmac = BASE64.encode(code_bytes);
     
-    // Проверяем формат HMAC (base64)
+    // Verify HMAC format (base64)
     if !hmac.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=') {
         return Err("Invalid HMAC format".into());
     }
     
-    // Формируем токен в том же формате что и C код
+    // Form token in the same format as C code
     let token = format!("TOKEN {}_{}_{}\n", uuid, start_time, hmac);
     
-    // Проверяем формат токена
+    // Verify token format
     if !token.starts_with("TOKEN ") {
         return Err("Invalid token format: must start with 'TOKEN '".into());
     }

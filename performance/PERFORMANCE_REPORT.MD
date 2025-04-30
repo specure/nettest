@@ -89,9 +89,17 @@ The Rust implementation showed slightly better performance characteristics:
 
 The difference in performance is negligible and can be considered within the margin of measurement error. Both implementations demonstrate comparable efficiency in handling concurrent connections and resource utilization.
 
+
 ## Conclusion
 
 The performance comparison between Rust and C implementations shows no significant difference in resource utilization. The minor variations observed (less than 2% in CPU usage and less than 0.3% in memory usage) are within the expected range of measurement fluctuations and can be safely disregarded.
+
+
+> **Note on Concurrency Testing**: While increasing the number of parallel connections could potentially reveal more significant performance differences in favor of Rust's resource management capabilities, such testing would exceed both:
+> - The practical requirements for this server's intended use case
+> - The available network bandwidth limitations
+> 
+> Therefore, the current test scope remains within realistic operational parameters.
 
 ## Future Work
 
@@ -102,9 +110,3 @@ Potential areas for further investigation:
 4. Behavior under extreme load conditions
 5. Performance comparison for specific commands
 6. Protocol compliance verification
-
-> **Note on Concurrency Testing**: While increasing the number of parallel connections could potentially reveal more significant performance differences in favor of Rust's resource management capabilities, such testing would exceed both:
-> - The practical requirements for this server's intended use case
-> - The available network bandwidth limitations
-> 
-> Therefore, the current test scope remains within realistic operational parameters.

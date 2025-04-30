@@ -2,47 +2,42 @@ use std::time::Instant;
 use log::{info, debug, error};
 use crate::config::constants::{CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE, RESP_OK, RESP_ERR, RESP_TIME};
 use crate::stream::Stream;
+use std::time::Duration;
 
 pub async fn handle_put_no_result(
     stream: &mut Stream,
     command: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Парсим команду: PUTNORESULT [chunk_size]
     let parts: Vec<&str> = command.split_whitespace().collect();
     if parts.len() > 2 {
         stream.write_all(RESP_ERR.as_bytes()).await?;
         return Err("Invalid number of arguments for PUTNORESULT".into());
     }
 
-    // Определяем размер чанка
-    let chunk_size = if parts.len() == 2 {
-        // Если указан размер чанка, проверяем его
+    let mut chunk_size = CHUNK_SIZE;
+
+    if parts.len() == 2 {
         match parts[1].parse::<usize>() {
-            Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => size,
+            Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => chunk_size = size,
             _ => {
                 stream.write_all(RESP_ERR.as_bytes()).await?;
                 return Err("Invalid chunk size".into());
             }
         }
-    } else {
-        CHUNK_SIZE
-    };
+    }
     
     info!("Starting PUTNORESULT process: chunk_size={}", chunk_size);
 
-    // Отправляем OK клиенту после проверки размера чанка
+    // Send OK to client after chunk size validation
     stream.write_all(RESP_OK.as_bytes()).await?;
     stream.flush().await?;
 
-    // Добавляем небольшую задержку перед началом чтения данных
 
-    // Начинаем измерение времени
     let start_time = Instant::now();
     let mut total_bytes = 0;
     let mut buffer = vec![0u8; chunk_size];
     let mut last_byte = 0u8;
 
-    // Читаем данные до тех пор, пока не найдем терминатор (0xFF) или соединение не закроется
     loop {
         match stream.read(&mut buffer).await {
             Ok(n) => {
@@ -61,12 +56,10 @@ pub async fn handle_put_no_result(
             },
             Err(e) => {
                 error!("Failed to read data: {}", e);
-                // Не отправляем ошибку, так как клиент мог просто закрыть соединение
                 break;
             }
         }
     }
-    // Отправляем финальный результат TIME
     let elapsed_ns = start_time.elapsed().as_nanos() as u64;
 
     info!(

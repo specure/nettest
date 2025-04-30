@@ -45,7 +45,7 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
         }
     };
 
-    // Проверяем длительность
+    // Check duration
     if duration < 2 {
         error!("Duration must be at least 2 seconds");
         stream.write_all(RESP_ERR.as_bytes()).await?;
@@ -59,15 +59,15 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
     debug!("Starting GETTIME: duration={}s, chunk_size={}", duration, chunk_size);
     let mut rng = Rng::new();
 
-    // Отправляем данные до истечения времени
+    // Send data until time expires
     while start_time.elapsed().as_secs() < duration {
         // Fill buffer with random data
         rng.fill(&mut buffer[..chunk_size - 1]);
         
-        // Устанавливаем последний байт в 0 для всех чанков, кроме последнего
+        // Set last byte to 0 for all chunks except the last one
         buffer[chunk_size - 1] = 0x00;
         
-        // Отправляем чанк
+        // Send chunk
         stream.write_all(&buffer).await?;
         stream.flush().await?;
         total_bytes += chunk_size;
@@ -77,10 +77,10 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
         trace!("Last byte: 0x{:02X}", buffer[chunk_size - 1]);
     }
 
-    // Отправляем последний чанк с терминатором
+    // Send final chunk with terminator
     let mut rng = Rng::new();
     rng.fill(&mut buffer[..chunk_size - 1]);
-    buffer[chunk_size - 1] = 0xFF; // Устанавливаем терминатор
+    buffer[chunk_size - 1] = 0xFF; // Set terminator
     stream.write_all(&buffer).await?;
     total_bytes += chunk_size;
     
@@ -90,7 +90,7 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
 
     debug!("All data sent. Total bytes: {}", total_bytes);
 
-    // Ждем ответ OK от клиента
+    // Wait for OK response from client
     debug!("Waiting for OK response from client");
     let mut response = [0u8; 1024];
     let n = stream.read(&mut response).await?;
@@ -103,7 +103,7 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
         return Err("Invalid response from client".into());
     }
 
-    // Отправляем TIME ответ
+    // Send TIME response
     debug!("Sending TIME response");
     let time_ns = start_time.elapsed().as_nanos();
     let time_response = format!("TIME {}\n", time_ns);
