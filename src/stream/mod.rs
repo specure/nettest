@@ -1,6 +1,9 @@
+use std::time::Duration;
+
 use futures::{SinkExt, StreamExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tokio::time::sleep;
 use tokio_native_tls::TlsStream;
 use tokio_tungstenite::WebSocketStream;
 use log::{info, error, debug};
@@ -41,6 +44,7 @@ impl Stream {
     }
 
     pub async fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        // sleep(Duration::from_millis(50)).await;
         match self {
             Stream::Plain(stream) => stream.read(buf).await,
             Stream::Tls(stream) => stream.read(buf).await,
@@ -86,7 +90,6 @@ impl Stream {
     }
 
     pub async fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-
         match self {
             Stream::Plain(stream) => stream.write(buf).await,
             Stream::Tls(stream) => stream.write(buf).await,
@@ -130,6 +133,7 @@ impl Stream {
     }
 
     pub async fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+
         match self {
             Stream::Plain(stream) => stream.write_all(buf).await,
             Stream::Tls(stream) => stream.write_all(buf).await,
@@ -190,3 +194,4 @@ impl Stream {
         }
     }
 }
+    

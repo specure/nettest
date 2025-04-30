@@ -1,108 +1,55 @@
-use std::time::Instant;
-use log::{info, debug, error};
-use crate::config::constants::{CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE, RESP_OK, RESP_ERR, RESP_TIME};
+use std::time::{ Instant};
+use log::{debug};
+use crate::config::constants::{CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE, RESP_OK, RESP_TIME};
 use crate::stream::Stream;
-// use std::net::Interest;
 
 pub async fn handle_put(
     stream: &mut Stream,
     command: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Парсим команду: PUT [chunk_size]
-    let parts: Vec<&str> = command.split_whitespace().collect();
-
-    // Определяем размер чанка
-    let chunk_size = if parts.len() == 2 {
-        // Если указан размер чанка, проверяем его
-        match parts[1].parse::<usize>() {
-            Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => size,
-            _ => {
-                stream.write_all(RESP_ERR.as_bytes()).await?;
-                return Ok(());
-            }
-        }
+    let mut parts = command.split_whitespace();
+    let _ = parts.next(); // Skip "PUT"
+    let chunk_size = if let Some(size) = parts.next() {
+        size.parse::<usize>()?
     } else {
         CHUNK_SIZE
     };
 
-    info!("Starting PUT process: chunk_size={}", chunk_size);
+    if chunk_size < MIN_CHUNK_SIZE || chunk_size > MAX_CHUNK_SIZE {
+        return Err("Invalid chunk size".into());
+    }
 
-    // Отправляем OK клиенту
+    // Send OK response immediately after PUT command
     stream.write_all(RESP_OK.as_bytes()).await?;
 
-    // Начинаем измерение времени
     let start_time = Instant::now();
+    let mut last_time_ns = -1;
     let mut total_bytes = 0;
-    let mut buffer = vec![0u8; chunk_size];
     let mut last_byte = 0;
-    let mut last_time_ns: i64 = -1;
-    // Читаем данные до тех пор, пока получаем данные и не нашли терминатор
-    loop {
-        match stream.read(&mut buffer).await {
-            Ok(n) => {
-                if n == 0 {
-                    debug!("Connection closed by client during data transfer");
-                    break;
-                }
 
-                total_bytes += n;
-                debug!("Received {} bytes, total: {}", n, total_bytes);
+    while last_byte != 0xFF {
+        let mut chunk = vec![0u8; chunk_size];
+        let bytes_read = stream.read(&mut chunk).await?;
+        if bytes_read == 0 {
+            break;
+        }
 
-                // Проверяем последний байт в полученных данных
-                let last_pos = n - 1;
-                last_byte = buffer[last_pos];
-                debug!("Last byte at position {} is 0x{:02X}", last_pos, last_byte);
-                if last_byte == 0xFF {
-                    debug!("Found termination byte at last position {}", last_pos);
-                    break;
-                }
+        total_bytes += bytes_read;
+        last_byte = chunk[bytes_read - 1];
 
-                // Отправляем TIME только если прошло больше 1мс с последней отправки
-                let current_time_ns = start_time.elapsed().as_nanos() as i64;
-                if last_time_ns == -1 || (current_time_ns - last_time_ns > 1_000_000) {
-                    last_time_ns = current_time_ns;
-                    let time_response = format!("{} {} BYTES {}\n", RESP_TIME, current_time_ns, total_bytes);
-                    info!("Sending TIME response: {}", time_response);
-                    if let Err(e) = stream.write_all(time_response.as_bytes()).await {
-                        debug!("Failed to send TIME response: {}", e);
-                        break;
-                    }
-                }
-            },
-
-            Err(e) => {
-                error!("Failed to read data: {}", e);
-                // Не отправляем ошибку, так как клиент мог просто закрыть соединение
+        let current_time_ns = start_time.elapsed().as_nanos() as i64;
+        if last_time_ns == -1 || (current_time_ns - last_time_ns > 1_000_000) {
+            last_time_ns = current_time_ns;
+            let time_response = format!("{} {} BYTES {}\n", RESP_TIME, current_time_ns, total_bytes);
+            if let Err(e) = stream.write_all(time_response.as_bytes()).await {
+                debug!("Failed to send TIME response: {}", e);
                 break;
             }
         }
     }
 
-    // Отправляем финальный TIME с BYTES
-    let elapsed_ns = start_time.elapsed().as_nanos() as u64;
-    let time_response = format!("{} {} BYTES {}\n", RESP_TIME, elapsed_ns, total_bytes);
-    info!("Sending final TIME response: {}", time_response);
-
-    match stream.write_all(time_response.as_bytes()).await {
-        Ok(_) => {
-            info!("Final TIME response sent successfully");
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
-            info!("Client closed connection before final TIME response could be sent");
-        }
-        Err(e) => {
-            error!("Failed to send final TIME response: {}", e);
-            return Err(e.into());
-        }
-    }
-
-    info!(
-        "PUT completed: received {} bytes in {} ns, last_byte: 0x{:02X}, chunk_size: {}",
-        total_bytes,
-        elapsed_ns,
-        last_byte,
-        chunk_size
-    );
-
+    let total_time_ns = start_time.elapsed().as_nanos() as i64;
+    let final_time_response: String = format!("{} {}\n", RESP_TIME, total_time_ns);
+    stream.write_all(final_time_response.as_bytes()).await?;
     Ok(())
 }
