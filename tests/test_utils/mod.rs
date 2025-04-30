@@ -294,26 +294,66 @@ pub fn find_free_port() -> u16 {
     port
 } 
 
-const TEST_KEY: &str = "q4aFShYnBgoYyDr4cxes0DSYCvjLpeKJjhCfvmVCdiIpsdeU1djvBtE6CMtNCbDWkiU68X7bajIAwLon14Hh7Wpi5MJWJL7HXokh";
+// Используем ключ с сервера
+const SERVER_KEY: &str = "PWOGfvIOPbvnltvjKHbmU8WGR5ycbEH55htjWDb5t0EhcKqFFgFwLm9tP3uQB5iJ3BwT4tZADvaW9LR8eYSY6OgCPW6dXQxQzdjh";
 
 pub fn generate_token() -> Result<String, Box<dyn Error + Send + Sync>> {
-    // Генерируем UUID
+    // Генерируем UUID и проверяем его формат (36 символов, только hex и дефисы)
     let uuid = Uuid::new_v4().to_string();
+    if uuid.len() != 36 || !uuid.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+        return Err("Invalid UUID format".into());
+    }
     
-    // Получаем текущее время
-    let start_time = SystemTime::now()
+    // Получаем текущее время в секундах
+    let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)?
-        .as_secs()
-        .to_string();
+        .as_secs();
     
-    // Генерируем HMAC
+    // Компенсируем разницу во времени только если используем дефолтные порты (реальный сервер)
+    let start_time = if env::var("TEST_USE_DEFAULT_PORTS").is_ok() {
+        // Вычитаем 30 секунд для компенсации разницы с сервером
+        (now - 30).to_string()
+    } else {
+        now.to_string()
+    };
+    
+    // Проверяем формат времени (только цифры)
+    if !start_time.chars().all(|c| c.is_ascii_digit()) {
+        return Err("Invalid time format".into());
+    }
+    
+    // Формируем сообщение для HMAC (максимум 128 байт как в C коде)
     let message = format!("{}_{}", uuid, start_time);
-    let mut mac = HmacSha1::new_from_slice(TEST_KEY.as_bytes())?;
+    if message.len() > 128 {
+        return Err("Message too long".into());
+    }
+
+    // Генерируем HMAC-SHA1 как в Java коде
+    let mut mac = HmacSha1::new_from_slice(SERVER_KEY.as_bytes())?;
     mac.update(message.as_bytes());
     let result = mac.finalize();
     let code_bytes = result.into_bytes();
+    
+    // Кодируем в base64 как в Java коде
     let hmac = BASE64.encode(code_bytes);
     
-    // Формируем токен
-    Ok(format!("TOKEN {}_{}_{}\n", uuid, start_time, hmac))
+    // Проверяем формат HMAC (base64)
+    if !hmac.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=') {
+        return Err("Invalid HMAC format".into());
+    }
+    
+    // Формируем токен в том же формате что и C код
+    let token = format!("TOKEN {}_{}_{}\n", uuid, start_time, hmac);
+    
+    // Проверяем формат токена
+    if !token.starts_with("TOKEN ") {
+        return Err("Invalid token format: must start with 'TOKEN '".into());
+    }
+    
+    let token_parts: Vec<&str> = token[6..].trim().split('_').collect();
+    if token_parts.len() != 3 {
+        return Err("Invalid token format: must be TOKEN uuid_starttime_hmac".into());
+    }
+    
+    Ok(token)
 }
