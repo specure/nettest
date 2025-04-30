@@ -58,7 +58,7 @@
 - Maximum Memory Usage: 9.29%
 - Maximum Active Processes: 165
 
-<img src="system_metrics_Rust.png" alt="Rust Implementation Performance" width="800"/>
+<img src="system_metrics_RUST.png" alt="Rust Implementation Performance" width="800"/>
 
 
 ### C Implementation
