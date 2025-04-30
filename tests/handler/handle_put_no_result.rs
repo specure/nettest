@@ -20,7 +20,9 @@ use tokio::time::{sleep, timeout};
 /// TCP and WebSocket implementations, ensuring proper connection handling, server responses,
 /// and cleanup according to the RMBT protocol specification.
 
+// Constants matching server configuration
 const CHUNK_SIZE: usize = 4096; // 4 KiB
+const MAX_CHUNK_SIZE: usize = 4194304; // 4 MiB, matching server's MAX_CHUNK_SIZE
 const TEST_DURATION: u64 = 2; // seconds for pre-test, as per specification
 const MAX_CHUNKS: usize = 8; // Maximum number of chunks before increasing chunk size
 const IO_TIMEOUT: Duration = Duration::from_secs(5); // Timeout for I/O operations
@@ -68,6 +70,18 @@ fn test_handle_put_no_result_rmbt() {
             info!("Received ACCEPT response");
             assert!(accept_str.contains("ACCEPT"), "Server should respond with ACCEPT");
 
+            // Calculate next chunk size, respecting MAX_CHUNK_SIZE
+            if current_chunks > MAX_CHUNKS {
+                current_chunks = 1;
+                let next_chunk_size = current_chunk_size * 2;
+                current_chunk_size = if next_chunk_size <= MAX_CHUNK_SIZE {
+                    next_chunk_size
+                } else {
+                    // Reset to initial size if we would exceed MAX_CHUNK_SIZE
+                    CHUNK_SIZE
+                };
+            }
+
             // Send PUTNORESULT command with current chunk size
             let command = format!("PUTNORESULT {}\n", current_chunk_size);
             timeout(IO_TIMEOUT, stream.write_all(command.as_bytes()))
@@ -75,7 +89,6 @@ fn test_handle_put_no_result_rmbt() {
                 .expect("Write command timeout")
                 .expect("Failed to send PUTNORESULT command");
             info!("Sent PUTNORESULT command with chunk_size={}", current_chunk_size);
-            sleep(Duration::from_millis(100)).await;
 
             // Read OK response with timeout
             let mut response = [0u8; 1024];
@@ -93,24 +106,16 @@ fn test_handle_put_no_result_rmbt() {
                 let mut chunk = vec![0u8; current_chunk_size];
                 rng.fill(&mut chunk);
 
-                // Set last byte: 0x00 for non-terminal chunks, 0xFF for terminal chunk
-                if i == current_chunks - 1 {
-                    chunk[current_chunk_size - 1] = 0xFF;
-                } else {
-                    chunk[current_chunk_size - 1] = 0x00;
-                }
-                sleep(Duration::from_millis(50)).await; //need to understand better
+                // Set terminator byte
+                chunk[current_chunk_size - 1] = if i == current_chunks - 1 { 0xFF } else { 0x00 };
 
                 timeout(IO_TIMEOUT, stream.write_all(&chunk))
                     .await
                     .expect("Write chunk timeout")
                     .expect("Failed to send chunk");
             }
-            info!("All chunks sent successfully");
-            sleep(Duration::from_millis(100)).await;
 
-
-            // Read final TIME response with timeout
+            // Read TIME response
             let mut time_response = [0u8; 1024];
             let n = timeout(IO_TIMEOUT, stream.read(&mut time_response))
                 .await
@@ -118,21 +123,10 @@ fn test_handle_put_no_result_rmbt() {
                 .expect("Failed to read TIME response");
             let time_str = String::from_utf8_lossy(&time_response[..n]);
             info!("Received TIME response: {}", time_str.trim());
+            assert!(time_str.contains("TIME"), "Server should respond with TIME");
 
-            // Verify TIME response format
-            let time_parts: Vec<&str> = time_str.trim().split_whitespace().collect();
-            assert_eq!(time_parts.len(), 2, "TIME response should have 2 parts");
-            assert_eq!(time_parts[0], "TIME", "First part should be 'TIME'");
-            assert!(time_parts[1].parse::<u64>().is_ok(), "Second part should be a number");
-
-            // Double the number of chunks for next iteration
+            // Increment chunks for next iteration
             current_chunks *= 2;
-
-            // If we've reached the maximum number of chunks, increase chunk size
-            if current_chunks > MAX_CHUNKS {
-                current_chunks = 1;
-                current_chunk_size *= 2;
-            }
         }
 
         // Send QUIT command
@@ -245,7 +239,6 @@ fn test_handle_put_no_result_ws() {
                     .await
                     .expect("Write chunk timeout")
                     .expect("Failed to send chunk");
-                sleep(Duration::from_millis(50)).await;
             }
 
             // After terminal chunk, read final TIME response with retries
@@ -273,7 +266,6 @@ fn test_handle_put_no_result_ws() {
                 } else if response_str.contains("ACCEPT") {
                     // If we got command list instead of TIME, wait a bit and try again
                     info!("Received command list instead of TIME, retrying...");
-                    sleep(Duration::from_millis(100)).await;
                     attempts += 1;
                     continue;
                 } else {

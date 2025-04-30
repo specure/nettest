@@ -34,44 +34,60 @@ pub async fn handle_put_no_result(
     let start_time = Instant::now();
     let mut total_bytes = 0;
     let mut buffer = vec![0u8; chunk_size];
-    let mut last_byte = 0u8;
+    let mut found_terminator = false;
 
-    loop {
-        match stream.read(&mut buffer).await {
-            Ok(n) => {
-                if n == 0 {
-                    break;
+    'read_chunks: loop {
+        // Read exactly chunk_size bytes
+        let mut bytes_read = 0;
+        while bytes_read < chunk_size {
+            match stream.read(&mut buffer[bytes_read..]).await {
+                Ok(n) => {
+                    if n == 0 {
+                        debug!("Client closed connection during chunk read");
+                        break 'read_chunks;
+                    }
+                    bytes_read += n;
+                },
+                Err(e) => {
+                    error!("Failed to read chunk: {}", e);
+                    break 'read_chunks;
                 }
-
-                total_bytes += n;
-
-                // Проверяем последний байт в полученных данных
-                let last_pos = n - 1;
-                last_byte = buffer[last_pos];
-                if last_byte == 0xFF {
-                    break;
-                }
-            },
-            Err(e) => {
-                error!("Failed to read data: {}", e);
-                break;
             }
         }
+
+        // Check if we got a complete chunk
+        if bytes_read == chunk_size {
+            total_bytes += bytes_read;
+            
+            // Check the last byte of the chunk for terminator
+            let terminator = buffer[chunk_size - 1];
+            if terminator == 0xFF {
+                found_terminator = true;
+                break;
+            } else if terminator != 0x00 {
+                error!("Invalid chunk terminator: {}", terminator);
+                break;
+            }
+        } else {
+            error!("Incomplete chunk read: {} bytes instead of {}", bytes_read, chunk_size);
+            break;
+        }
     }
+
     let elapsed_ns = start_time.elapsed().as_nanos() as u64;
 
     debug!(
         "PUTNORESULT completed: received {} bytes in {} ns, found_terminator: {}",
         total_bytes,
         elapsed_ns,
-        last_byte == 0xFF
+        found_terminator
     );
 
+    // Send TIME response even if we didn't find a terminator
     let time_response = format!("{} {}\n", RESP_TIME, elapsed_ns);
     if let Err(e) = stream.write_all(time_response.as_bytes()).await {
         debug!("Failed to send TIME response: {}", e);
     }
-
 
     Ok(())
 } 
