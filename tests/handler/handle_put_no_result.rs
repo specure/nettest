@@ -23,7 +23,7 @@ const IO_TIMEOUT: Duration = Duration::from_secs(5); // Timeout for I/O operatio
 fn test_handle_put_no_result_1() {
     // Setup logger
     let _ = env_logger::Builder::new()
-        .filter_level(log::LevelFilter::Trace)
+        .filter_level(log::LevelFilter::Debug)
         .format_timestamp_millis()
         .format_module_path(false)
         .format_target(false)
@@ -162,7 +162,7 @@ fn test_handle_put_no_result_1() {
 fn test_handle_put_no_result_ws() {
     // Setup logger
     let _ = env_logger::Builder::new()
-        .filter_level(log::LevelFilter::Trace)
+        .filter_level(log::LevelFilter::Debug)
         .format_timestamp_millis()
         .format_module_path(false)
         .format_target(false)

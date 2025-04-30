@@ -18,22 +18,104 @@ use sha1::Sha1;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::env;
+use std::sync::{Arc, Mutex, Once};
+use lazy_static::lazy_static;
+use std::sync::atomic::{AtomicBool, Ordering, AtomicUsize};
+use libc::atexit;
 
 const DEFAULT_PLAIN_PORT: u16 = 8080;
 const DEFAULT_TLS_PORT: u16 = 443;
 
 type HmacSha1 = Hmac<Sha1>;
 
-pub struct TestServer {
+lazy_static! {
+    static ref TEST_SERVER: Mutex<Option<TestServerInstance>> = Mutex::new(None);
+    static ref SERVER_INITIALIZED: AtomicBool = AtomicBool::new(false);
+    static ref ACTIVE_TESTS: AtomicUsize = AtomicUsize::new(0);
+}
+
+struct TestServerInstance {
     process: Child,
     plain_port: u16,
     tls_port: u16,
     host: String,
 }
 
+pub struct TestServer {
+    plain_port: u16,
+    tls_port: u16,
+    host: String,
+}
+
+extern "C" fn cleanup_server() {
+    info!("Cleaning up server on exit");
+    if let Some(mut server) = TEST_SERVER.lock().unwrap().take() {
+        // Kill process on ports
+        let output = Command::new("lsof")
+            .args(["-i", &format!(":{}", server.plain_port), "-t"])
+            .output()
+            .expect("Failed to execute lsof");
+
+        if let Ok(pid_str) = String::from_utf8(output.stdout) {
+            if let Some(pid) = pid_str.trim().parse::<i32>().ok() {
+                Command::new("kill")
+                    .args(["-9", &pid.to_string()])
+                    .output()
+                    .expect("Failed to kill process");
+                info!("Killed process {} on port {}", pid, server.plain_port);
+            }
+        }
+
+        let output = Command::new("lsof")
+            .args(["-i", &format!(":{}", server.tls_port), "-t"])
+            .output()
+            .expect("Failed to execute lsof");
+
+        if let Ok(pid_str) = String::from_utf8(output.stdout) {
+            if let Some(pid) = pid_str.trim().parse::<i32>().ok() {
+                Command::new("kill")
+                    .args(["-9", &pid.to_string()])
+                    .output()
+                    .expect("Failed to kill process");
+                info!("Killed process {} on port {}", pid, server.tls_port);
+            }
+        }
+
+        // Wait for process to finish
+        let _ = server.process.wait();
+    }
+}
+
 impl TestServer {
     pub fn new(plain_port: Option<u16>, tls_port: Option<u16>) -> Option<Self> {
-        // Определяем порты в зависимости от переменной окружения
+        // Increment active tests counter
+        ACTIVE_TESTS.fetch_add(1, Ordering::SeqCst);
+
+        // Quick check if server exists without holding the lock
+        if SERVER_INITIALIZED.load(Ordering::SeqCst) {
+            let server = TEST_SERVER.lock().unwrap();
+            if let Some(instance) = server.as_ref() {
+                return Some(Self {
+                    plain_port: instance.plain_port,
+                    tls_port: instance.tls_port,
+                    host: instance.host.clone(),
+                });
+            }
+        }
+
+        // If we get here, we need to create a new server
+        let mut server = TEST_SERVER.lock().unwrap();
+
+        // Double check if server was created while we were waiting for the lock
+        if let Some(instance) = server.as_ref() {
+            return Some(Self {
+                plain_port: instance.plain_port,
+                tls_port: instance.tls_port,
+                host: instance.host.clone(),
+            });
+        }
+
+        // Определяем порты
         let (plain_port, tls_port) = if env::var("TEST_USE_DEFAULT_PORTS").is_ok() {
             (DEFAULT_PLAIN_PORT, DEFAULT_TLS_PORT)
         } else {
@@ -44,8 +126,15 @@ impl TestServer {
 
         // Если используем дефолтные порты - не создаем сервер
         if env::var("TEST_USE_DEFAULT_PORTS").is_ok() {
-            return Some(Self {
+            let instance = TestServerInstance {
                 process: Command::new("echo").spawn().unwrap(), // dummy process
+                plain_port,
+                tls_port,
+                host: "dev.measurementservers.net".to_string(),
+            };
+            *server = Some(instance);
+            SERVER_INITIALIZED.store(true, Ordering::SeqCst);
+            return Some(Self {
                 plain_port,
                 tls_port,
                 host: "dev.measurementservers.net".to_string(),
@@ -72,8 +161,22 @@ impl TestServer {
         // Give server time to start
         thread::sleep(Duration::from_secs(2));
 
-        Some(Self {
+        let instance = TestServerInstance {
             process,
+            plain_port,
+            tls_port,
+            host: "127.0.0.1".to_string(),
+        };
+
+        *server = Some(instance);
+        SERVER_INITIALIZED.store(true, Ordering::SeqCst);
+
+        // Регистрируем функцию очистки при первом создании сервера
+        unsafe {
+            atexit(cleanup_server);
+        }
+
+        Some(Self {
             plain_port,
             tls_port,
             host: "127.0.0.1".to_string(),
@@ -250,39 +353,17 @@ impl TestServer {
 
 impl Drop for TestServer {
     fn drop(&mut self) {
-        // Kill process on ports
-        let output = Command::new("lsof")
-            .args(["-i", &format!(":{}", self.plain_port), "-t"])
-            .output()
-            .expect("Failed to execute lsof");
-
-        if let Ok(pid_str) = String::from_utf8(output.stdout) {
-            if let Some(pid) = pid_str.trim().parse::<i32>().ok() {
-                Command::new("kill")
-                    .args(["-9", &pid.to_string()])
-                    .output()
-                    .expect("Failed to kill process");
-                info!("Killed process {} on port {}", pid, self.plain_port);
+        // Decrement active tests counter
+        let remaining = ACTIVE_TESTS.fetch_sub(1, Ordering::SeqCst);
+        
+        // If this was the last test, cleanup the server
+        if remaining == 1 {
+            if let Some(mut server) = TEST_SERVER.lock().unwrap().take() {
+                let _ = server.process.kill();
+                let _ = server.process.wait();
             }
+            SERVER_INITIALIZED.store(false, Ordering::SeqCst);
         }
-
-        let output = Command::new("lsof")
-            .args(["-i", &format!(":{}", self.tls_port), "-t"])
-            .output()
-            .expect("Failed to execute lsof");
-
-        if let Ok(pid_str) = String::from_utf8(output.stdout) {
-            if let Some(pid) = pid_str.trim().parse::<i32>().ok() {
-                Command::new("kill")
-                    .args(["-9", &pid.to_string()])
-                    .output()
-                    .expect("Failed to kill process");
-                info!("Killed process {} on port {}", pid, self.tls_port);
-            }
-        }
-
-        // Wait for process to finish
-        let _ = self.process.wait();
     }
 }
 

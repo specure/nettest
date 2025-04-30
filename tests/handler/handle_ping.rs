@@ -21,7 +21,7 @@ const READ_TIMEOUT: Duration = Duration::from_millis(10); // 10ms timeout for re
 fn test_handle_ping() {
     // Setup logger
     let _ = env_logger::Builder::new()
-        .filter_level(log::LevelFilter::Trace)
+        .filter_level(log::LevelFilter::Debug)
         .format_timestamp_millis()
         .format_module_path(false)
         .format_target(false)
