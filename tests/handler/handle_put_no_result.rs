@@ -12,6 +12,14 @@ use tokio_tungstenite::tungstenite::Message;
 use futures_util::{StreamExt, SinkExt};
 use tokio::time::{sleep, timeout};
 
+/// This test file implements the RMBT protocol's uplink pre-test phase using the PUTNORESULT command.
+/// It verifies the server's ability to handle data uploads without intermediate result reporting,
+/// making it a lightweight version of the PUT command test. The test progressively increases
+/// chunk sizes or counts over a 2-second duration, following the RMBT specification for chunk
+/// termination (0x00 for intermediate chunks, 0xFF for the final chunk). It includes both plain
+/// TCP and WebSocket implementations, ensuring proper connection handling, server responses,
+/// and cleanup according to the RMBT protocol specification.
+
 const CHUNK_SIZE: usize = 4096; // 4 KiB
 const TEST_DURATION: u64 = 2; // seconds for pre-test, as per specification
 const MAX_CHUNKS: usize = 8; // Maximum number of chunks before increasing chunk size

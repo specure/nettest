@@ -1,6 +1,13 @@
 #[path = "../test_utils/mod.rs"]
 mod test_utils;
 
+/// This test file implements the RMBT protocol's downlink measurement phase using the GETTIME command.
+/// It verifies the server's ability to maintain a continuous data stream for a specified duration,
+/// following the RMBT specification for timing and chunk handling. The test includes both plain TCP
+/// and WebSocket implementations, ensuring proper data transmission, chunk termination, and timing
+/// measurements. It validates server responses, data integrity, and connection cleanup according to
+/// the protocol specifications.
+
 use tokio::runtime::Runtime;
 use log::{info, debug};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

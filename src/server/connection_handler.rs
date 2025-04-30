@@ -56,14 +56,14 @@ impl ConnectionHandler {
 
             match self.stream.read(&mut buffer).await {
                 Ok(0) => {
-                    info!("Client closed connection gracefully");
+                    debug!("Client closed connection gracefully");
                     break;
                 }
                 Ok(n) => {
                     let command = String::from_utf8_lossy(&buffer[..n]);
                     let command_str = command.lines().next().unwrap_or("").trim();
 
-                    println!("Received command: {}", command_str);
+                    debug!("Received command: {}", command_str);
 
                     if command_str.starts_with("PUT") || command_str.starts_with("PUTNORESULT") {
                         if command_str.starts_with("PUTNORESULT") {
@@ -72,7 +72,6 @@ impl ConnectionHandler {
                             handle_put(&mut self.stream, command_str).await?;
                         }
                     } else if command_str.starts_with("GETTIME") {
-                        println!("Handling GETTIME command");
                         handle_get_time(&mut self.stream, command_str).await?
                     } else if command_str.starts_with("GETCHUNKS") {
                         handle_get_chunks(&mut self.stream, command_str).await?
@@ -89,15 +88,15 @@ impl ConnectionHandler {
                 Err(e) => {
                     match e.kind() {
                         std::io::ErrorKind::ConnectionReset => {
-                            info!("Client reset connection");
+                            debug!("Client reset connection");
                             break;
                         }
                         std::io::ErrorKind::ConnectionAborted => {
-                            info!("Client aborted connection");
+                            debug!("Client aborted connection");
                             break;
                         }
                         std::io::ErrorKind::BrokenPipe => {
-                            info!("Broken pipe - client closed connection");
+                            debug!("Broken pipe - client closed connection");
                             break;
                         }
                         _ => {
@@ -118,27 +117,27 @@ impl ConnectionHandler {
             Some(3) => "RMBTv0.3\n",
             None => "RMBTv1.0\n",
             _ => "RMBTv1.3.3\n",
-        };
+        };  //TODO
 
-        info!("Sending greeting message: {}", greeting);
+        debug!("Sending greeting message: {}", greeting);
         let written = self.stream.write(greeting.as_bytes()).await?;
-        info!("Written {} bytes for greeting", written);
+        debug!("Written {} bytes for greeting", written);
         self.stream.flush().await?;
-        info!("Greeting message sent and flushed");
+        debug!("Greeting message sent and flushed");
 
         let accept_token = "ACCEPT TOKEN QUIT\n";
-        info!("Sending accept token message: {}", accept_token);
+        debug!("Sending accept token message: {}", accept_token);
         let written = self.stream.write(accept_token.as_bytes()).await?;
-        info!("Written {} bytes for accept token", written);
+        debug!("Written {} bytes for accept token", written);
         self.stream.flush().await?;
-        info!("Accept token message sent and flushed");
+        debug!("Accept token message sent and flushed");
 
         Ok(())
     }
 
     async fn handle_token(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Read token line
-        info!("Waiting for token...");
+        debug!("Waiting for token...");
         let mut buffer = [0u8; 1024];
         let n = self.stream.read(&mut buffer).await?;
         if n == 0 {

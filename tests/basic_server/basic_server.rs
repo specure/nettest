@@ -22,7 +22,6 @@ fn setup_logging() {
 async fn test_rmbt_upgrade() {
     setup_logging();
     
-    // Создаем тестовый сервер (он может быть dummy если используем дефолтные порты)
     let server = TestServer::new(None, None).unwrap();
 
     // Create TLS connector

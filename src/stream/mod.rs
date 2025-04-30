@@ -19,15 +19,15 @@ impl Stream {
     pub async fn upgrade_to_websocket(self) -> std::io::Result<Stream> {
         match self {
             Stream::Plain(tcp_stream) => {
-                info!("Attempting to upgrade plain TCP stream to WebSocket");
+                debug!("Attempting to upgrade plain TCP stream to WebSocket");
                 let ws_stream = WebSocketStream::from_raw_socket(tcp_stream, tokio_tungstenite::tungstenite::protocol::Role::Server, None).await;
-                info!("Successfully upgraded plain TCP stream to WebSocket");
+                debug!("Successfully upgraded plain TCP stream to WebSocket");
                 Ok(Stream::WebSocket(ws_stream))
             }
             Stream::Tls(tls_stream) => {
-                info!("Attempting to upgrade TLS stream to WebSocket");
+                debug!("Attempting to upgrade TLS stream to WebSocket");
                 let ws_stream = WebSocketStream::from_raw_socket(tls_stream, tokio_tungstenite::tungstenite::protocol::Role::Server, None).await;
-                info!("Successfully upgraded TLS stream to WebSocket");
+                debug!("Successfully upgraded TLS stream to WebSocket");
                 Ok(Stream::WebSocketTls(ws_stream))
             }
             _ => {
@@ -91,39 +91,29 @@ impl Stream {
             Stream::Plain(stream) => stream.write(buf).await,
             Stream::Tls(stream) => stream.write(buf).await,
             Stream::WebSocket(stream) => {
-                debug!("WebSocket: Preparing to send message in write, buf len: {}", buf.len());
                 let message = if buf.len() < 2 || buf.len() > (CHUNK_SIZE - 3) {
-                    debug!("WebSocket: Sending binary message in write");
                     tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())
                 } else {
-                    debug!("WebSocket: Sending text message in write");
                     tokio_tungstenite::tungstenite::Message::Text(String::from_utf8_lossy(buf).to_string())
                 };
-                debug!("WebSocket: Before stream.send in write");
                 stream.send(message).await
                     .map_err(|e| {
                         error!("WebSocket: Error sending message in write: {}", e);
                         std::io::Error::new(std::io::ErrorKind::Other, e)
                     })?;
-                debug!("WebSocket: After stream.send in write");
                 Ok(buf.len())
             }
             Stream::WebSocketTls(stream) => {
-                debug!("WebSocketTls: Preparing to send message in write, buf len: {}", buf.len());
                 let message = if buf.len() < 2 || buf.len() > (CHUNK_SIZE - 3) {
-                    debug!("WebSocketTls: Sending binary message in write");
                     tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())
                 } else {
-                    debug!("WebSocketTls: Sending text message in write");
                     tokio_tungstenite::tungstenite::Message::Text(String::from_utf8_lossy(buf).to_string())
                 };
-                debug!("WebSocketTls: Before stream.send in write");
                 stream.send(message).await
                     .map_err(|e| {
                         error!("WebSocketTls: Error sending message in write: {}", e);
                         std::io::Error::new(std::io::ErrorKind::Other, e)
                     })?;
-                debug!("WebSocketTls: After stream.send in write");
                 Ok(buf.len())
             }
         }
@@ -135,39 +125,29 @@ impl Stream {
             Stream::Plain(stream) => stream.write_all(buf).await,
             Stream::Tls(stream) => stream.write_all(buf).await,
             Stream::WebSocket(stream) => {
-                debug!("WebSocket: Preparing to send message, buf len: {}", buf.len());
                 let message = if buf.len() < 2 || buf.len() > (CHUNK_SIZE - 3) {
-                    debug!("WebSocket: Sending binary message");
                     tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())
                 } else {
-                    debug!("WebSocket: Sending text message");
                     tokio_tungstenite::tungstenite::Message::Text(String::from_utf8_lossy(buf).to_string())
                 };
-                debug!("WebSocket: Before stream.send");
                 stream.send(message).await
                     .map_err(|e| {
                         error!("WebSocket: Error sending message: {}", e);
                         std::io::Error::new(std::io::ErrorKind::Other, e)
                     })?;
-                debug!("WebSocket: After stream.send");
                 Ok(())
             }
             Stream::WebSocketTls(stream) => {
-                debug!("WebSocketTls: Preparing to send message, buf len: {}", buf.len());
                 let message = if buf.len() < 2 || buf.len() > (CHUNK_SIZE - 3) {
-                    debug!("WebSocketTls: Sending binary message");
                     tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())
                 } else {
-                    debug!("WebSocketTls: Sending text message");
                     tokio_tungstenite::tungstenite::Message::Text(String::from_utf8_lossy(buf).to_string())
                 };
-                debug!("WebSocketTls: Before stream.send");
                 stream.send(message).await
                     .map_err(|e| {
                         error!("WebSocketTls: Error sending message: {}", e);
                         std::io::Error::new(std::io::ErrorKind::Other, e)
                     })?;
-                debug!("WebSocketTls: After stream.send");
                 Ok(())
             }
         }

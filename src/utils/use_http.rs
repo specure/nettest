@@ -29,22 +29,18 @@ pub async fn define_stream(
     let n = stream.read(&mut buffer).await?;
 
     if n < 4 {
-        // Проверяем минимальную длину для "GET "
         error!("Received data too short: {} bytes", n);
         return Err("Invalid request: data too short".into());
     }
 
-    // Безопасное сравнение первых 4 байт
     let is_get = buffer[0] == b'G' && buffer[1] == b'E' && buffer[2] == b'T' && buffer[3] == b' ';
 
     if !is_get {
         error!("Not a GET request");
         return Err("Invalid request: not a GET request".into());
     }
-    // Преобразуем буфер в строку для поиска заголовков
     let request = String::from_utf8_lossy(&buffer[..n]);
 
-    // Проверяем заголовки Upgrade через регулярные выражения
     let ws_regex = Regex::new(r"(?i)upgrade:\s*websocket").unwrap();
     let rmbt_regex = Regex::new(r"(?i)upgrade:\s*rmbt").unwrap();
 
@@ -52,15 +48,12 @@ pub async fn define_stream(
     let is_rmbt = rmbt_regex.is_match(&request);
 
     if !is_websocket && !is_rmbt {
-        info!("No HTTP upgrade to websocket/rmbt");
-        // stream.write_all(RMBT_UPGRADE.as_bytes()).await?;
-        // stream.flush().await?;
+        debug!("No HTTP upgrade to websocket/rmbt");
         return Ok(stream);
     }
 
     if is_rmbt {
-        info!("Upgrading to RMBT");
-        // Отправляем HTTP upgrade ответ
+        debug!("Upgrading to RMBT");
         stream.write_all(RMBT_UPGRADE.as_bytes()).await?;
         stream.flush().await?;
         return Ok(stream);
@@ -78,16 +71,14 @@ pub async fn define_stream(
 
         // Generate and send handshake response
         let response = generate_handshake_response(&handshake)?;
-        debug!("Sending WebSocket handshake response: {}", response);
         stream.write_all(response.as_bytes()).await?;
         stream.flush().await?;
-        debug!("WebSocket handshake response sent");
 
-        info!("Upgrading to WebSocket");
+        debug!("Upgrading to WebSocket");
 
         match stream.upgrade_to_websocket().await {
             Ok(ws_stream) => {
-                info!("WebSocket upgraded");
+                debug!("WebSocket upgraded");
                 Ok(ws_stream)
             }
             Err(e) => {
@@ -96,8 +87,7 @@ pub async fn define_stream(
             }
         }
     } else {
-        info!("No HTTP upgrade to websocket/rmbt");
-        // Этот код никогда не должен выполниться, но компилятор требует возврата
+        debug!("No HTTP upgrade to websocket/rmbt");
         Ok(stream)
     }
 }

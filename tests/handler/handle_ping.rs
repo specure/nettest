@@ -1,6 +1,13 @@
 #[path = "../test_utils/mod.rs"]
 mod test_utils;
 
+/// This test file implements the RMBT protocol's latency test phase using the PING command.
+/// It verifies the server's ability to respond to ping requests with accurate timing measurements,
+/// following the RMBT specification for latency testing. The test ensures proper handling of
+/// multiple ping iterations, timing calculations, and statistical processing. It includes both
+/// plain TCP and WebSocket implementations, validating server responses and connection management
+/// while maintaining timing accuracy within protocol requirements.
+
 use tokio::runtime::Runtime;
 use log::{info, debug, trace};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

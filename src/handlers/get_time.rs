@@ -56,7 +56,6 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
     let start_time = Instant::now();
     let mut buffer = vec![0u8; chunk_size];
 
-    debug!("Starting GETTIME: duration={}s, chunk_size={}", duration, chunk_size);
     let mut rng = Rng::new();
 
     // Send data until time expires
@@ -72,9 +71,6 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
         stream.flush().await?;
         total_bytes += chunk_size;
         
-        trace!("Sent chunk: first 32 bytes: {:?}", &buffer[..std::cmp::min(32, chunk_size)]);
-        trace!("Sent chunk: last 32 bytes: {:?}", &buffer[chunk_size.saturating_sub(32)..]);
-        trace!("Last byte: 0x{:02X}", buffer[chunk_size - 1]);
     }
 
     // Send final chunk with terminator
@@ -83,20 +79,13 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
     buffer[chunk_size - 1] = 0xFF; // Set terminator
     stream.write_all(&buffer).await?;
     total_bytes += chunk_size;
-    
-    trace!("Sent final chunk: first 32 bytes: {:?}", &buffer[..std::cmp::min(32, chunk_size)]);
-    trace!("Sent final chunk: last 32 bytes: {:?}", &buffer[chunk_size.saturating_sub(32)..]);
-    trace!("Last byte: 0x{:02X}", buffer[chunk_size - 1]);
 
     debug!("All data sent. Total bytes: {}", total_bytes);
 
     // Wait for OK response from client
-    debug!("Waiting for OK response from client");
     let mut response = [0u8; 1024];
     let n = stream.read(&mut response).await?;
     let response_str = String::from_utf8_lossy(&response[..n]);
-    debug!("Received response from client: '{}'", response_str.trim());
-    debug!("Response bytes: {:?}", &response[..n]);
         
     if response_str.trim() != "OK" {
         error!("Expected OK response, got: {}", response_str);
@@ -104,11 +93,8 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
     }
 
     // Send TIME response
-    debug!("Sending TIME response");
     let time_ns = start_time.elapsed().as_nanos();
     let time_response = format!("TIME {}\n", time_ns);
-    debug!("Sending TIME response: '{}'", time_response.trim());
-    debug!("TIME response bytes: {:?}", time_response.as_bytes());
     stream.write_all(time_response.as_bytes()).await?;
     stream.flush().await?;
     debug!("TIME response sent and flushed");

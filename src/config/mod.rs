@@ -1,6 +1,7 @@
 pub mod constants;
 pub mod settings;
 
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub listen_address: String,
@@ -13,7 +14,7 @@ pub struct Config {
     pub daemonize: bool,
     pub debug: bool,
     pub use_websocket: bool,
-    pub protocol_version: Option<u32>, // None for latest, Some(3) for v0.3
+    pub protocol_version: Option<u32>, //TODO None for latest, Some(3) for v0.3 
 }
 
 impl Config {

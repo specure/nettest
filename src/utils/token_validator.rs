@@ -40,20 +40,17 @@ impl TokenValidator {
     }
 
     async fn validate_with_key(&self, token_uuid: &str, start_time_str: &str, hmac: &str, key: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
-        // Проверяем формат UUID
         if Uuid::parse_str(token_uuid).is_err() {
             error!("Invalid UUID format: \"{}\"", token_uuid);
             return Ok(false);
         }
 
-        // Проверяем время
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)?
             .as_secs() as i64;
         
         let start_time = start_time_str.parse::<i64>()?;
 
-        // Проверяем, не слишком ли рано или поздно
         if start_time - (MAX_ACCEPT_EARLY as i64) > now {
             error!("Client is not allowed yet. {} seconds too early", start_time - now);
             return Ok(false);
@@ -63,14 +60,12 @@ impl TokenValidator {
             return Ok(false);
         }
 
-        // Если клиент подключается немного раньше, заставляем его подождать
         if start_time > now {
             let wait_time = start_time - now;
             debug!("Client is {} seconds too early. Let him wait", wait_time);
             sleep(std::time::Duration::from_secs(wait_time as u64)).await;
         }
 
-        // Проверяем HMAC
         let message = format!("{}_{}", token_uuid, start_time_str);
         let mut mac = HmacSha1::new_from_slice(key.as_bytes())?;
         mac.update(message.as_bytes());
@@ -81,7 +76,6 @@ impl TokenValidator {
         Ok(computed_hmac == hmac)
     }
 
-    /// Генерация HMAC для токена
     pub fn generate_hmac(token_uuid: &str, start_time_str: &str, key: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
         let message = format!("{}_{}", token_uuid, start_time_str);
         let mut mac = HmacSha1::new_from_slice(key.as_bytes())?;
@@ -124,7 +118,6 @@ mod tests {
             .as_secs() as i64)
             .to_string();
         
-        // Генерируем правильный HMAC для тестового ключа
         let hmac = TokenValidator::generate_hmac(&uuid, &start_time, TEST_KEY_1)
             .expect("Failed to generate HMAC");
 
@@ -147,7 +140,6 @@ mod tests {
             .as_secs() as i64)
             .to_string();
         
-        // Генерируем HMAC с другим ключом
         let hmac = TokenValidator::generate_hmac(&uuid, &start_time, TEST_KEY_2)
             .expect("Failed to generate HMAC");
         
@@ -166,7 +158,6 @@ mod tests {
             .as_secs() as i64)
             .to_string();
         
-        // Генерируем HMAC с первым ключом
         let hmac = TokenValidator::generate_hmac(&uuid, &start_time, TEST_KEY_1)
             .expect("Failed to generate HMAC");
         
@@ -174,7 +165,6 @@ mod tests {
         assert!(result.is_ok());
         assert!(result.unwrap());
 
-        // Генерируем HMAC со вторым ключом
         let hmac = TokenValidator::generate_hmac(&uuid, &start_time, TEST_KEY_2)
             .expect("Failed to generate HMAC");
         
@@ -204,7 +194,6 @@ mod tests {
             .unwrap()
             .as_secs() as i64;
         
-        // Создаем токен, который начнется через 2 секунды
         let future_time = (now + 2).to_string();
         let uuid = Uuid::new_v4().to_string();
         let hmac = TokenValidator::generate_hmac(&uuid, &future_time, "test_key")
@@ -223,7 +212,6 @@ mod tests {
             .unwrap()
             .as_secs() as i64;
         
-        // Создаем токен, который уже просрочен на 91 секунду (больше чем MAX_ACCEPT_LATE)
         let past_time = (now - 91).to_string();
         let uuid = Uuid::new_v4().to_string();
         let hmac = TokenValidator::generate_hmac(&uuid, &past_time, "test_key")

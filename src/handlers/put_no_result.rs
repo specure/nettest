@@ -13,9 +13,7 @@ pub async fn handle_put_no_result(
         return Err("Invalid number of arguments for PUTNORESULT".into());
     }
 
-    // Определяем размер чанка
     let chunk_size = if parts.len() == 2 {
-        // Если указан размер чанка, проверяем его
         match parts[1].parse::<usize>() {
             Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => size,
             _ => {
@@ -27,7 +25,6 @@ pub async fn handle_put_no_result(
         CHUNK_SIZE
     };
     
-    info!("Starting PUTNORESULT process: chunk_size={}", chunk_size);
 
     // Send OK to client after chunk size validation
     stream.write_all(RESP_OK.as_bytes()).await?;
@@ -63,7 +60,7 @@ pub async fn handle_put_no_result(
     }
     let elapsed_ns = start_time.elapsed().as_nanos() as u64;
 
-    info!(
+    debug!(
         "PUTNORESULT completed: received {} bytes in {} ns, found_terminator: {}",
         total_bytes,
         elapsed_ns,
@@ -71,7 +68,6 @@ pub async fn handle_put_no_result(
     );
 
     let time_response = format!("{} {}\n", RESP_TIME, elapsed_ns);
-    // Пробуем отправить TIME, но игнорируем ошибку, если соединение уже закрыто
     if let Err(e) = stream.write_all(time_response.as_bytes()).await {
         debug!("Failed to send TIME response: {}", e);
     }

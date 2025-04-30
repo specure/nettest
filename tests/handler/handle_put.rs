@@ -1,19 +1,22 @@
 #[path = "../test_utils/mod.rs"]
 mod test_utils;
 
+/// This test file implements the RMBT protocol's uplink measurement phase using the PUT command.
+/// It verifies the server's ability to receive and process data uploads with intermediate result
+/// reporting, following the RMBT specification for timing and chunk handling. The test includes
+/// both plain TCP and WebSocket implementations, ensuring proper data transmission, timing
+/// measurements, and intermediate progress reporting. It validates chunk termination, server
+/// responses, and connection cleanup while maintaining protocol compliance.
+
 use tokio::{runtime::Runtime, time::sleep};
-use log::{info, debug};
+use log::{info};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::test_utils::TestServer;
 use fastrand::Rng;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::WebSocketStream;
-use tokio_native_tls::TlsStream;
-use tokio::net::TcpStream;
 use futures_util::{SinkExt, StreamExt};
 use tokio::time::timeout;
-use std::thread;
 
 const TEST_DURATION: u64 = 5;
 const CHUNK_SIZE: usize = 4096;
