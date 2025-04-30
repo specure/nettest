@@ -16,15 +16,19 @@ use std::time::Duration;
 use env_logger;
 use tokio_tungstenite::tungstenite::Message;
 use futures_util::{StreamExt, SinkExt};
+use tokio::time::timeout;
 
-const TEST_DURATION: u64 = 5; // 2 seconds
-const CHUNK_SIZE: usize = 4096; // 4 KiB
+const TEST_DURATION: u64 = 5; // Test duration in seconds
+const CHUNK_SIZE: usize = 4096; // Initial chunk size (4 KiB)
+const MAX_CHUNK_SIZE: usize = 4194304; // Maximum chunk size (4 MiB)
+const MIN_CHUNK_SIZE: usize = 4096; // Minimum chunk size (4 KiB)
+const IO_TIMEOUT: Duration = Duration::from_secs(10); // I/O operation timeout
 
 #[test]
-fn test_handle_get_time() {
+fn test_handle_get_time_rmbt() {
     // Setup logger
     let _ = env_logger::Builder::new()
-        .filter_level(log::LevelFilter::Trace)
+        .filter_level(log::LevelFilter::Debug)
         .format_timestamp_millis()
         .format_module_path(false)
         .format_target(false)
@@ -49,10 +53,10 @@ fn test_handle_get_time() {
         let accept_str = String::from_utf8_lossy(&initial_accept[..n]);
         info!("Initial ACCEPT message: {}", accept_str);
         assert!(accept_str.contains("ACCEPT"), "Server should send initial ACCEPT message");
-        
-        // Test 1: Valid GETTIME command with default chunk size
-        info!("Testing GETTIME with default chunk size");
-        let command = format!("GETTIME {}\n", TEST_DURATION);
+
+        // Test valid GETTIME command with specified chunk size
+        info!("Testing valid GETTIME command");
+        let command = format!("GETTIME {} {}\n", TEST_DURATION, CHUNK_SIZE);
         stream.write_all(command.as_bytes()).await.expect("Failed to send GETTIME command");
         
         // Read and verify data stream
@@ -64,15 +68,16 @@ fn test_handle_get_time() {
         let mut received_termination = false;
         
         while !received_termination && start_time.elapsed() < Duration::from_secs(TEST_DURATION + 1) {
-            match stream.read(&mut buffer).await {
-                Ok(n) => {
+            match timeout(IO_TIMEOUT, stream.read(&mut buffer)).await {
+                Ok(Ok(n)) => {
                     if n == 0 {
                         break;
                     }
-                    total_bytes += n;
-                    debug!("Received chunk size: {} bytes, total: {}, CHUNK_SIZE: {}", n, total_bytes, CHUNK_SIZE);
                     
-                    // Verify chunk format and handle termination
+                    total_bytes += n;
+                    debug!("Received chunk size: {} bytes, total: {}", n, total_bytes);
+                    
+                    // Check if this is a full chunk
                     is_full_chunk = n == CHUNK_SIZE;
                     last_byte = buffer[n-1];
                     debug!("is_full_chunk: {}, last_byte: {:#04x}", is_full_chunk, last_byte);
@@ -80,10 +85,10 @@ fn test_handle_get_time() {
                     if is_full_chunk {
                         debug!("Processing full chunk...");
                         if last_byte == 0xFF {
-                            debug!("Received termination chunk");
                             received_termination = true;
-                            // Send OK response to server immediately
-                            debug!("Sending OK response");
+                            debug!("Received termination chunk");
+                            
+                            // Send OK response
                             stream.write_all(b"OK\n").await.expect("Failed to send OK response");
                             stream.flush().await.expect("Failed to flush OK response");
                             
@@ -97,26 +102,30 @@ fn test_handle_get_time() {
                             let time_parts: Vec<&str> = time_str.trim().split_whitespace().collect();
                             assert_eq!(time_parts.len(), 2, "TIME response should have 2 parts");
                             assert_eq!(time_parts[0], "TIME", "First part should be 'TIME'");
-                            assert!(time_parts[1].parse::<u64>().is_ok(), "Second part should be a number");
+                            
+                            // Verify time is within expected range
+                            let time_ns = time_parts[1].parse::<u64>().expect("Second part should be nanoseconds");
+                            let expected_ns = TEST_DURATION * 1_000_000_000;
+                            assert!(time_ns >= expected_ns, 
+                                   "Test duration should be at least {} seconds", TEST_DURATION);
                             
                             break;
                         } else {
-                            assert_eq!(last_byte, 0x00, "Non-terminal chunk should end with 0x00");
+                            assert_eq!(last_byte, 0x00, "Non-terminal full chunk should end with 0x00");
                         }
                     }
-                    
-                    // Calculate and verify download speed
-                    let elapsed_ns = start_time.elapsed().as_nanos() as f64;
-                    let bytes_per_sec = (total_bytes as f64) / (elapsed_ns / 1e9);
-                    debug!("Current download speed: {:.2} bytes/sec", bytes_per_sec);
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     panic!("Failed to read data: {}", e);
+                }
+                Err(_) => {
+                    panic!("Read timeout");
                 }
             }
         }
         
         assert!(received_termination, "Did not receive termination chunk within timeout");
+        assert!(total_bytes > 0, "Should receive some data");
         
         // Send QUIT command
         info!("Sending QUIT command");

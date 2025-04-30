@@ -25,6 +25,9 @@ use libc::atexit;
 
 const DEFAULT_PLAIN_PORT: u16 = 8080;
 const DEFAULT_TLS_PORT: u16 = 443;
+// const DEFAULT_HOST: &str = "dev.measurementservers.net";
+const DEFAULT_HOST: &str = "127.0.0.1";
+
 
 type HmacSha1 = Hmac<Sha1>;
 
@@ -125,14 +128,14 @@ impl TestServer {
                 process: Command::new("echo").spawn().unwrap(), // dummy process
                 plain_port: port,
                 tls_port: ws_port,
-                host: "dev.measurementservers.net".to_string(),
+                host: DEFAULT_HOST.to_string(),
             };
             *server = Some(instance);
             SERVER_INITIALIZED.store(true, Ordering::SeqCst);
             return Some(Self {
                 plain_port: port,
                 tls_port: ws_port,
-                host: "dev.measurementservers.net".to_string(),
+                host: DEFAULT_HOST.to_string(),
             });
         }
 

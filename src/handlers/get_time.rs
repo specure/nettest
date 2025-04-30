@@ -1,9 +1,11 @@
-use crate::config::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RESP_ERR};
+use crate::config::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RESP_ERR, RESP_OK};
 use std::error::Error;
-use std::time::Instant;
-use log::{debug, error, trace};
+use std::time::{Duration, Instant};
+use log::{debug, error};
 use crate::stream::Stream;
 use fastrand::Rng;
+
+const MAX_SECONDS: u64 = 3600; // Maximum test duration in seconds, matching C implementation
 
 pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
     debug!("handle_get_time: starting");
@@ -11,8 +13,8 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
     // Parse command parts after GETTIME
     let parts: Vec<&str> = command[7..].trim().split_whitespace().collect();
 
-    // Validate command format exactly like in C code
-    if parts.len() != 1 && parts.len() != 2 {
+    // Validate command format - 1 or 2 parts (duration and optional chunk size)
+    if parts.is_empty() || parts.len() > 2 {
         stream.write_all(RESP_ERR.as_bytes()).await?;
         return Ok(());
     }
@@ -26,10 +28,15 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
         }
     };
 
-    // Parse and validate chunk size
-    let chunk_size = if parts.len() == 1 {
-        MIN_CHUNK_SIZE
-    } else {
+    // Check duration constraints like in C code
+    if duration == 0 || duration > MAX_SECONDS {
+        error!("Duration must be between 1 and {} seconds", MAX_SECONDS);
+        stream.write_all(RESP_ERR.as_bytes()).await?;
+        return Ok(());
+    }
+
+    // Parse and validate chunk size if provided (2nd part)
+    let chunk_size = if parts.len() == 2 {
         match parts[1].parse::<usize>() {
             Ok(size) => {
                 if size < MIN_CHUNK_SIZE || size > MAX_CHUNK_SIZE {
@@ -43,44 +50,64 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
                 return Ok(());
             }
         }
+    } else {
+        MIN_CHUNK_SIZE
     };
 
-    // Check duration
-    if duration < 2 {
-        error!("Duration must be at least 2 seconds");
-        stream.write_all(RESP_ERR.as_bytes()).await?;
-        return Ok(());
-    }
+    // Send initial OK response
+    stream.write_all(RESP_OK.as_bytes()).await?;
+    stream.flush().await?;
 
-    let mut total_bytes = 0;
     let start_time = Instant::now();
+    let duration_ns = Duration::from_secs(duration);
     let mut buffer = vec![0u8; chunk_size];
-
     let mut rng = Rng::new();
+    let mut total_bytes = 0usize;
+    let mut last_intermediate_time = Instant::now();
 
-    // Send data until time expires
-    while start_time.elapsed().as_secs() < duration {
-        // Fill buffer with random data
+    // Main test loop - send data until time expires
+    loop {
+        // Fill buffer with random data using fastrand
         rng.fill(&mut buffer[..chunk_size - 1]);
         
-        // Set last byte to 0 for all chunks except the last one
-        buffer[chunk_size - 1] = 0x00;
+        // Check if we've exceeded the duration
+        let elapsed = start_time.elapsed();
+        
+        // Set terminator byte - 0xFF for last chunk, 0x00 for others
+        buffer[chunk_size - 1] = if elapsed >= duration_ns {
+            0xFF // Last chunk
+        } else {
+            0x00 // Intermediate chunk
+        };
         
         // Send chunk
-        stream.write_all(&buffer).await?;
-        stream.flush().await?;
-        total_bytes += chunk_size;
-        
+        match stream.write_all(&buffer).await {
+            Ok(_) => {
+                total_bytes += chunk_size;
+                
+                // Send intermediate TIME response every 200ms
+                let now = Instant::now();
+                if now.duration_since(last_intermediate_time) >= Duration::from_millis(200) {
+                    let elapsed_ns = elapsed.as_nanos();
+                    let time_response = format!("TIME {} BYTES {}\n", elapsed_ns, total_bytes);
+                    stream.write_all(time_response.as_bytes()).await?;
+                    stream.flush().await?;
+                    last_intermediate_time = now;
+                }
+                
+                if buffer[chunk_size - 1] == 0xFF {
+                    break;
+                }
+            }
+            Err(e) => {
+                error!("Error writing chunk: {}", e);
+                stream.write_all(RESP_ERR.as_bytes()).await?;
+                return Ok(());
+            }
+        }
     }
 
-    // Send final chunk with terminator
-    let mut rng = Rng::new();
-    rng.fill(&mut buffer[..chunk_size - 1]);
-    buffer[chunk_size - 1] = 0xFF; // Set terminator
-    stream.write_all(&buffer).await?;
-    total_bytes += chunk_size;
-
-    debug!("All data sent. Total bytes: {}", total_bytes);
+    debug!("Total bytes sent: {}", total_bytes);
 
     // Wait for OK response from client
     let mut response = [0u8; 1024];
@@ -89,15 +116,17 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
         
     if response_str.trim() != "OK" {
         error!("Expected OK response, got: {}", response_str);
-        return Err("Invalid response from client".into());
+        stream.write_all(RESP_ERR.as_bytes()).await?;
+        return Ok(());
     }
 
-    // Send TIME response
-    let time_ns = start_time.elapsed().as_nanos();
+    // Send final TIME response with nanoseconds
+    let elapsed = start_time.elapsed();
+    let time_ns = elapsed.as_nanos();
     let time_response = format!("TIME {}\n", time_ns);
     stream.write_all(time_response.as_bytes()).await?;
     stream.flush().await?;
-    debug!("TIME response sent and flushed");
+    debug!("TIME response sent and flushed. Total time: {}ns, bytes: {}", time_ns, total_bytes);
 
     Ok(())
 }
