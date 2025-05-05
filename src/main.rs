@@ -1,15 +1,15 @@
-use std::error::Error;
-use log::{error, info, debug};
-use fastrand::Rng;
 use crate::server::server::Server;
 use crate::server::server_config::ServerConfig;
+use log::{debug, error, info};
+use std::error::Error;
 
-pub mod server;
-pub mod handlers;
-pub mod utils;
 pub mod config;
+pub mod handlers;
 pub mod logger;
+pub mod server;
 pub mod stream;
+pub mod utils;
+use crate::utils::random_buffer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -25,11 +25,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     if config.debug {
         debug!("debug logging on");
     }
+    log::info!("Random buffer initialising!!!!!!!");
 
-    // Generate random data for testing
-    let mut rng = Rng::new();
-    let mut test_data = vec![0u8; 1024];
-    rng.fill(&mut test_data);
+    let buf = &random_buffer::RANDOM_BUFFER;
+    info!("First 10 bytes: {:?}", &buf[..10]);
+    info!("Last 10 bytes: {:?}", &buf[buf.len() - 10..]);
+    log::info!("Random buffer initialized!");
 
     let (server, _shutdown_tx) = match Server::new(config) {
         Ok(server) => server,

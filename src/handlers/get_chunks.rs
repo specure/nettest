@@ -1,8 +1,9 @@
 use std::time::Instant;
-use log::{debug, error};
+use log::{debug, error, info};
 use crate::config::constants::{CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE, MAX_CHUNKS, RESP_ERR};
 use fastrand::Rng;
 use crate::stream::Stream;
+use crate::utils::random_buffer::get_random_slice;
 
 pub async fn handle_get_chunks(
     stream: &mut Stream,
@@ -44,8 +45,11 @@ pub async fn handle_get_chunks(
 
     while chunks_sent < chunks {
         // Fill buffer with random data
-        rng.fill(&mut buffer[..chunk_size - 1]);
-        
+        let offset = 0; // Можно сделать смещение параметром, если нужно разное для каждого клиента
+        info!("Sending chunk {} of {}", chunks_sent + 1, chunks);
+        let random_bytes = get_random_slice(offset..offset + chunk_size - 1);
+        buffer[..chunk_size - 1].copy_from_slice(&random_bytes);
+        info!("Chunk {} sent", chunks_sent + 1);
         chunks_sent += 1;
         if chunks_sent >= chunks {
             buffer[chunk_size - 1] = 0xFF; // Последний чанк

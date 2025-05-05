@@ -971,6 +971,7 @@ dependencies = [
  "native-tls",
  "nix",
  "openssl",
+ "once_cell",
  "regex",
  "serde",
  "sha1",
