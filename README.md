@@ -28,6 +28,9 @@ cargo build
 
 # Release build with optimizations
 cargo build --release
+
+# Release static build with optimizations
+cargo build --release --target x86_64-unknown-linux-musl
 ```
 
 The release build will be available at `target/release/rmbt_server`.
