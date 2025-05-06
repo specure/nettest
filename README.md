@@ -138,6 +138,4 @@ Performance test results and system metrics are saved in the `performance/` dire
 
 ## License
 
-Copyright 2014-2024 Rundfunk und Telekom Regulierungs-GmbH (RTR-GmbH).
 - Source code: Apache License ([LICENSE.txt](LICENSE.txt))
-- Documentation: [CC BY-AT 3.0](https://creativecommons.org/licenses/by/3.0/at/deed.de_AT)
