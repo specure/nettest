@@ -1,4 +1,4 @@
-# RMBT Test Server
+# RMBT Measurement server 2.0
 
 > ⚠️ **Note:** This server is in the testing phase.
 
