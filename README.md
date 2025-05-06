@@ -1,5 +1,8 @@
 # RMBT Test Server
 
+> ⚠️ **Note:** This server is in the testing phase.
+
+
 ## Overview
 
 This is a Rust implementation of the RMBT (RTR Multithreaded Broadband Test) server, designed for conducting network measurements based on the RMBT protocol. The server supports both direct TCP socket connections and WebSocket protocol communications.
