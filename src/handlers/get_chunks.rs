@@ -45,16 +45,16 @@ pub async fn handle_get_chunks(
 
     while chunks_sent < chunks {
         // Fill buffer with random data
-        let offset = 0; // Можно сделать смещение параметром, если нужно разное для каждого клиента
+        let offset = 0;
         info!("Sending chunk {} of {}", chunks_sent + 1, chunks);
         let random_bytes = get_random_slice(offset..offset + chunk_size - 1);
         buffer[..chunk_size - 1].copy_from_slice(&random_bytes);
         info!("Chunk {} sent", chunks_sent + 1);
         chunks_sent += 1;
         if chunks_sent >= chunks {
-            buffer[chunk_size - 1] = 0xFF; // Последний чанк
+            buffer[chunk_size - 1] = 0xFF;
         } else {
-            buffer[chunk_size - 1] = 0x00; // Обычный чанк
+            buffer[chunk_size - 1] = 0x00;
         }
 
         match stream.write_all(&buffer).await {

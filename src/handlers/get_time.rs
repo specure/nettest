@@ -58,10 +58,8 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
     let mut buffer = vec![0u8; chunk_size];
 
     let mut random_offset = 0;
-
     // Send data until time expires
     while start_time.elapsed().as_secs() < duration {
-        // Получаем срез из RANDOM_BUFFER
         let random_data = get_random_slice(random_offset..random_offset + chunk_size - 1);
         buffer[..chunk_size - 1].copy_from_slice(&random_data);
         random_offset = (random_offset + chunk_size - 1) % crate::utils::random_buffer::RANDOM_BUFFER.len();
@@ -77,10 +75,8 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
     }
 
     // Send final chunk with terminator
-    let mut random_offset = 0;
     let random_data = get_random_slice(random_offset..random_offset + chunk_size - 1);
     buffer[..chunk_size - 1].copy_from_slice(&random_data);
-    random_offset = (random_offset + chunk_size - 1) % crate::utils::random_buffer::RANDOM_BUFFER.len();
     buffer[chunk_size - 1] = 0xFF; // Set terminator
     stream.write_all(&buffer).await?;
     total_bytes += chunk_size;
