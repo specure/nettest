@@ -181,14 +181,12 @@ impl ServerConfig {
             return Err("Error: at least one -l or -L option is required".into());
         }
 
+        logger::init_logger(if config.debug { LevelFilter::Debug } else { LevelFilter::Info })?;
 
         if config.daemon {
             // Run as daemon
             daemon::daemonize()?;
         }
-
-        logger::init_logger(if config.debug { LevelFilter::Debug } else { LevelFilter::Info });
-
 
         Ok(config)
     }
