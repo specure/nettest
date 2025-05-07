@@ -23,7 +23,6 @@ pub async fn handle_put(
 
     // Send OK response immediately after PUT command
     stream.write_all(RESP_OK.as_bytes()).await?;
-    stream.flush().await?;
 
     let start_time = Instant::now();
     let mut last_time_ns = -1;

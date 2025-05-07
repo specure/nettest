@@ -10,7 +10,6 @@ pub async fn handle_ping(stream: &mut Stream) -> Result<(), Box<dyn Error + Send
 
     // Send PONG to client
     stream.write_all(RESP_PONG.as_bytes()).await?;
-    stream.flush().await?;
 
 
     // Read OK response from client
@@ -37,7 +36,7 @@ pub async fn handle_ping(stream: &mut Stream) -> Result<(), Box<dyn Error + Send
     // End time measurement
     let elapsed_ns = start_time.elapsed().as_nanos() as u64;
 
-    
+
     // Check client response
     if !response.trim().eq("OK") {
         error!("Expected OK from client, got: {}", response);

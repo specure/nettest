@@ -1,98 +1,93 @@
+use crate::config::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RESP_ERR};
+use std::error::Error;
 use std::time::Instant;
-use log::{debug, error, info};
-use crate::config::constants::{CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE, MAX_CHUNKS, RESP_ERR};
-use fastrand::Rng;
+use log::{debug, error};
 use crate::stream::Stream;
-use crate::utils::random_buffer::get_random_slice;
+use crate::utils::random_buffer::{get_buffer_size, get_random_slice};
 
-pub async fn handle_get_chunks(
-    stream: &mut Stream,
-    command: &str,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let parts: Vec<&str> = command.split_whitespace().collect();
-    if parts.len() < 2 || parts.len() > 3 {
+pub async fn handle_get_chunks(stream: &mut Stream, command: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+    debug!("handle_get_chunks: starting");
+
+    // Parse command parts after GETCHUNKS
+    let parts: Vec<&str> = command[9..].trim().split_whitespace().collect();
+
+    // Validate command format exactly like in C code
+    if parts.len() != 1 && parts.len() != 2 {
         stream.write_all(RESP_ERR.as_bytes()).await?;
-        return Err("Invalid number of arguments for GETCHUNKS".into());
+        return Ok(());
     }
 
-    let chunks = match parts[1].parse::<u32>() {
-        Ok(n) if n > 0 && n <= MAX_CHUNKS as u32 => n,
-        _ => {
+    // Parse number of chunks using strtoul-like parsing
+    let num_chunks = match parts[0].parse::<u64>() {
+        Ok(n) => n,
+        Err(_) => {
             stream.write_all(RESP_ERR.as_bytes()).await?;
-            return Err("Invalid chunks value or exceeds MAX_CHUNKS".into());
+            return Ok(());
         }
     };
 
-    let chunk_size = if parts.len() == 3 {
-        match parts[2].parse::<usize>() {
-            Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => size,
-            _ => {
+    // Parse and validate chunk size
+    let chunk_size = if parts.len() == 1 {
+        MIN_CHUNK_SIZE
+    } else {
+        match parts[1].parse::<usize>() {
+            Ok(size) => {
+                if size < MIN_CHUNK_SIZE || size > MAX_CHUNK_SIZE {
+                    stream.write_all(RESP_ERR.as_bytes()).await?;
+                    return Ok(());
+                }
+                size
+            }
+            Err(_) => {
                 stream.write_all(RESP_ERR.as_bytes()).await?;
-                return Err("Invalid chunk size".into());
+                return Ok(());
             }
         }
-    } else {
-        CHUNK_SIZE
     };
-    
-    debug!("Starting GETCHUNKS process: chunks={}, chunk_size={}", chunks, chunk_size);
+
+    // Check number of chunks
+    if num_chunks < 1 {
+        error!("Number of chunks must be at least 1");
+        stream.write_all(RESP_ERR.as_bytes()).await?;
+        return Ok(());
+    }
 
     let mut total_bytes = 0;
     let start_time = Instant::now();
     let mut buffer = vec![0u8; chunk_size];
-    let mut chunks_sent = 0;
-    let mut rng = Rng::new();
 
-    while chunks_sent < chunks {
-        // Fill buffer with random data
-        let offset = 0;
-        info!("Sending chunk {} of {}", chunks_sent + 1, chunks);
-        let random_bytes = get_random_slice(offset..offset + chunk_size - 1);
-        buffer[..chunk_size - 1].copy_from_slice(&random_bytes);
-        info!("Chunk {} sent", chunks_sent + 1);
-        chunks_sent += 1;
-        if chunks_sent >= chunks {
-            buffer[chunk_size - 1] = 0xFF;
-        } else {
-            buffer[chunk_size - 1] = 0x00;
-        }
+    let mut random_offset = 0;
+    // Send specified number of chunks
+    for i in 0..num_chunks {
+        get_random_slice(&mut buffer[..chunk_size - 1], random_offset);
+        random_offset = (random_offset + chunk_size - 1) % get_buffer_size();
 
-        match stream.write_all(&buffer).await {
-            Ok(_) => {
-                stream.flush().await?;
-                total_bytes += chunk_size;
-                debug!("Sent chunk {}/{}: last_byte=0x{:02X}", chunks_sent, chunks, buffer[chunk_size - 1]);
-            },
-            Err(e) => {
-                error!("Failed to send chunk: {}", e);
-                stream.write_all(RESP_ERR.as_bytes()).await?;
-                return Err(e.into());
-            }
-        }
+        // Set last byte to 0xFF for the last chunk, 0x00 for others
+        buffer[chunk_size - 1] = if i == num_chunks - 1 { 0xFF } else { 0x00 };
+
+        // Send chunk
+        stream.write_all(&buffer).await?;
+        total_bytes += chunk_size;
     }
 
-    let elapsed = start_time.elapsed();
-    debug!(
-        "GETCHUNKS completed: sent {} chunks ({} bytes) in {:?}",
-        chunks_sent,
-        total_bytes,
-        elapsed
-    );
 
-    let mut response = vec![0u8; 1024];
+    // Wait for OK response from client
+    let mut response = [0u8; 1024];
     let n = stream.read(&mut response).await?;
     let response_str = String::from_utf8_lossy(&response[..n]);
-    debug!("Client response: {}", response_str);
 
-    if !response_str.trim().eq("OK") {
-        error!("Expected OK from client, got: {}", response_str);
-        stream.write_all(RESP_ERR.as_bytes()).await?;
-        return Err("Invalid client response".into());
+    // Calculate total time including OK response
+    let time_ns = start_time.elapsed().as_nanos();
+
+    if response_str.trim() != "OK" {
+        error!("Expected OK response, got: {}", response_str);
+        return Err("Invalid response from client".into());
     }
 
-    let time_ns = elapsed.as_nanos();
+    // Send TIME response
     let time_response = format!("TIME {}\n", time_ns);
     stream.write_all(time_response.as_bytes()).await?;
+    debug!("TIME response sent and flushed");
 
     Ok(())
 }

@@ -1,22 +1,35 @@
-use once_cell::sync::Lazy;
 use std::sync::Arc;
-use std::ops::Range;
 
 const RANDOM_SIZE: usize = 100 * 1024 * 1024; // 100MB
 
-pub static RANDOM_BUFFER: Lazy<Arc<Vec<u8>>> = Lazy::new(|| {
+static mut RANDOM_BUFFER: Option<Arc<Vec<u8>>> = None;
+
+pub fn init_random_buffer() {
     let mut buf = vec![0u8; RANDOM_SIZE];
     fastrand::fill(&mut buf);
     log::info!("Random buffer created!");
-    Arc::new(buf)
-});
-
-pub fn get_random_slice(range: Range<usize>) -> Vec<u8> {
-    let buf = &RANDOM_BUFFER;
-    let mut result = Vec::with_capacity(range.len());
-    let len = buf.len();
-    for i in range {
-        result.push(buf[i % len]);
+    unsafe {
+        RANDOM_BUFFER = Some(Arc::new(buf));
     }
-    result
-} 
+}
+
+pub fn get_buffer_size() -> usize {
+    return RANDOM_SIZE;
+}
+
+pub fn get_random_buffer() -> Arc<Vec<u8>> {
+    unsafe {
+        RANDOM_BUFFER.as_ref().expect("Random buffer not initialized").clone()
+    }
+}
+
+pub fn get_random_slice(buffer: &mut [u8], offset: usize) {
+    let random_buf = get_random_buffer();
+    let start = offset % RANDOM_SIZE;
+    
+    if start + buffer.len() <= RANDOM_SIZE {
+        buffer.copy_from_slice(&random_buf[start..start + buffer.len()]);
+    } else {
+        buffer.copy_from_slice(&random_buf[..buffer.len()]);
+    }
+}

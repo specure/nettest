@@ -27,7 +27,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
     debug!("Random buffer initialising!!!!!!!");
 
-    let buf = &random_buffer::RANDOM_BUFFER;
+    random_buffer::init_random_buffer();
+    let buf = random_buffer::get_random_buffer();
     debug!("First 10 bytes: {:?}", &buf[..10]);
     debug!("Last 10 bytes: {:?}", &buf[buf.len() - 10..]);
     info!("Random buffer initialized!");

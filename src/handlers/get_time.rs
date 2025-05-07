@@ -1,14 +1,12 @@
 use crate::config::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RESP_ERR};
 use std::error::Error;
 use std::time::Instant;
-use log::{debug, error, trace};
+use log::{debug, error, info, trace};
 use crate::stream::Stream;
 use fastrand::Rng;
-use crate::utils::random_buffer::get_random_slice;
+use crate::utils::random_buffer::{get_buffer_size, get_random_slice};
 
 pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
-    debug!("handle_get_time: starting");
-
     // Parse command parts after GETTIME
     let parts: Vec<&str> = command[7..].trim().split_whitespace().collect();
 
@@ -60,26 +58,23 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
     let mut random_offset = 0;
     // Send data until time expires
     while start_time.elapsed().as_secs() < duration {
-        let random_data = get_random_slice(random_offset..random_offset + chunk_size - 1);
-        buffer[..chunk_size - 1].copy_from_slice(&random_data);
-        random_offset = (random_offset + chunk_size - 1) % crate::utils::random_buffer::RANDOM_BUFFER.len();
+        get_random_slice(&mut buffer[..chunk_size - 1], random_offset);
+        random_offset = (random_offset + chunk_size - 1) % get_buffer_size();
 
         // Set last byte to 0 for all chunks except the last one
         buffer[chunk_size - 1] = 0x00;
 
         // Send chunk
         stream.write_all(&buffer).await?;
-        stream.flush().await?;
         total_bytes += chunk_size;
-
     }
 
     // Send final chunk with terminator
-    let random_data = get_random_slice(random_offset..random_offset + chunk_size - 1);
-    buffer[..chunk_size - 1].copy_from_slice(&random_data);
+    get_random_slice(&mut buffer[..chunk_size - 1], random_offset);
     buffer[chunk_size - 1] = 0xFF; // Set terminator
     stream.write_all(&buffer).await?;
     total_bytes += chunk_size;
+    let time_ns = start_time.elapsed().as_nanos();
 
     debug!("All data sent. Total bytes: {}", total_bytes);
 
@@ -94,12 +89,9 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
     }
 
     // Send TIME response
-    let time_ns = start_time.elapsed().as_nanos();
     let time_response = format!("TIME {}\n", time_ns);
     stream.write_all(time_response.as_bytes()).await?;
-    stream.flush().await?;
     debug!("TIME response sent and flushed");
 
     Ok(())
 }
-
