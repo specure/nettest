@@ -1,15 +1,15 @@
-~/Library/Logs/rmbt/rmbt_server.log {
+/var/log/rmbt/rmbt_server.log {
     daily
     rotate 31
     compress
     delaycompress
     missingok
     notifempty
-    create 644 $USER staff
+    create 644 root root
     dateext
     dateformat -%Y-%m-%d
     sharedscripts
     postrotate
-        /bin/kill -HUP `cat ~/Library/Logs/rmbt/rmbt_server.pid 2>/dev/null` 2>/dev/null || true
+        /bin/kill -HUP `cat /var/run/rmbt_server.pid 2>/dev/null` 2>/dev/null || true
     endscript
-} 
+}
