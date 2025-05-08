@@ -6,7 +6,6 @@ use std::time::Instant;
 pub async fn handle_ping(stream: &mut Stream) -> Result<(), Box<dyn Error + Send + Sync>> {
     // Send PONG to client first
     stream.write_all(RESP_PONG.as_bytes()).await?;
-    stream.flush().await?;
 
     // Start time measurement after sending PONG
     let start_time = Instant::now();
