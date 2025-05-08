@@ -1,10 +1,28 @@
-use crate::config::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RESP_ERR};
-use std::error::Error;
+use crate::{config::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RESP_ERR}};
+use std::{error::Error};
 use std::time::Instant;
+use bytes::Bytes;
+
 use log::{debug, error, info, trace};
 use crate::stream::Stream;
-use fastrand::Rng;
 use crate::utils::random_buffer::{get_buffer_size, get_random_slice};
+
+
+
+pub fn generate_chunks(num_chunks: usize, chunk_size: usize) -> Vec<Bytes> {
+    let mut rng = fastrand::Rng::new();
+    let mut chunks = Vec::with_capacity(num_chunks);
+
+    for i in 0..num_chunks {
+        let mut buf = vec![0u8; chunk_size];
+        rng.fill(&mut buf[..chunk_size - 1]); // random bytes
+        buf[chunk_size - 1] =  { 0x00 };
+        chunks.push(Bytes::from(buf));
+    }
+
+    chunks
+}
+
 
 pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
     // Parse command parts after GETTIME
@@ -52,29 +70,37 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
     }
 
     let mut total_bytes = 0;
-    let start_time = Instant::now();
-    let mut buffer = vec![0u8; chunk_size];
 
-    let mut random_offset = 0;
+    let chunks = generate_chunks(64, chunk_size);
+    let mut chunk_index = 0;
+
+
+    let mut rng = fastrand::Rng::new();
+
+    let mut term_chank = vec![0u8; chunk_size];
+    rng.fill(&mut term_chank[..chunk_size - 1]); // random bytes
+    term_chank[chunk_size - 1] =  { 0xFF };
+
+
+    let start_time = Instant::now();
+
     // Send data until time expires
     while start_time.elapsed().as_secs() < duration {
-        get_random_slice(&mut buffer[..chunk_size - 1], random_offset);
-        random_offset = (random_offset + chunk_size - 1) % get_buffer_size();
-
-        // Set last byte to 0 for all chunks except the last one
-        buffer[chunk_size - 1] = 0x00;
-
-        // Send chunk
-        stream.write_all(&buffer).await?;
+        // Get next chunk from the array, cycling through all chunks
+        let chunk = &chunks[chunk_index];
+        stream.write_all(chunk).await?;
         total_bytes += chunk_size;
+        
+        // Move to next chunk, cycling back to start if needed
+        chunk_index += 1;
+        if chunk_index > 62 {
+            chunk_index = 0;
+        }
     }
-
-    // Send final chunk with terminator
-    get_random_slice(&mut buffer[..chunk_size - 1], random_offset);
-    buffer[chunk_size - 1] = 0xFF; // Set terminator
-    stream.write_all(&buffer).await?;
-    total_bytes += chunk_size;
+    stream.write_all(&term_chank).await?;
+    stream.flush().await?;
     let time_ns = start_time.elapsed().as_nanos();
+    total_bytes += chunk_size;
 
     debug!("All data sent. Total bytes: {}", total_bytes);
 

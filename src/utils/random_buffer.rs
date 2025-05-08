@@ -23,13 +23,15 @@ pub fn get_random_buffer() -> Arc<Vec<u8>> {
     }
 }
 
-pub fn get_random_slice(buffer: &mut [u8], offset: usize) {
+pub fn get_random_slice(buffer: &mut [u8], offset: usize) -> usize {
     let random_buf = get_random_buffer();
     let start = offset % RANDOM_SIZE;
     
     if start + buffer.len() <= RANDOM_SIZE {
         buffer.copy_from_slice(&random_buf[start..start + buffer.len()]);
+        return start + RANDOM_SIZE
     } else {
         buffer.copy_from_slice(&random_buf[..buffer.len()]);
+        return  RANDOM_SIZE
     }
 }

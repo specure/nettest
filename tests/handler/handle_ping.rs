@@ -11,7 +11,7 @@ mod test_utils;
 use tokio::runtime::Runtime;
 use log::{info, debug, trace};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use crate::test_utils::TestServer;
+use crate::test_utils::{TestServer, create_optimized_runtime};
 use std::time::Duration;
 use env_logger;
 use std::collections::VecDeque;
@@ -30,7 +30,7 @@ fn test_handle_ping() {
         .format_target(false)
         .try_init();
 
-    let rt = Runtime::new().unwrap();
+    let rt = create_optimized_runtime();
     
     rt.block_on(async {
         info!("Starting PING test");

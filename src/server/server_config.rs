@@ -4,12 +4,17 @@ use std::error::Error;
 use std::ffi::CString;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::fs;
-use log::{error, info, LevelFilter};
+use log::{error, info, debug, LevelFilter};
 use crate::logger;
 use crate::utils::{daemon, secret_keys};
+use std::io::BufReader;
+use std::sync::Arc;
+use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, PrivatePkcs1KeyDer, PrivateSec1KeyDer};
+use tokio_rustls::rustls::ServerConfig;
+use tokio_rustls::TlsAcceptor;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ServerConfig {
+pub struct RmbtServerConfig {
     pub listen_addresses: Vec<SocketAddr>,
     pub ssl_listen_addresses: Vec<SocketAddr>,
     pub cert_path: Option<String>,
@@ -30,13 +35,13 @@ pub struct TlsConfig {
     pub key_path: String,
 }
 
-impl ServerConfig {
+impl RmbtServerConfig {
     pub fn from_args() -> Result<Self, Box<dyn Error + Send + Sync>> {
         Self::from_args_vec(std::env::args().collect())
     }
 
     pub fn from_args_vec(args: Vec<String>) -> Result<Self, Box<dyn Error + Send + Sync>> {
-        let mut config = ServerConfig {
+        let mut config = RmbtServerConfig {
             listen_addresses: Vec::new(),
             ssl_listen_addresses: Vec::new(),
             cert_path: None,
@@ -191,19 +196,57 @@ impl ServerConfig {
         Ok(config)
     }
 
-    pub fn load_identity(
-        &self,
-    ) -> Result<tokio_native_tls::native_tls::Identity, Box<dyn Error + Send + Sync>> {
-        let cert = fs::read(self.cert_path.as_ref().unwrap())?;
-        let key = fs::read(self.key_path.as_ref().unwrap())?;
-        info!("Loading identity from cert and key files");
-        Ok(tokio_native_tls::native_tls::Identity::from_pkcs8(
-            &cert, &key,
-        )?)
+    pub fn load_identity(&self) -> Result<TlsAcceptor, Box<dyn Error + Send + Sync>> {
+        info!("Starting TLS configuration loading");
+        let certs = self.load_certs()?;
+        info!("Successfully loaded {} certificates", certs.len());
+        let key = self.load_private_key()?;
+        info!("Successfully loaded private key");
+        
+        info!("Building TLS configuration");
+        let config = ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)
+            .expect("bad certificates/private key");
+            
+        info!("TLS configuration built successfully");
+        Ok(TlsAcceptor::from(Arc::new(config)))
+    }
+
+    fn load_certs(&self) -> Result<Vec<CertificateDer<'static>>, Box<dyn Error + Send + Sync>> {
+        let cert_path = self.cert_path.as_ref().unwrap();
+        info!("Loading certificates from {}", cert_path);
+        let certfile = fs::read(cert_path)?;
+        info!("Read {} bytes from certificate file", certfile.len());
+        let mut reader = BufReader::new(certfile.as_slice());
+        let certs = rustls_pemfile::certs(&mut reader)
+            .collect::<Result<Vec<_>, _>>()?;
+        info!("Successfully parsed {} certificates", certs.len());
+        for (i, cert) in certs.iter().enumerate() {
+            info!("Certificate {}: {:?}", i, cert);
+        }
+        Ok(certs)
+    }
+    
+    fn load_private_key(&self) -> Result<PrivateKeyDer<'static>, Box<dyn Error + Send + Sync>> {
+        let key_path = self.key_path.as_ref().unwrap();
+        info!("Loading private key from {}", key_path);
+        let keyfile = fs::read(key_path)?;
+        info!("Read {} bytes from key file", keyfile.len());
+        let mut reader = BufReader::new(keyfile.as_slice());
+        
+        // Try to read any private key format
+        if let Some(key) = rustls_pemfile::private_key(&mut reader)? {
+            info!("Successfully loaded private key: {:?}", key);
+            Ok(key)
+        } else {
+            error!("No private keys found in key file");
+            Err("No private keys found in key file".into())
+        }
     }
 }
 
-impl Default for ServerConfig {
+impl Default for RmbtServerConfig {
     fn default() -> Self {
         Self {
             listen_addresses: vec!["127.0.0.1:8080".parse().unwrap()],
@@ -313,7 +356,7 @@ mod tests {
     #[test]
     fn test_validate_required_cert_and_key() {
         let args = create_test_args(&["-l", "8080"]);
-        let result = ServerConfig::from_args_vec(args);
+        let result = RmbtServerConfig::from_args_vec(args);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("-c and -k options are required"));
     }
@@ -326,7 +369,7 @@ mod tests {
             "-k", "key.pem",
             "-t", "0"
         ]);
-        let result = ServerConfig::from_args_vec(args);
+        let result = RmbtServerConfig::from_args_vec(args);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Number of threads (-t) must be positive"));
     }
@@ -337,7 +380,7 @@ mod tests {
             "-c", "cert.pem",
             "-k", "key.pem"
         ]);
-        let result = ServerConfig::from_args_vec(args);
+        let result = RmbtServerConfig::from_args_vec(args);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("at least one -l or -L option is required"));
     }
@@ -348,7 +391,7 @@ mod tests {
             "-L", "8443",
             "-k", "key.pem"
         ]);
-        let result = ServerConfig::from_args_vec(args);
+        let result = RmbtServerConfig::from_args_vec(args);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Need path to certificate (-c) for TLS connections"));
     }
@@ -359,7 +402,7 @@ mod tests {
             "-L", "8443",
             "-c", "cert.pem"
         ]);
-        let result = ServerConfig::from_args_vec(args);
+        let result = RmbtServerConfig::from_args_vec(args);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Need path to key (-k) for TLS connections"));
     }
@@ -373,7 +416,7 @@ mod tests {
             "-k", "key.pem",
             "-t", "100"
         ]);
-        let config = ServerConfig::from_args_vec(args).unwrap();
+        let config = RmbtServerConfig::from_args_vec(args).unwrap();
         
         assert_eq!(config.listen_addresses.len(), 1);
         assert_eq!(config.ssl_listen_addresses.len(), 1);
@@ -392,7 +435,7 @@ mod tests {
             "-c", "cert2.pem",
             "-k", "key.pem"
         ]);
-        let result = ServerConfig::from_args_vec(args);
+        let result = RmbtServerConfig::from_args_vec(args);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("only one -c is allowed"));
     }
@@ -405,7 +448,7 @@ mod tests {
             "-k", "key1.pem",
             "-k", "key2.pem"
         ]);
-        let result = ServerConfig::from_args_vec(args);
+        let result = RmbtServerConfig::from_args_vec(args);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("only one -k is allowed"));
     }
@@ -418,7 +461,7 @@ mod tests {
             "-k", "key.pem",
             "-v", "1.0"
         ]);
-        let result = ServerConfig::from_args_vec(args);
+        let result = RmbtServerConfig::from_args_vec(args);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("unsupported version"));
     }

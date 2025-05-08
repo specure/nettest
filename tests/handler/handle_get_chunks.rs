@@ -97,12 +97,8 @@ fn test_handle_get_chunks_r() {
             assert!(found_terminator, "Did not find terminator byte");
             
             // Send OK only after receiving all chunks
-            stream.write_all(b"OK\n").await.expect("Failed to send OK");
+            stream.write_all(b"OK").await.expect("Failed to send OK");
             stream.flush().await.expect("Failed to flush OK");
-            
-            let chunk_duration = chunk_start_time.elapsed();
-            let bytes_per_second = (total_bytes_read as f64 / chunk_duration.as_secs_f64()) as u64;
-            bytes_per_sec.push(bytes_per_second);
             
             let mut response = [0u8; 1024];
             let n = stream.read(&mut response).await.expect("Failed to read TIME response");
@@ -113,6 +109,10 @@ fn test_handle_get_chunks_r() {
             let time_str = time_response.trim().split_whitespace().nth(1).unwrap();
             let time_ns = time_str.parse::<u64>().expect("Failed to parse time");
             assert!(time_ns > 0, "Time should be positive");
+            
+            // Calculate speed using server's time
+            let bytes_per_second = (total_bytes_read as f64 * 1_000_000_000.0 / time_ns as f64) as u64;
+            bytes_per_sec.push(bytes_per_second);
             
             // Calculate optimal chunk size based on current performance
             if chunks >= MAX_CHUNKS {
@@ -214,11 +214,7 @@ async fn test_handle_get_chunks_ws() {
         assert!(found_terminator, "Did not find terminator byte");
         
         // Send OK only after receiving all chunks
-        write.send(Message::Text("OK\n".to_string())).await.expect("Failed to send OK");
-        
-        let chunk_duration = chunk_start_time.elapsed();
-        let bytes_per_second = (total_bytes_read as f64 / chunk_duration.as_secs_f64()) as u64;
-        bytes_per_sec.push(bytes_per_second);
+        write.send(Message::Text("OK".to_string())).await.expect("Failed to send OK");
         
         let time_response = read.next().await.expect("Failed to read TIME response").expect("Failed to read TIME response");
         let time_text = time_response.to_text().expect("TIME response is not text");
@@ -228,6 +224,10 @@ async fn test_handle_get_chunks_ws() {
         let time_str = time_text.trim().split_whitespace().nth(1).unwrap();
         let time_ns = time_str.parse::<u64>().expect("Failed to parse time");
         assert!(time_ns > 0, "Time should be positive");
+        
+        // Calculate speed using server's time
+        let bytes_per_second = (total_bytes_read as f64 * 1_000_000_000.0 / time_ns as f64) as u64;
+        bytes_per_sec.push(bytes_per_second);
         
         // Calculate optimal chunk size based on current performance
         if chunks >= MAX_CHUNKS {

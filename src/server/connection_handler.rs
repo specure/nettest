@@ -6,19 +6,19 @@ use crate::utils::token_validator::TokenValidator;
 use log::{debug, error, info};
 use std::error::Error;
 use std::sync::Arc;
-use crate::server::server_config::ServerConfig;
+use crate::server::server_config::RmbtServerConfig;
 use crate::stream::Stream;
 
 pub struct ConnectionHandler {
     stream: Stream,
-    config: Arc<ServerConfig>,
+    config: Arc<RmbtServerConfig>,
     token_validator: Arc<TokenValidator>,
 }
 
 impl ConnectionHandler {
     pub fn new(
         stream: Stream,
-        config: Arc<ServerConfig>,
+        config: Arc<RmbtServerConfig>,
         token_validator: Arc<TokenValidator>,
     ) -> Self {
         Self {
@@ -45,7 +45,6 @@ impl ConnectionHandler {
 
         let chunk_size_msg = format!("CHUNKSIZE {} {} {}\n", CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE); //todo compare version
         self.stream.write_all(chunk_size_msg.as_bytes()).await?;
-        self.stream.flush().await?;
 
 
         // Main command loop
@@ -120,17 +119,11 @@ impl ConnectionHandler {
         };  //TODO
 
         debug!("Sending greeting message: {}", greeting);
-        let written = self.stream.write(greeting.as_bytes()).await?;
-        debug!("Written {} bytes for greeting", written);
-        self.stream.flush().await?;
-        debug!("Greeting message sent and flushed");
+        let written = self.stream.write_all(greeting.as_bytes()).await?;
 
         let accept_token = "ACCEPT TOKEN QUIT\n";
         debug!("Sending accept token message: {}", accept_token);
-        let written = self.stream.write(accept_token.as_bytes()).await?;
-        debug!("Written {} bytes for accept token", written);
-        self.stream.flush().await?;
-        debug!("Accept token message sent and flushed");
+        let written = self.stream.write_all(accept_token.as_bytes()).await?;
 
         Ok(())
     }
@@ -209,7 +202,7 @@ mod tests {
         // Server accepts connection
         let (server, _) = listener.accept().await.unwrap();
 
-        let config = Arc::new(ServerConfig::default());
+        let config = Arc::new(RmbtServerConfig::default());
         let token_validator = Arc::new(TokenValidator::new(vec![], vec![]));
 
         let mut handler = ConnectionHandler::new(
@@ -238,7 +231,7 @@ mod tests {
         // Server accepts connection
         let (server, _) = listener.accept().await.unwrap();
 
-        let config = Arc::new(ServerConfig::default());
+        let config = Arc::new(RmbtServerConfig::default());
         let token_validator = Arc::new(TokenValidator::new(vec![], vec![]));
 
         let mut handler = ConnectionHandler::new(
@@ -267,7 +260,7 @@ mod tests {
         // Server accepts connection
         let (server, _) = listener.accept().await.unwrap();
 
-        let config = Arc::new(ServerConfig::default());
+        let config = Arc::new(RmbtServerConfig::default());
         let token_validator = Arc::new(TokenValidator::new(vec![], vec![]));
 
         let mut handler = ConnectionHandler::new(

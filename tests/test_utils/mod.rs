@@ -295,7 +295,7 @@ impl TestServer {
         let n = tls_stream.read(&mut buf).await?;
         let response = String::from_utf8_lossy(&buf[..n]);
         info!("Received RMBT upgrade response: {}", response);
-        
+
         assert!(response.contains("101 Switching Protocols"), "Server should accept RMBT upgrade");
         assert!(response.contains("Upgrade: RMBT"), "Server should upgrade to RMBT");
 
@@ -353,7 +353,7 @@ impl Drop for TestServer {
     fn drop(&mut self) {
         // Decrement active tests counter
         let remaining = ACTIVE_TESTS.fetch_sub(1, Ordering::SeqCst);
-        
+
         // If this was the last test, cleanup the server
         if remaining == 1 {
             if let Some(mut server) = TEST_SERVER.lock().unwrap().take() {
@@ -371,7 +371,7 @@ pub fn find_free_port() -> u16 {
     let port = listener.local_addr().unwrap().port();
     drop(listener);
     port
-} 
+}
 
 // Use server key
 const SERVER_KEY: &str = "PWOGfvIOPbvnltvjKHbmU8WGR5ycbEH55htjWDb5t0EhcKqFFgFwLm9tP3uQB5iJ3BwT4tZADvaW9LR8eYSY6OgCPW6dXQxQzdjh";
@@ -382,12 +382,12 @@ pub fn generate_token() -> Result<String, Box<dyn Error + Send + Sync>> {
     if uuid.len() != 36 || !uuid.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
         return Err("Invalid UUID format".into());
     }
-    
+
     // Get current time in seconds
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)?
         .as_secs();
-    
+
     // Compensate time difference only when using default ports (real server)
     let start_time = if env::var("TEST_USE_DEFAULT_PORTS").is_ok() {
         // Subtract 30 seconds to compensate for server time difference
@@ -395,12 +395,12 @@ pub fn generate_token() -> Result<String, Box<dyn Error + Send + Sync>> {
     } else {
         now.to_string()
     };
-    
+
     // Verify time format (digits only)
     if !start_time.chars().all(|c| c.is_ascii_digit()) {
         return Err("Invalid time format".into());
     }
-    
+
     // Form message for HMAC (max 128 bytes as in C code)
     let message = format!("{}_{}", uuid, start_time);
     if message.len() > 128 {
@@ -412,27 +412,37 @@ pub fn generate_token() -> Result<String, Box<dyn Error + Send + Sync>> {
     mac.update(message.as_bytes());
     let result = mac.finalize();
     let code_bytes = result.into_bytes();
-    
+
     // Encode in base64 as in Java code
     let hmac = BASE64.encode(code_bytes);
-    
+
     // Verify HMAC format (base64)
     if !hmac.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=') {
         return Err("Invalid HMAC format".into());
     }
-    
+
     // Form token in the same format as C code
     let token = format!("TOKEN {}_{}_{}\n", uuid, start_time, hmac);
-    
+
     // Verify token format
     if !token.starts_with("TOKEN ") {
         return Err("Invalid token format: must start with 'TOKEN '".into());
     }
-    
+
     let token_parts: Vec<&str> = token[6..].trim().split('_').collect();
     if token_parts.len() != 3 {
         return Err("Invalid token format: must be TOKEN uuid_starttime_hmac".into());
     }
-    
+
     Ok(token)
+}
+
+pub fn create_optimized_runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(200)
+        .enable_all()
+        .thread_name("rmbt-worker")
+        .thread_stack_size(30 * 1024 * 1024) // 3MB stack size
+        .build()
+        .expect("Failed to create Tokio runtime")
 }

@@ -28,13 +28,12 @@ pub async fn handle_put_no_result(
 
     // Send OK to client after chunk size validation
     stream.write_all(RESP_OK.as_bytes()).await?;
-    stream.flush().await?;
 
 
-    let start_time = Instant::now();
     let mut total_bytes = 0;
     let mut buffer = vec![0u8; chunk_size];
     let mut found_terminator = false;
+    let start_time = Instant::now();
 
     'read_chunks: loop {
         // Read exactly chunk_size bytes

@@ -1,18 +1,21 @@
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio_native_tls::TlsAcceptor;
 use std::error::Error;
 use std::net::SocketAddr;
 use log::{info, error};
 use crate::utils::token_validator::TokenValidator;
-use crate::server::server_config::ServerConfig;
+use crate::server::server_config::RmbtServerConfig;
 use tokio::sync::oneshot;
 use crate::server::connection_handler::ConnectionHandler;
 use tokio::net::TcpStream;
 use crate::utils::use_http::{define_stream};
+use tokio_rustls::TlsAcceptor;
+use crate::stream::Stream;
+
+
 
 pub struct Server {
-    config: Arc<ServerConfig>,
+    config: Arc<RmbtServerConfig>,
     tls_acceptor: Option<Arc<TlsAcceptor>>,
     token_validator: Arc<TokenValidator>,
     shutdown_signal: oneshot::Receiver<()>,
@@ -20,29 +23,32 @@ pub struct Server {
 
 impl Server {
     pub fn new(
-        config: ServerConfig,
+        config: RmbtServerConfig,
     ) -> Result<(Self, oneshot::Sender<()>), Box<dyn Error + Send + Sync>> {
         // Create TLS acceptor if SSL is configured
         let tls_acceptor = if !config.ssl_listen_addresses.is_empty() {
-            let identity = config.load_identity()?;
-            let acceptor = tokio_native_tls::native_tls::TlsAcceptor::new(identity)?;
-            Some(Arc::new(TlsAcceptor::from(acceptor)))
+            Some(Arc::new(config.load_identity()?))
         } else {
             None
         };
 
-        let (tx, rx) = oneshot::channel();
+        let config = Arc::new(config);
         let token_validator = Arc::new(TokenValidator::new(
             config.secret_keys.clone(),
             config.secret_key_labels.clone(),
         ));
 
-        Ok((Self {
-            config: Arc::new(config),
-            tls_acceptor,
-            token_validator,
-            shutdown_signal: rx,
-        }, tx))
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+        Ok((
+            Self {
+                config,
+                tls_acceptor,
+                token_validator,
+                shutdown_signal: shutdown_rx,
+            },
+            shutdown_tx,
+        ))
     }
 
     pub async fn run(mut self) -> Result<SocketAddr, Box<dyn Error + Send + Sync>> {
@@ -125,7 +131,7 @@ async fn handle_connection(
     addr: SocketAddr,
     is_ssl: bool,
     token_validator: Arc<TokenValidator>,
-    config: Arc<ServerConfig>,
+    config: Arc<RmbtServerConfig>,
     tls_acceptor: Option<Arc<TlsAcceptor>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     info!("New {} connection from {}", if is_ssl { "TLS" } else { "plain TCP" }, addr);
@@ -169,8 +175,6 @@ mod tests {
     use tokio::net::TcpStream;
     use std::net::{TcpListener};
     use log::debug;
-    use tokio_native_tls::TlsConnector;
-    use native_tls::TlsConnector as NativeTlsConnector;
 
     fn find_free_port() -> u16 {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -182,7 +186,7 @@ mod tests {
         let port = find_free_port();
         debug!("Found free port: {}", port);
 
-        let config = ServerConfig {
+        let config = RmbtServerConfig {
             listen_addresses: vec![format!("127.0.0.1:{}", port).parse().unwrap()],
             ssl_listen_addresses: vec![],
             cert_path: Some("test.crt".to_string()),
@@ -192,7 +196,7 @@ mod tests {
             daemon: false,
             debug: true,
             websocket: false,
-            version: Some(1),
+            version: None,
             secret_keys: vec![],
             secret_key_labels: vec![],
         };
@@ -222,61 +226,6 @@ mod tests {
             Err(e) => debug!("Server task panicked: {}", e),
         }
     }
-
-    #[tokio::test]
-    async fn test_server_tls() {
-        let port = find_free_port();
-        println!("Found free TLS port: {}", port);
-
-        let config = ServerConfig {
-            listen_addresses: vec![],
-            ssl_listen_addresses: vec![format!("127.0.0.1:{}", port).parse().unwrap()],
-            cert_path: Some("measurementservers.crt".to_string()),
-            key_path: Some("measurementservers.key".to_string()),
-            num_threads: 1,
-            user: None,
-            daemon: false,
-            debug: true,
-            websocket: true,
-            version: Some(1),
-            secret_keys: vec![],
-            secret_key_labels: vec![],
-        };
-
-        let (server, shutdown_tx) = Server::new(config).expect("Failed to create server");
-        
-        // Run server in a separate task
-        let server_handle = tokio::spawn({
-            async move {
-                server.run().await
-            }
-        });
-        // Try to connect to the server using TLS
-        let tls_connector = NativeTlsConnector::builder()
-            .danger_accept_invalid_certs(true) // Для тестов разрешаем невалидные сертификаты
-            .build()
-            .unwrap();
-        let tls_connector = TlsConnector::from(tls_connector);
-
-        match TcpStream::connect(format!("127.0.0.1:{}", port)).await {
-            Ok(stream) => {
-                println!("Successfully connected to server on port {}", port);
-                match tls_connector.connect("localhost", stream).await {
-                    Ok(_) => println!("Successfully established TLS connection"),
-                    Err(e) => println!("Failed to establish TLS connection: {}", e),
-                }
-            },
-            Err(e) => println!("Failed to connect to server: {}", e),
-        }
-
-        // Send shutdown signal
-        let _ = shutdown_tx.send(());
-
-        // Wait for server to shutdown
-        match server_handle.await {
-            Ok(Ok(addr)) => println!("Server shutdown successfully on {}", addr),
-            Ok(Err(e)) => println!("Server shutdown with error: {}", e),
-            Err(e) => println!("Server task panicked: {}", e),
-        }
-    }
 }
+
+

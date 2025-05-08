@@ -1,5 +1,5 @@
 use crate::server::server::Server;
-use crate::server::server_config::ServerConfig;
+use crate::server::server_config::RmbtServerConfig;
 use log::{debug, error, info};
 use std::error::Error;
 
@@ -13,7 +13,7 @@ use crate::utils::random_buffer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
-    let config = match ServerConfig::from_args() {
+    let config = match RmbtServerConfig::from_args() {
         Ok(config) => config,
         Err(e) => {
             eprintln!("Failed to parse configuration: {}", e);
