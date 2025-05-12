@@ -7,19 +7,15 @@ use log::{debug, error, info, trace};
 use crate::stream::Stream;
 use crate::utils::random_buffer::{get_buffer_size, get_random_slice};
 
-
-
-pub fn generate_chunks(num_chunks: usize, chunk_size: usize) -> Vec<Bytes> {
-    let mut rng = fastrand::Rng::new();
+fn generate_chunks(num_chunks: usize, chunk_size: usize) -> Vec<Bytes> {
     let mut chunks = Vec::with_capacity(num_chunks);
-
+    let mut offset: usize = 0;
     for i in 0..num_chunks {
         let mut buf = vec![0u8; chunk_size];
-        rng.fill(&mut buf[..chunk_size - 1]); // random bytes
+        offset = get_random_slice(&mut buf, offset);
         buf[chunk_size - 1] =  { 0x00 };
         chunks.push(Bytes::from(buf));
     }
-
     chunks
 }
 
@@ -75,15 +71,11 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
     let mut chunk_index = 0;
 
 
-    let mut rng = fastrand::Rng::new();
-
-    let mut term_chank = vec![0u8; chunk_size];
-    rng.fill(&mut term_chank[..chunk_size - 1]); // random bytes
-    term_chank[chunk_size - 1] =  { 0xFF };
-
+    let mut term_buf = vec![0u8; chunk_size];
+    get_random_slice(&mut term_buf, 0);
+    term_buf[chunk_size - 1] =  { 0x0FF };
 
     let start_time = Instant::now();
-
     // Send data until time expires
     while start_time.elapsed().as_secs() < duration {
         // Get next chunk from the array, cycling through all chunks
@@ -97,7 +89,7 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
             chunk_index = 0;
         }
     }
-    stream.write_all(&term_chank).await?;
+    stream.write_all(&term_buf).await?;
     stream.flush().await?;
     let time_ns = start_time.elapsed().as_nanos();
     total_bytes += chunk_size;

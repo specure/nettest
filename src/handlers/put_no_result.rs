@@ -24,11 +24,8 @@ pub async fn handle_put_no_result(
     } else {
         CHUNK_SIZE
     };
-    
-
     // Send OK to client after chunk size validation
     stream.write_all(RESP_OK.as_bytes()).await?;
-
 
     let mut total_bytes = 0;
     let mut buffer = vec![0u8; chunk_size];
@@ -53,11 +50,9 @@ pub async fn handle_put_no_result(
                 }
             }
         }
-
         // Check if we got a complete chunk
         if bytes_read == chunk_size {
             total_bytes += bytes_read;
-
             // Check the last byte of the chunk for terminator
             let terminator = buffer[chunk_size - 1];
             if terminator == 0xFF {

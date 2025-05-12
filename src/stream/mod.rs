@@ -6,7 +6,6 @@ use tokio::net::TcpStream;
 use futures::{SinkExt, StreamExt};
 use tokio_tungstenite::WebSocketStream;
 use log::{info, error, debug};
-use std::io::IoSlice;
 
 const CHUNK_SIZE: usize = 4096;
 
@@ -171,51 +170,6 @@ impl Stream {
             Stream::Tls(_) => "TLS".to_string(),
             Stream::WebSocket(_) => "WebSocket".to_string(),
             Stream::WebSocketTls(_) => "WebSocketTLS".to_string(),
-        }
-    }
-
-    pub async fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> std::io::Result<usize> {
-        match self {
-            Stream::Plain(stream) => stream.write_vectored(bufs).await,
-            Stream::Tls(stream) => stream.write_vectored(bufs).await,
-            Stream::WebSocket(stream) => {
-                // For WebSocket, send each chunk as a separate message
-                let mut total_written = 0;
-                for buf in bufs {
-                    let message = if buf.len() < 2 || buf.len() > (CHUNK_SIZE - 3) {
-                        tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())
-                    } else {
-                        tokio_tungstenite::tungstenite::Message::Text(String::from_utf8_lossy(buf).to_string())
-                    };
-                    
-                    stream.send(message).await
-                        .map_err(|e| {
-                            error!("WebSocket: Error sending vectored message: {}", e);
-                            std::io::Error::new(std::io::ErrorKind::Other, e)
-                        })?;
-                    total_written += buf.len();
-                }
-                Ok(total_written)
-            }
-            Stream::WebSocketTls(stream) => {
-                // For WebSocketTls, send each chunk as a separate message
-                let mut total_written = 0;
-                for buf in bufs {
-                    let message = if buf.len() < 2 || buf.len() > (CHUNK_SIZE - 3) {
-                        tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())
-                    } else {
-                        tokio_tungstenite::tungstenite::Message::Text(String::from_utf8_lossy(buf).to_string())
-                    };
-                    
-                    stream.send(message).await
-                        .map_err(|e| {
-                            error!("WebSocketTls: Error sending vectored message: {}", e);
-                            std::io::Error::new(std::io::ErrorKind::Other, e)
-                        })?;
-                    total_written += buf.len();
-                }
-                Ok(total_written)
-            }
         }
     }
 }

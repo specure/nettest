@@ -4,19 +4,17 @@ use std::time::Instant;
 use log::{debug, error};
 use crate::stream::Stream;
 use bytes::Bytes;
-use fastrand::Rng;
+use crate::utils::random_buffer::get_random_slice;
 
 fn generate_chunks(num_chunks: usize, chunk_size: usize) -> Vec<Bytes> {
-    let mut rng = Rng::new();
     let mut chunks = Vec::with_capacity(num_chunks);
-
+    let mut offset: usize = 0;
     for i in 0..num_chunks {
         let mut buf = vec![0u8; chunk_size];
-        rng.fill(&mut buf[..chunk_size - 1]); // random bytes
+        offset = get_random_slice(&mut buf, offset);
         buf[chunk_size - 1] = if i == num_chunks - 1 { 0xFF } else { 0x00 };
         chunks.push(Bytes::from(buf));
     }
-
     chunks
 }
 
