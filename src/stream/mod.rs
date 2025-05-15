@@ -1,11 +1,9 @@
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio_rustls::server::TlsStream;
-use tokio_rustls::TlsAcceptor;
-use std::sync::Arc;
-use tokio::net::TcpStream;
 use futures::{SinkExt, StreamExt};
+use log::{debug, error};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio_rustls::server::TlsStream;
 use tokio_tungstenite::WebSocketStream;
-use log::{info, error, debug};
 
 const CHUNK_SIZE: usize = 4096;
 
@@ -22,13 +20,23 @@ impl Stream {
         match self {
             Stream::Plain(tcp_stream) => {
                 debug!("Attempting to upgrade plain TCP stream to WebSocket");
-                let ws_stream = WebSocketStream::from_raw_socket(tcp_stream, tokio_tungstenite::tungstenite::protocol::Role::Server, None).await;
+                let ws_stream = WebSocketStream::from_raw_socket(
+                    tcp_stream,
+                    tokio_tungstenite::tungstenite::protocol::Role::Server,
+                    None,
+                )
+                .await;
                 debug!("Successfully upgraded plain TCP stream to WebSocket");
                 Ok(Stream::WebSocket(ws_stream))
             }
             Stream::Tls(tls_stream) => {
                 debug!("Attempting to upgrade TLS stream to WebSocket");
-                let ws_stream = WebSocketStream::from_raw_socket(tls_stream, tokio_tungstenite::tungstenite::protocol::Role::Server, None).await;
+                let ws_stream = WebSocketStream::from_raw_socket(
+                    tls_stream,
+                    tokio_tungstenite::tungstenite::protocol::Role::Server,
+                    None,
+                )
+                .await;
                 debug!("Successfully upgraded TLS stream to WebSocket");
                 Ok(Stream::WebSocketTls(ws_stream))
             }
@@ -36,7 +44,7 @@ impl Stream {
                 error!("Cannot upgrade non-TCP stream to WebSocket");
                 Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
-                    "Cannot upgrade non-TCP stream to WebSocket"
+                    "Cannot upgrade non-TCP stream to WebSocket",
                 ))
             }
         }
@@ -53,7 +61,9 @@ impl Stream {
                         Ok(msg) => {
                             let data = match msg {
                                 tokio_tungstenite::tungstenite::Message::Binary(data) => data,
-                                tokio_tungstenite::tungstenite::Message::Text(text) => text.into_bytes(),
+                                tokio_tungstenite::tungstenite::Message::Text(text) => {
+                                    text.into_bytes()
+                                }
                                 _ => return Ok(0),
                             };
                             let len = data.len().min(buf.len());
@@ -72,7 +82,9 @@ impl Stream {
                         Ok(msg) => {
                             let data = match msg {
                                 tokio_tungstenite::tungstenite::Message::Binary(data) => data,
-                                tokio_tungstenite::tungstenite::Message::Text(text) => text.into_bytes(),
+                                tokio_tungstenite::tungstenite::Message::Text(text) => {
+                                    text.into_bytes()
+                                }
                                 _ => return Ok(0),
                             };
                             let len = data.len().min(buf.len());
@@ -96,33 +108,34 @@ impl Stream {
                 let message = if buf.len() < 2 || buf.len() > (CHUNK_SIZE - 3) {
                     tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())
                 } else {
-                    tokio_tungstenite::tungstenite::Message::Text(String::from_utf8_lossy(buf).to_string())
+                    tokio_tungstenite::tungstenite::Message::Text(
+                        String::from_utf8_lossy(buf).to_string(),
+                    )
                 };
-                stream.send(message).await
-                    .map_err(|e| {
-                        error!("WebSocket: Error sending message in write: {}", e);
-                        std::io::Error::new(std::io::ErrorKind::Other, e)
-                    })?;
+                stream.send(message).await.map_err(|e| {
+                    error!("WebSocket: Error sending message in write: {}", e);
+                    std::io::Error::new(std::io::ErrorKind::Other, e)
+                })?;
                 Ok(buf.len())
             }
             Stream::WebSocketTls(stream) => {
                 let message = if buf.len() < 2 || buf.len() > (CHUNK_SIZE - 3) {
                     tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())
                 } else {
-                    tokio_tungstenite::tungstenite::Message::Text(String::from_utf8_lossy(buf).to_string())
+                    tokio_tungstenite::tungstenite::Message::Text(
+                        String::from_utf8_lossy(buf).to_string(),
+                    )
                 };
-                stream.send(message).await
-                    .map_err(|e| {
-                        error!("WebSocketTls: Error sending message in write: {}", e);
-                        std::io::Error::new(std::io::ErrorKind::Other, e)
-                    })?;
+                stream.send(message).await.map_err(|e| {
+                    error!("WebSocketTls: Error sending message in write: {}", e);
+                    std::io::Error::new(std::io::ErrorKind::Other, e)
+                })?;
                 Ok(buf.len())
             }
         }
     }
 
     pub async fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
-
         match self {
             Stream::Plain(stream) => stream.write_all(buf).await,
             Stream::Tls(stream) => stream.write_all(buf).await,
@@ -130,26 +143,28 @@ impl Stream {
                 let message = if buf.len() < 2 || buf.len() > (CHUNK_SIZE - 3) {
                     tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())
                 } else {
-                    tokio_tungstenite::tungstenite::Message::Text(String::from_utf8_lossy(buf).to_string())
+                    tokio_tungstenite::tungstenite::Message::Text(
+                        String::from_utf8_lossy(buf).to_string(),
+                    )
                 };
-                stream.send(message).await
-                    .map_err(|e| {
-                        error!("WebSocket: Error sending message: {}", e);
-                        std::io::Error::new(std::io::ErrorKind::Other, e)
-                    })?;
+                stream.send(message).await.map_err(|e| {
+                    error!("WebSocket: Error sending message: {}", e);
+                    std::io::Error::new(std::io::ErrorKind::Other, e)
+                })?;
                 Ok(())
             }
             Stream::WebSocketTls(stream) => {
                 let message = if buf.len() < 2 || buf.len() > (CHUNK_SIZE - 3) {
                     tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())
                 } else {
-                    tokio_tungstenite::tungstenite::Message::Text(String::from_utf8_lossy(buf).to_string())
+                    tokio_tungstenite::tungstenite::Message::Text(
+                        String::from_utf8_lossy(buf).to_string(),
+                    )
                 };
-                stream.send(message).await
-                    .map_err(|e| {
-                        error!("WebSocketTls: Error sending message: {}", e);
-                        std::io::Error::new(std::io::ErrorKind::Other, e)
-                    })?;
+                stream.send(message).await.map_err(|e| {
+                    error!("WebSocketTls: Error sending message: {}", e);
+                    std::io::Error::new(std::io::ErrorKind::Other, e)
+                })?;
                 Ok(())
             }
         }
@@ -173,4 +188,3 @@ impl Stream {
         }
     }
 }
-    

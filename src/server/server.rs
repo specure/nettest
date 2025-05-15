@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use std::error::Error;
 use std::net::SocketAddr;
-use log::{info, error};
+use log::{info, error, debug};
 use crate::utils::token_validator::TokenValidator;
 use crate::server::server_config::RmbtServerConfig;
 use tokio::sync::oneshot;
@@ -10,7 +10,6 @@ use crate::server::connection_handler::ConnectionHandler;
 use tokio::net::TcpStream;
 use crate::utils::use_http::{define_stream};
 use tokio_rustls::TlsAcceptor;
-use crate::stream::Stream;
 
 
 
@@ -110,7 +109,7 @@ impl Server {
                         let tls_acceptor = self.tls_acceptor.clone();
                         tokio::spawn(async move {
                             if let Err(e) = handle_connection(stream, addr, is_ssl, token_validator, config, tls_acceptor).await {
-                                eprintln!("Error handling connection bbbbbb: {}", e);
+                                error!("Error handling connection: {}", e);
                             }
                         });
                     }
@@ -159,10 +158,10 @@ async fn handle_connection(
                 e.to_string().contains("Connection reset by peer");
 
             if is_connection_closed {
-                info!("Connection from {} closed by client (error: {})", addr, e);
+                debug!("Connection from {} closed by client (error: {})", addr, e);
                 Ok(())
             } else {
-                error!("Error handling connection from {}: {}", addr, e);
+                debug!("Error handling connection from {}: {}", addr, e);
                 Err(e)
             }
         }

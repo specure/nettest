@@ -1,15 +1,13 @@
-use libc::{getpwnam, getuid, setgid, setuid};
+use crate::logger;
+use crate::utils::{daemon, secret_keys, user};
+use log::{error, info, LevelFilter};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
-use std::ffi::CString;
-use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::fs;
-use log::{error, info, debug, LevelFilter};
-use crate::logger;
-use crate::utils::{daemon, secret_keys};
 use std::io::BufReader;
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
-use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, PrivatePkcs1KeyDer, PrivateSec1KeyDer};
+use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
 
@@ -22,6 +20,7 @@ pub struct RmbtServerConfig {
     pub num_threads: usize,
     pub user: Option<String>,
     pub daemon: bool,
+    pub user_privileges: bool,
     pub debug: bool,
     pub websocket: bool,
     pub version: Option<u8>,
@@ -37,6 +36,16 @@ pub struct TlsConfig {
 
 impl RmbtServerConfig {
     pub fn from_args() -> Result<Self, Box<dyn Error + Send + Sync>> {
+
+        let args: Vec<String> = std::env::args().collect();
+        
+        // Show help if no arguments or help flag is present
+        if args.len() == 1 || args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
+            print_help();
+            return Err("Help printed".into());
+        }
+
+
         Self::from_args_vec(std::env::args().collect())
     }
 
@@ -44,6 +53,7 @@ impl RmbtServerConfig {
         let mut config = RmbtServerConfig {
             listen_addresses: Vec::new(),
             ssl_listen_addresses: Vec::new(),
+            user_privileges: false,
             cert_path: None,
             key_path: None,
             num_threads: 200, // Default value from C version
@@ -75,7 +85,7 @@ impl RmbtServerConfig {
                     i += 1;
                     if i < args.len() {
                         let addr = parse_listen_address(&args[i])?;
-                        if args[i-1] == "-L" {
+                        if args[i - 1] == "-L" {
                             config.ssl_listen_addresses.push(addr);
                         } else {
                             config.listen_addresses.push(addr);
@@ -109,22 +119,7 @@ impl RmbtServerConfig {
                 "-u" => {
                     i += 1;
                     if i < args.len() {
-                        if unsafe { getuid() } != 0 {
-                            return Err("Error: must be root to use option -u".into());
-                        }
-                        if config.user.is_some() {
-                            return Err("Error: only one -u is allowed".into());
-                        }
-                        let username = CString::new(args[i].as_bytes())?;
-                        let pw = unsafe { getpwnam(username.as_ptr()) };
-                        if pw.is_null() {
-                            return Err(format!("Error: could not find user \"{}\"", args[i]).into());
-                        }
-                        unsafe {
-                            setgid((*pw).pw_gid);
-                            setuid((*pw).pw_uid);
-                        }
-                        config.user = Some(args[i].clone());
+                        config.user_privileges = true;
                     }
                 }
                 "-d" => {
@@ -144,7 +139,11 @@ impl RmbtServerConfig {
                             return Err("Error: only one -v is allowed".into());
                         }
                         if args[i] != "0.3" {
-                            return Err(format!("Error: unsupported version for backwards compatibility: >{}<", args[i]).into());
+                            return Err(format!(
+                                "Error: unsupported version for backwards compatibility: >{}<",
+                                args[i]
+                            )
+                            .into());
                         }
                         config.version = Some(3);
                     }
@@ -159,6 +158,13 @@ impl RmbtServerConfig {
             }
             i += 1;
         }
+
+
+        logger::init_logger(if config.debug {
+            LevelFilter::Debug
+        } else {
+            LevelFilter::Info
+        })?;
 
         // Validate thread count
         if config.num_threads == 0 {
@@ -176,17 +182,24 @@ impl RmbtServerConfig {
         }
 
         // Validate required options for non-TLS connections
-        if config.ssl_listen_addresses.is_empty() {
-            if config.cert_path.is_none() || config.key_path.is_none() {
-                return Err("Error: -c and -k options are required".into());
-            }
+        if config.ssl_listen_addresses.is_empty() && (config.cert_path.is_none() || config.key_path.is_none()) {
+            return Err("Error: -c and -k options are required".into());
         }
 
         if config.listen_addresses.is_empty() && config.ssl_listen_addresses.is_empty() {
             return Err("Error: at least one -l or -L option is required".into());
         }
 
-        logger::init_logger(if config.debug { LevelFilter::Debug } else { LevelFilter::Info })?;
+        if config.user_privileges {
+            user::UserPrivileges::check_root()?;
+            if config.user.is_some() {
+                return Err("Error: only one -u is allowed".into());
+            }
+            let user_privs = user::UserPrivileges::new(&args[i])?;
+
+            user_privs.drop_privileges()?;
+            config.user = Some(args[i].clone());
+        }
 
         if config.daemon {
             // Run as daemon
@@ -202,13 +215,13 @@ impl RmbtServerConfig {
         info!("Successfully loaded {} certificates", certs.len());
         let key = self.load_private_key()?;
         info!("Successfully loaded private key");
-        
+
         info!("Building TLS configuration");
         let config = ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(certs, key)
             .expect("bad certificates/private key");
-            
+
         info!("TLS configuration built successfully");
         Ok(TlsAcceptor::from(Arc::new(config)))
     }
@@ -219,22 +232,21 @@ impl RmbtServerConfig {
         let certfile = fs::read(cert_path)?;
         info!("Read {} bytes from certificate file", certfile.len());
         let mut reader = BufReader::new(certfile.as_slice());
-        let certs = rustls_pemfile::certs(&mut reader)
-            .collect::<Result<Vec<_>, _>>()?;
+        let certs = rustls_pemfile::certs(&mut reader).collect::<Result<Vec<_>, _>>()?;
         info!("Successfully parsed {} certificates", certs.len());
         for (i, cert) in certs.iter().enumerate() {
             info!("Certificate {}: {:?}", i, cert);
         }
         Ok(certs)
     }
-    
+
     fn load_private_key(&self) -> Result<PrivateKeyDer<'static>, Box<dyn Error + Send + Sync>> {
         let key_path = self.key_path.as_ref().unwrap();
         info!("Loading private key from {}", key_path);
         let keyfile = fs::read(key_path)?;
         info!("Read {} bytes from key file", keyfile.len());
         let mut reader = BufReader::new(keyfile.as_slice());
-        
+
         // Try to read any private key format
         if let Some(key) = rustls_pemfile::private_key(&mut reader)? {
             info!("Successfully loaded private key: {:?}", key);
@@ -261,6 +273,7 @@ impl Default for RmbtServerConfig {
             version: Some(1),
             secret_keys: Vec::new(),
             secret_key_labels: Vec::new(),
+            user_privileges: false,
         }
     }
 }
@@ -358,66 +371,63 @@ mod tests {
         let args = create_test_args(&["-l", "8080"]);
         let result = RmbtServerConfig::from_args_vec(args);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("-c and -k options are required"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("-c and -k options are required"));
     }
 
     #[test]
     fn test_validate_positive_threads() {
-        let args = create_test_args(&[
-            "-l", "8080",
-            "-c", "cert.pem",
-            "-k", "key.pem",
-            "-t", "0"
-        ]);
+        let args = create_test_args(&["-l", "8080", "-c", "cert.pem", "-k", "key.pem", "-t", "0"]);
         let result = RmbtServerConfig::from_args_vec(args);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Number of threads (-t) must be positive"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Number of threads (-t) must be positive"));
     }
 
     #[test]
     fn test_validate_at_least_one_port() {
-        let args = create_test_args(&[
-            "-c", "cert.pem",
-            "-k", "key.pem"
-        ]);
+        let args = create_test_args(&["-c", "cert.pem", "-k", "key.pem"]);
         let result = RmbtServerConfig::from_args_vec(args);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("at least one -l or -L option is required"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("at least one -l or -L option is required"));
     }
 
     #[test]
     fn test_validate_tls_config_without_cert() {
-        let args = create_test_args(&[
-            "-L", "8443",
-            "-k", "key.pem"
-        ]);
+        let args = create_test_args(&["-L", "8443", "-k", "key.pem"]);
         let result = RmbtServerConfig::from_args_vec(args);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Need path to certificate (-c) for TLS connections"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Need path to certificate (-c) for TLS connections"));
     }
 
     #[test]
     fn test_validate_tls_config_without_key() {
-        let args = create_test_args(&[
-            "-L", "8443",
-            "-c", "cert.pem"
-        ]);
+        let args = create_test_args(&["-L", "8443", "-c", "cert.pem"]);
         let result = RmbtServerConfig::from_args_vec(args);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Need path to key (-k) for TLS connections"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Need path to key (-k) for TLS connections"));
     }
 
     #[test]
     fn test_valid_config() {
         let args = create_test_args(&[
-            "-l", "8080",
-            "-L", "8443",
-            "-c", "cert.pem",
-            "-k", "key.pem",
-            "-t", "100"
+            "-l", "8080", "-L", "8443", "-c", "cert.pem", "-k", "key.pem", "-t", "100",
         ]);
         let config = RmbtServerConfig::from_args_vec(args).unwrap();
-        
+
         assert_eq!(config.listen_addresses.len(), 1);
         assert_eq!(config.ssl_listen_addresses.len(), 1);
         assert_eq!(config.listen_addresses[0].port(), 8080);
@@ -430,39 +440,45 @@ mod tests {
     #[test]
     fn test_duplicate_cert() {
         let args = create_test_args(&[
-            "-l", "8080",
-            "-c", "cert1.pem",
-            "-c", "cert2.pem",
-            "-k", "key.pem"
+            "-l",
+            "8080",
+            "-c",
+            "cert1.pem",
+            "-c",
+            "cert2.pem",
+            "-k",
+            "key.pem",
         ]);
         let result = RmbtServerConfig::from_args_vec(args);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("only one -c is allowed"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("only one -c is allowed"));
     }
 
     #[test]
     fn test_duplicate_key() {
         let args = create_test_args(&[
-            "-l", "8080",
-            "-c", "cert.pem",
-            "-k", "key1.pem",
-            "-k", "key2.pem"
+            "-l", "8080", "-c", "cert.pem", "-k", "key1.pem", "-k", "key2.pem",
         ]);
         let result = RmbtServerConfig::from_args_vec(args);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("only one -k is allowed"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("only one -k is allowed"));
     }
 
     #[test]
     fn test_invalid_version() {
-        let args = create_test_args(&[
-            "-l", "8080",
-            "-c", "cert.pem",
-            "-k", "key.pem",
-            "-v", "1.0"
-        ]);
+        let args =
+            create_test_args(&["-l", "8080", "-c", "cert.pem", "-k", "key.pem", "-v", "1.0"]);
         let result = RmbtServerConfig::from_args_vec(args);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("unsupported version"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("unsupported version"));
     }
 }

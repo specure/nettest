@@ -114,16 +114,16 @@ impl ConnectionHandler {
     async fn send_greeting(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let greeting = match self.config.version {
             Some(3) => "RMBTv0.3\n",
-            None => "RMBTv1.0\n",
+            None => "RMBTv1.5.0\n",
             _ => "RMBTv1.3.3\n",
         };  //TODO
 
         debug!("Sending greeting message: {}", greeting);
-        let written = self.stream.write_all(greeting.as_bytes()).await?;
+        self.stream.write_all(greeting.as_bytes()).await?;
 
         let accept_token = "ACCEPT TOKEN QUIT\n";
         debug!("Sending accept token message: {}", accept_token);
-        let written = self.stream.write_all(accept_token.as_bytes()).await?;
+        self.stream.write_all(accept_token.as_bytes()).await?;
 
         Ok(())
     }

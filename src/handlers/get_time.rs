@@ -1,26 +1,28 @@
-use crate::{config::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RESP_ERR}};
-use std::{error::Error};
-use std::time::Instant;
+use crate::config::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RESP_ERR};
 use bytes::Bytes;
+use std::error::Error;
+use std::time::Instant;
 
-use log::{debug, error, info, trace};
 use crate::stream::Stream;
-use crate::utils::random_buffer::{get_buffer_size, get_random_slice};
+use crate::utils::random_buffer::get_random_slice;
+use log::{debug, error};
 
 fn generate_chunks(num_chunks: usize, chunk_size: usize) -> Vec<Bytes> {
     let mut chunks = Vec::with_capacity(num_chunks);
     let mut offset: usize = 0;
-    for i in 0..num_chunks {
+    for _ in 0..num_chunks {
         let mut buf = vec![0u8; chunk_size];
         offset = get_random_slice(&mut buf, offset);
-        buf[chunk_size - 1] =  { 0x00 };
+        buf[chunk_size - 1] = 0x00;
         chunks.push(Bytes::from(buf));
     }
     chunks
 }
 
-
-pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub async fn handle_get_time(
+    stream: &mut Stream,
+    command: &str,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     // Parse command parts after GETTIME
     let parts: Vec<&str> = command[7..].trim().split_whitespace().collect();
 
@@ -70,10 +72,9 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
     let chunks = generate_chunks(64, chunk_size);
     let mut chunk_index = 0;
 
-
     let mut term_buf = vec![0u8; chunk_size];
     get_random_slice(&mut term_buf, 0);
-    term_buf[chunk_size - 1] =  { 0x0FF };
+    term_buf[chunk_size - 1] = 0x0FF;
 
     let start_time = Instant::now();
     // Send data until time expires
@@ -82,7 +83,7 @@ pub async fn handle_get_time(stream: &mut Stream, command: &str) -> Result<(), B
         let chunk = &chunks[chunk_index];
         stream.write_all(chunk).await?;
         total_bytes += chunk_size;
-        
+
         // Move to next chunk, cycling back to start if needed
         chunk_index += 1;
         if chunk_index > 62 {

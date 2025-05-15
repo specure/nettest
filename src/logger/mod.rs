@@ -1,5 +1,5 @@
 use log::{LevelFilter, Log, Metadata, Record};
-use std::fs::{File, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
 use chrono::Local;
@@ -13,6 +13,11 @@ pub struct FileLogger {
 
 impl FileLogger {
     pub fn new(level: LevelFilter, log_path: &Path) -> Result<Self, std::io::Error> {
+        // Create directory if it doesn't exist
+        if let Some(parent) = log_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
         let log_file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -98,13 +103,18 @@ pub fn init_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Error +
         Path::new("/var/log/rmbt").to_path_buf()
     };
 
+    // Create directory and all parent directories if they don't exist
     if !log_dir.exists() {
-        std::fs::create_dir_all(&log_dir)?;
+        fs::create_dir_all(&log_dir)?;
     }
 
     // Create PID file
     let pid = std::process::id();
-    let pid_path = log_dir.join("rmbt_server.pid");
+    let pid_dir = Path::new("/run");
+    if !pid_dir.exists() {
+        std::fs::create_dir_all(pid_dir)?;
+    }
+    let pid_path = pid_dir.join("rmbt.pid");
     std::fs::write(&pid_path, pid.to_string())?;
 
     // Ensure we have write permissions
