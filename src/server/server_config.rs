@@ -36,15 +36,16 @@ pub struct TlsConfig {
 
 impl RmbtServerConfig {
     pub fn from_args() -> Result<Self, Box<dyn Error + Send + Sync>> {
-
         let args: Vec<String> = std::env::args().collect();
-        
+
         // Show help if no arguments or help flag is present
-        if args.len() == 1 || args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
+        if args.len() == 1
+            || args.contains(&"-h".to_string())
+            || args.contains(&"--help".to_string())
+        {
             print_help();
             return Err("Help printed".into());
         }
-
 
         Self::from_args_vec(std::env::args().collect())
     }
@@ -117,10 +118,16 @@ impl RmbtServerConfig {
                     }
                 }
                 "-u" => {
-                    i += 1;
                     if i < args.len() {
                         config.user_privileges = true;
+                        user::UserPrivileges::check_root()?;
+                        if config.user.is_some() {
+                            return Err("Error: only one -u is allowed".into());
+                        }
+                        i += 1;
+                        config.user = Some(args[i].clone());
                     }
+                    i += 1;
                 }
                 "-d" => {
                     config.daemon = true;
@@ -159,7 +166,6 @@ impl RmbtServerConfig {
             i += 1;
         }
 
-
         logger::init_logger(if config.debug {
             LevelFilter::Debug
         } else {
@@ -182,23 +188,14 @@ impl RmbtServerConfig {
         }
 
         // Validate required options for non-TLS connections
-        if config.ssl_listen_addresses.is_empty() && (config.cert_path.is_none() || config.key_path.is_none()) {
+        if config.ssl_listen_addresses.is_empty()
+            && (config.cert_path.is_none() || config.key_path.is_none())
+        {
             return Err("Error: -c and -k options are required".into());
         }
 
         if config.listen_addresses.is_empty() && config.ssl_listen_addresses.is_empty() {
             return Err("Error: at least one -l or -L option is required".into());
-        }
-
-        if config.user_privileges {
-            user::UserPrivileges::check_root()?;
-            if config.user.is_some() {
-                return Err("Error: only one -u is allowed".into());
-            }
-            let user_privs = user::UserPrivileges::new(&args[i])?;
-
-            user_privs.drop_privileges()?;
-            config.user = Some(args[i].clone());
         }
 
         if config.daemon {

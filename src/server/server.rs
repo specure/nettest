@@ -3,7 +3,7 @@ use tokio::net::TcpListener;
 use std::error::Error;
 use std::net::SocketAddr;
 use log::{info, error, debug};
-use crate::utils::token_validator::TokenValidator;
+use crate::utils::{token_validator::TokenValidator, user::UserPrivileges};
 use crate::server::server_config::RmbtServerConfig;
 use tokio::sync::oneshot;
 use crate::server::connection_handler::ConnectionHandler;
@@ -81,6 +81,12 @@ impl Server {
         }
         for listener in tls_listeners {
             all_listeners.push((listener, true)); // true means SSL
+        }
+
+        if self.config.user_privileges {
+            info!("Dropping privileges for user: {}", self.config.user.clone().unwrap());
+            let user_privs = UserPrivileges::new(&self.config.user.clone().unwrap())?;
+            user_privs.drop_privileges()?;
         }
 
         // Handle incoming connections
@@ -198,6 +204,7 @@ mod tests {
             version: None,
             secret_keys: vec![],
             secret_key_labels: vec![],
+            user_privileges: false,
         };
 
         let (server, shutdown_tx) = Server::new(config).expect("Failed to create server");

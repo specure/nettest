@@ -1,10 +1,10 @@
+use chrono::Local;
+use libc::{c_int, signal, SIGHUP};
 use log::{LevelFilter, Log, Metadata, Record};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
-use std::sync::{Arc, Mutex};
-use chrono::Local;
 use std::path::Path;
-use libc::{c_int, signal, SIGHUP};
+use std::sync::{Arc, Mutex};
 
 pub struct FileLogger {
     level: LevelFilter,
@@ -55,7 +55,7 @@ impl Log for FileLogger {
         }
 
         let message = self.format_log(record);
-        
+
         // Write to file
         if let Ok(mut file) = self.log_file.lock() {
             let _ = file.write_all(message.as_bytes());
@@ -99,6 +99,15 @@ pub fn init_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Error +
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/root".to_string());
         Path::new(&home).join("Library/Logs/rmbt")
     } else {
+        // Create PID file
+        let pid = std::process::id();
+        let pid_dir = Path::new("/run");
+        if !pid_dir.exists() {
+            std::fs::create_dir_all(pid_dir)?;
+        }
+        let pid_path = pid_dir.join("rmbt.pid");
+        std::fs::write(&pid_path, pid.to_string())?;
+        log::info!("PID file location: {}", pid_path.display());
         // On Linux/Unix, use /var/log/rmbt
         Path::new("/var/log/rmbt").to_path_buf()
     };
@@ -108,18 +117,9 @@ pub fn init_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Error +
         fs::create_dir_all(&log_dir)?;
     }
 
-    // Create PID file
-    let pid = std::process::id();
-    let pid_dir = Path::new("/run");
-    if !pid_dir.exists() {
-        std::fs::create_dir_all(pid_dir)?;
-    }
-    let pid_path = pid_dir.join("rmbt.pid");
-    std::fs::write(&pid_path, pid.to_string())?;
-
     // Ensure we have write permissions
     let log_path = log_dir.join("rmbt_server.log");
-    
+
     // Try to create the log file with proper permissions
     let log_file = OpenOptions::new()
         .create(true)
@@ -131,22 +131,21 @@ pub fn init_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Error +
         level,
         log_file: Arc::new(Mutex::new(log_file)),
     });
-    
+
     // Store logger in global state
     *LOGGER.lock().unwrap() = Some(logger.clone());
-    
+
     // Set up SIGHUP handler for log rotation
     unsafe {
         signal(SIGHUP, handle_sighup as usize);
     }
-    
+
     log::set_boxed_logger(Box::new(logger))?;
     log::set_max_level(level);
 
     // Log initial message to verify logger is working
     log::info!("Logger initialized with level: {:?}", level);
     log::info!("Log file location: {}", log_path.display());
-    log::info!("PID file location: {}", pid_path.display());
-    
+
     Ok(())
-} 
+}
