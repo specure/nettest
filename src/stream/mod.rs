@@ -1,7 +1,10 @@
+use std::time::Duration;
+
 use futures::{SinkExt, StreamExt};
-use log::{debug, error};
+use log::{debug, error, info};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tokio::time::sleep;
 use tokio_rustls::server::TlsStream;
 use tokio_tungstenite::WebSocketStream;
 
@@ -102,7 +105,10 @@ impl Stream {
 
     pub async fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
-            Stream::Plain(stream) => stream.write(buf).await,
+            Stream::Plain(stream) => {
+                info!("Writing to plain stream");
+                stream.write(buf).await
+            },
             Stream::Tls(stream) => stream.write(buf).await,
             Stream::WebSocket(stream) => {
                 let message = if buf.len() < 2 || buf.len() > (CHUNK_SIZE - 3) {
@@ -137,8 +143,14 @@ impl Stream {
 
     pub async fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
         match self {
-            Stream::Plain(stream) => stream.write_all(buf).await,
-            Stream::Tls(stream) => stream.write_all(buf).await,
+            Stream::Plain(stream) => {
+                info!("Writing to plain stream {} last byte: {}", buf.len(), buf[buf.len() - 1]);
+                stream.write_all(buf).await
+            },
+            Stream::Tls(stream) => {
+                info!("Writing to TLS stream");
+                stream.write_all(buf).await
+            },
             Stream::WebSocket(stream) => {
                 let message = if buf.len() < 2 || buf.len() > (CHUNK_SIZE - 3) {
                     tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())

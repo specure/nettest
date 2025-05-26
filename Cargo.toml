@@ -1,3 +1,8 @@
+[workspace]
+members = [
+    "client",
+]
+
 [package]
 name = "rmbt_server"
 version = "0.1.0"

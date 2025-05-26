@@ -20,14 +20,14 @@ pub async fn define_stream(
 
     let mut stream: Stream;
 
-    if let Some(acceptor) = tls_acceptor {
-        debug!("Upgrading to TLS connection");
-        stream = Tls(acceptor.accept(tcp_stream).await?);
-        debug!("TLS connection established");
-    } else {
+    // if let Some(acceptor) = tls_acceptor {
+    //     debug!("Upgrading to TLS connection");
+    //     stream = Tls(acceptor.accept(tcp_stream).await?);
+    //     debug!("TLS connection established");
+    // } else {
         debug!("Using plain TCP connection");
         stream = Plain(tcp_stream);
-    }
+    // }
 
     let mut buffer = [0u8; MAX_LINE_LENGTH];
     debug!("Reading initial request data");

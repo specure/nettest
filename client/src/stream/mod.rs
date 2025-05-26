@@ -157,15 +157,14 @@ impl TcpStream {
 
     pub fn poll_events(&mut self) -> io::Result<()> {
         info!("Polling for events with timeout 1000ms...");
-        match self.poll.poll(&mut self.events, Some(Duration::from_millis(1000))) {
+        match self.poll.poll(&mut self.events, Some(Duration::from_millis(10000))) {
             Ok(_) => {
-                info!("Poll completed");
+                info!("Poll completed, checking events...");
                 for event in self.events.iter() {
-                    info!("Event details: token={}, readable={}, writable={}, error={}", 
-                        event.token().0,
-                        event.is_readable(),
-                        event.is_writable(),
-                        event.is_error());
+                    info!("Event received: token={}, readable={}, writable={}", 
+                          event.token().0,
+                          event.is_readable(),
+                          event.is_writable());
                 }
                 Ok(())
             },

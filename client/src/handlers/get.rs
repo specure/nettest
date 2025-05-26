@@ -3,13 +3,13 @@ use log::debug;
 use mio::{net::TcpStream, Interest, Token};
 use crate::state::TestPhase;
 
-pub struct PutHandler {
+pub struct GetHandler {
     stream: TcpStream,
     token: Token,
     chunk_size: u32,
 }
 
-impl PutHandler {
+impl GetHandler {
     pub fn new(stream: TcpStream, token: Token, chunk_size: u32) -> Self {
         Self {
             stream,
@@ -20,14 +20,14 @@ impl PutHandler {
 
     pub fn handle(&mut self, response: &str) -> Result<Option<TestPhase>> {
         if response.contains("OK") {
-            debug!("PUT test completed");
-            Ok(Some(TestPhase::PutNoResult))
+            debug!("GET test completed");
+            Ok(Some(TestPhase::GetNoResult))
         } else {
             Ok(None)
         }
     }
 
-    pub fn get_put_command(&self) -> String {
-        format!("PUT {}\n", self.chunk_size)
+    pub fn get_get_command(&self) -> String {
+        format!("GET {}\n", self.chunk_size)
     }
 } 

@@ -21,7 +21,7 @@ const MAX_PINGS: u32 = 200;
 const PING_DURATION: u64 = 5; // 2 seconds to ensure we can complete MIN_PINGS
 
 #[test]
-fn test_handle_ping() {
+fn test_handle_ping_rmbt() {
     // Setup logger
     let _ = env_logger::Builder::new()
         .filter_level(log::LevelFilter::Debug)
