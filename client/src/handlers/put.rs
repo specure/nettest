@@ -19,12 +19,12 @@ impl PutHandler {
     }
 
     pub fn handle(&mut self, response: &str) -> Result<Option<TestPhase>> {
-        if response.contains("OK") {
-            debug!("PUT test completed");
-            Ok(Some(TestPhase::PutNoResult))
-        } else {
+        // if response.contains("OK") {
+        //     debug!("PUT test completed");
+        //     Ok(Some(TestPhase::PutNoResult))
+        // } else {
             Ok(None)
-        }
+        // 
     }
 
     pub fn get_put_command(&self) -> String {

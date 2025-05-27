@@ -19,12 +19,12 @@ impl PutNoResultHandler {
     }
 
     pub fn handle(&mut self, response: &str) -> Result<Option<TestPhase>> {
-        if response.contains("OK") {
-            debug!("PUT_NO_RESULT test completed");
-            Ok(Some(TestPhase::Get))
-        } else {
+        // if response.contains("OK") {
+        //     debug!("PUT_NO_RESULT test completed");
+        //     Ok(Some(TestPhase::Get))
+        // } else {
             Ok(None)
-        }
+        // }
     }
 
     pub fn get_put_no_result_command(&self) -> String {

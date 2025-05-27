@@ -1,12 +1,5 @@
-use anyhow::Result;
-// use handlers::handle_download;
-use log::{debug, info};
-use mio::{net::TcpStream, Events, Interest, Poll, Token};
-use std::io::{Read, Write};
-use std::{io, net::SocketAddr, time::Duration};
-
-use bytes::{Buf, BytesMut};
-use tokio::time::timeout;
+use log::{info};
+use std::{net::SocketAddr};
 
 mod state;
 mod handlers;
@@ -27,14 +20,8 @@ async fn async_main() -> anyhow::Result<()> {
     let mut state = TestState::new(addr)?;
     state.run_measurement()?;
 
-    let bytes_received = state.get_bytes_received();
-    let duration = state.get_test_duration();
-    let speed_mbps = (bytes_received as f64 * 8.0) / (duration.as_secs_f64() * 1_000_000.0);
     
     info!("Test completed:");
-    info!("Bytes received: {}", bytes_received);
-    info!("Duration: {:?}", duration);
-    info!("Speed: {:.2} Mbps", speed_mbps);
 
     Ok(())
 }

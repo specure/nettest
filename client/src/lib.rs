@@ -7,6 +7,4 @@ pub use handlers::{
     get_chunks::GetChunksHandler,
     put::PutHandler,
     put_no_result::PutNoResultHandler,
-    get::GetHandler,
-    get_no_result::GetNoResultHandler,
 }; 
