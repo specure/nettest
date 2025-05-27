@@ -10,8 +10,6 @@ use tokio::time::timeout;
 
 mod state;
 mod handlers;
-mod stream;
-// use handlers::download::GetChunksHandler;
 use state::TestState;
 
 #[tokio::main]

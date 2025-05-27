@@ -5,7 +5,7 @@ use mio::{net::TcpStream, Events, Interest, Poll, Token};
 use std::{io, net::SocketAddr, time::{Duration, Instant}};
 use std::io::{Read, Write};
 
-use crate::handlers::{GreetingHandler, TestTokenHandler, GetChunksHandler};
+use crate::handlers::{GreetingHandler, GetChunksHandler};
 
 const MIN_CHUNK_SIZE: u32 = 4096; // 4KB
 const MAX_CHUNK_SIZE: u32 = 4194304; // 4MB
@@ -18,8 +18,8 @@ pub enum TestPhase {
     TestTokenResponseReceive,
     GetChunksReceive,
     GetChunksProcess,
-    Put,
     PutNoResult,
+    Put,
     Get,
     GetNoResult,
     End,
@@ -42,9 +42,9 @@ pub struct TestState {
     current_chunk_size: u32,
     phase: TestPhase,
     greeting_handler: Option<GreetingHandler>,
-    test_token_handler: Option<TestTokenHandler>,
     get_chunks_handler: Option<GetChunksHandler>,
     chunks_buffer: BytesMut,
+    put_no_result_start_time: Option<Instant>,
 }
 
 impl TestState {
@@ -80,9 +80,9 @@ impl TestState {
             current_chunk_size: MIN_CHUNK_SIZE,
             phase: TestPhase::Greeting,
             greeting_handler: Some(GreetingHandler::new(token)),
-            test_token_handler: None,
             get_chunks_handler: None,
             chunks_buffer: BytesMut::with_capacity(8192),
+            put_no_result_start_time: None,
         })
     }
 
@@ -175,7 +175,7 @@ impl TestState {
                         if response.contains("OK") {
                             debug!("[handle_read] Token accepted, switching to GetChunksReceive");
                             self.phase = TestPhase::GetChunksReceive;
-                            self.get_chunks_handler = Some(GetChunksHandler::new(self.token));
+                            self.get_chunks_handler = Some(GetChunksHandler::new());
                             self.write_buffer.extend_from_slice(self.get_chunks_handler.as_ref().unwrap().get_chunks_command().as_bytes());
                             self.poll.registry().reregister(
                                 &mut self.stream,
@@ -300,9 +300,8 @@ impl TestState {
                                 // Check if we've reached max chunk size
                                 if current_chunk_size >= MAX_CHUNK_SIZE {
                                     debug!("[handle_read] Max chunk size reached ({}), moving to next phase", current_chunk_size);
-                                    self.phase = TestPhase::Put;
-                                    let optimal_chunk_size = self.calculate_chunk_size();
-                                    self.start_put_test(optimal_chunk_size)?;
+                                    self.phase = TestPhase::PutNoResult;
+                                    self.start_put_no_result_test()?;
                                     return Ok(());
                                 }
                                 
@@ -341,23 +340,91 @@ impl TestState {
                             } else {
                                 // Pre-test duration exceeded, move to next phase
                                 debug!("[handle_read] Pre-test duration exceeded, moving to next phase");
-                                self.phase = TestPhase::Put;
-                                let optimal_chunk_size = self.calculate_chunk_size();
-                                self.start_put_test(optimal_chunk_size)?;
+                                self.phase = TestPhase::PutNoResult;
+                                self.start_put_no_result_test()?;
+                            }
+                        }
+                        Ok(())
+                    }
+                    TestPhase::PutNoResult => {
+                        debug!("[handle_read] PutNoResult phase");
+                        if response.contains("OK") {
+                            debug!("[handle_read] Received ACCEPT for PUT_NO_RESULT");
+                            // Start the test timer
+                            self.put_no_result_start_time = Some(Instant::now());
+                            // Start sending data chunks
+                            let chunk_size = self.current_chunk_size as usize;
+                            let mut data = vec![0u8; chunk_size];
+                            // Fill with test data
+                            for i in 0..chunk_size - 1 {
+                                data[i] = (i % 256) as u8;
+                            }
+                            // Set terminator byte to 0x00 for intermediate chunks
+                            data[chunk_size - 1] = 0x00;
+                            // Send data
+                            self.write_buffer.extend_from_slice(&data);
+                            self.poll.registry().reregister(
+                                &mut self.stream,
+                                self.token,
+                                Interest::WRITABLE,
+                            )?;
+                        } else if response.contains("TIME") {
+                            debug!("[handle_read] Received TIME response for PUT_NO_RESULT");
+                            // Parse time and move to next phase
+                            let time_ns: u64 = response
+                                .split_whitespace()
+                                .nth(1)
+                                .ok_or_else(|| anyhow::anyhow!("Invalid TIME response"))?
+                                .parse()?;
+                            debug!("[handle_read] PUT_NO_RESULT completed in {} ns", time_ns);
+                            self.phase = TestPhase::Put;
+                            let optimal_chunk_size = self.calculate_chunk_size();
+                            self.start_put_test(optimal_chunk_size)?;
+                        } else if response.contains("OK") {
+                            // Server acknowledged the final chunk, wait for TIME response
+                            debug!("[handle_read] Server acknowledged final chunk");
+                        } else if self.write_buffer.is_empty() {
+                            // If we haven't reached 2 seconds, send another chunk
+                            if let Some(start_time) = self.put_no_result_start_time {
+                                if start_time.elapsed() < Duration::from_secs(2) {
+                                    let chunk_size = self.current_chunk_size as usize;
+                                    let mut data = vec![0u8; chunk_size];
+                                    // Fill with test data
+                                    for i in 0..chunk_size - 1 {
+                                        data[i] = (i % 256) as u8;
+                                    }
+                                    // Set terminator byte to 0x00 for intermediate chunks
+                                    data[chunk_size - 1] = 0x00;
+                                    // Send data
+                                    self.write_buffer.extend_from_slice(&data);
+                                    self.poll.registry().reregister(
+                                        &mut self.stream,
+                                        self.token,
+                                        Interest::WRITABLE,
+                                    )?;
+                                } else {
+                                    // Send final chunk with 0xFF terminator
+                                    let chunk_size = self.current_chunk_size as usize;
+                                    let mut data = vec![0u8; chunk_size];
+                                    // Fill with test data
+                                    for i in 0..chunk_size - 1 {
+                                        data[i] = (i % 256) as u8;
+                                    }
+                                    // Set terminator byte to 0xFF for the final chunk
+                                    data[chunk_size - 1] = 0xFF;
+                                    // Send data
+                                    self.write_buffer.extend_from_slice(&data);
+                                    self.poll.registry().reregister(
+                                        &mut self.stream,
+                                        self.token,
+                                        Interest::WRITABLE,
+                                    )?;
+                                }
                             }
                         }
                         Ok(())
                     }
                     TestPhase::Put => {
-                        debug!("[handle_read] Put phase");
-                        if response.contains("OK") {
-                            debug!("[handle_read] Put -> PutNoResult");
-                            self.phase = TestPhase::PutNoResult;
-                            self.start_put_no_result_test()?;
-                        }
-                        Ok(())
-                    }
-                    TestPhase::PutNoResult => {
                         debug!("[handle_read] PutNoResult phase");
                         if response.contains("OK") {
                             debug!("[handle_read] PutNoResult -> Get");
@@ -484,7 +551,7 @@ impl TestState {
     }
 
     fn start_put_no_result_test(&mut self) -> Result<()> {
-        self.write_buffer.extend_from_slice(format!("PUT_NO_RESULT {}\n", self.current_chunk_size).as_bytes());
+        self.write_buffer.extend_from_slice(format!("PUTNORESULT {}\n", self.current_chunk_size).as_bytes());
         self.poll.registry().reregister(
             &mut self.stream,
             self.token,
