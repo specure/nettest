@@ -185,7 +185,17 @@ impl BasicHandler for GetChunksHandler {
                                                 Interest::WRITABLE,
                                             )?;
                                         }
-                                    }
+                                        else {
+                                            debug!("Test duration exceeded or max chunk size reached");
+                                            self.phase = TestPhase::PingSendPing;
+                                            poll.registry().reregister(
+                                                stream,
+                                                self.token,
+                                                Interest::WRITABLE,
+                                            )?;
+                                            
+                                        }
+                                    } 
                                 }
                             }
                             // Remove processed line from buffer
@@ -251,7 +261,12 @@ impl BasicHandler for GetChunksHandler {
                 }
             }
             TestPhase::GetChunksSendOk => {
-                match stream.write(self.get_ok_command().as_bytes()) {
+                if self.write_buffer.is_empty() {
+                    debug!("Sending OK command");
+                    self.write_buffer.extend_from_slice(self.get_ok_command().as_bytes());
+                }
+
+                match stream.write(&self.write_buffer) {
                     Ok(0) => {
                         debug!("Connection closed by peer");
                         return Err(io::Error::new(
@@ -260,11 +275,14 @@ impl BasicHandler for GetChunksHandler {
                         )
                         .into());
                     }
-                    Ok(_) => {
-                        debug!("[on_write] Sent OK command");
-                        poll.registry()
-                            .reregister(stream, self.token, Interest::READABLE)?;
-                        self.phase = TestPhase::GetChunksReceiveTime;
+                    Ok(n) => {
+                        self.write_buffer = BytesMut::from(&self.write_buffer[n..]);
+                        if self.write_buffer.is_empty() {
+                            debug!("[on_write] Sent OK command");
+                            poll.registry()
+                                .reregister(stream, self.token, Interest::READABLE)?;
+                            self.phase = TestPhase::GetChunksReceiveTime;
+                        }
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                         debug!("WouldBlock");

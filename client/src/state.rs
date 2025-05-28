@@ -25,6 +25,10 @@ pub enum TestPhase {
     GetChunksReceiveChunk,
     GetChunksSendOk,
     GetChunksReceiveTime,
+    PingSendPing,
+    PingReceivePong,
+    PingSendOk,
+    PingReceiveTime,
     End,
 }
 
