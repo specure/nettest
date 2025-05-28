@@ -82,14 +82,12 @@ impl TestState {
             }
 
             if needs_write {
-                debug!("[run_measurement] handle_write phase: {:?}", self.phase);
                 if let Some(handler) = handler_factory.get_handler(&self.phase) {
                     handler.on_write(&mut self.stream, &self.poll)?;
                 }
             }
 
             if needs_read {
-                debug!("[run_measurement] handle_read phase: {:?}", self.phase);
                 if let Some(handler) = handler_factory.get_handler(&self.phase) {
                     handler.on_read(&mut self.stream, &self.poll)?;
                     self.phase = handler.get_phase();
