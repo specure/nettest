@@ -29,7 +29,7 @@ pub enum TestPhase {
     PingReceivePong,
     PingSendOk,
     PingReceiveTime,
-    GetTimeCommand,
+    // GetTimeCommand,
     End,
 }
 

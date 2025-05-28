@@ -24,6 +24,7 @@ pub struct PingHandler {
     write_buffer: BytesMut,
     time_result: Option<u64>,
     ping_times: Mutex<Vec<u64>>, // Store all ping times for median calculation
+    time_buffer: BytesMut, // Buffer for TIME response
 }
 
 impl PingHandler {
@@ -38,6 +39,7 @@ impl PingHandler {
             write_buffer: BytesMut::with_capacity(1024),
             time_result: None,
             ping_times: Mutex::new(Vec::with_capacity(MAX_PINGS as usize)),
+            time_buffer: BytesMut::with_capacity(128), // "TIME " + u64 max + "\n" = 5 + 20 + 1 = 26 bytes
         })
     }
 
@@ -73,9 +75,10 @@ impl BasicHandler for PingHandler {
 
         match self.phase {
             TestPhase::PingReceivePong => {
-                match stream.read(&mut buf) {
+                let mut buf1 = vec![0u8; PONG_RESPONSE.len()];
+                match stream.read(&mut buf1) {
                     Ok(n) if n > 0 => {
-                        if n == PONG_RESPONSE.len() && PONG_RESPONSE == &buf[..n] {
+                        debug!("Received PONG");
                             self.pings_received.fetch_add(1, Ordering::SeqCst);
                             self.phase = TestPhase::PingSendOk;
                             poll.registry().reregister(
@@ -83,10 +86,6 @@ impl BasicHandler for PingHandler {
                                 self.token,
                                 Interest::WRITABLE,
                             )?;
-                        } else {
-                            debug!("Received unexpected response: {:?}", &buf[..n]);
-                            self.unprocessed_bytes.fetch_add(n as u32, Ordering::SeqCst);
-                        }
                     }
                     Ok(0) => {
                         debug!("Connection closed by peer");
@@ -107,9 +106,13 @@ impl BasicHandler for PingHandler {
                 }
             }
             TestPhase::PingReceiveTime => {
+                let mut buf = vec![0u8; 64];
                 match stream.read(&mut buf) {
                     Ok(n) if n > 0 => {
-                        if let Ok(line) = String::from_utf8(buf[..n].to_vec()) {
+                        debug!("Received TIME");
+                        self.time_buffer.extend_from_slice(&buf[..n]);
+                        if let Some(pos) = self.time_buffer.windows(1).position(|w| w == b"\n") {
+                            let line = String::from_utf8_lossy(&self.time_buffer[..pos]);
                             if line.starts_with("TIME") {
                                 debug!("Received TIME response");
                                 if let Some(time_ns) = line
@@ -145,7 +148,7 @@ impl BasicHandler for PingHandler {
                                                 debug!("Final median latency: {} ns", median);
                                                 self.time_result = Some(median);
                                             }
-                                            self.phase = TestPhase::GetTimeCommand;
+                                            // self.phase = TestPhase::GetTimeCommand;
                                             poll.registry().reregister(
                                                 stream,
                                                 self.token,
@@ -155,8 +158,8 @@ impl BasicHandler for PingHandler {
                                     }
                                 }
                             }
-                        } else {
-                            self.unprocessed_bytes.fetch_add(n as u32, Ordering::SeqCst);
+                            // Remove processed line from buffer
+                            self.time_buffer = BytesMut::from(&self.time_buffer[pos + 1..]);
                         }
                     }
                     Ok(0) => {
@@ -199,6 +202,7 @@ impl BasicHandler for PingHandler {
                         .into());
                     }
                     Ok(n) => {
+                        debug!("Ping sent");
                         self.pings_sent.fetch_add(1, Ordering::SeqCst);
                         if self.test_start_time.is_none() {
                             self.test_start_time = Some(Instant::now());
@@ -235,6 +239,7 @@ impl BasicHandler for PingHandler {
                         .into());
                     }
                     Ok(n) => {
+                        debug!("Ok sent");
                         self.phase = TestPhase::PingReceiveTime;
                         self.write_buffer = BytesMut::from(&self.write_buffer[n..]);
                         if self.write_buffer.is_empty() {
