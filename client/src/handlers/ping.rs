@@ -145,7 +145,7 @@ impl BasicHandler for PingHandler {
                                                 debug!("Final median latency: {} ns", median);
                                                 self.time_result = Some(median);
                                             }
-                                            // self.phase = TestPhase::GetChunksSendChunksCommand;
+                                            self.phase = TestPhase::GetTimeCommand;
                                             poll.registry().reregister(
                                                 stream,
                                                 self.token,
