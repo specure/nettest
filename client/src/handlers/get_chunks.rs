@@ -5,8 +5,8 @@ use bytes::{Buf, BytesMut};
 use log::debug;
 use mio::{net::TcpStream, Interest, Poll, Token};
 use std::io::{self, Read, Write};
-use std::time::{Duration, Instant};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::{Duration, Instant};
 
 const MIN_CHUNK_SIZE: u32 = 4096; // 4KB
 const MAX_CHUNK_SIZE: u32 = 4194304; // 4MB
@@ -20,8 +20,9 @@ pub struct GetChunksHandler {
     chunks_received: AtomicU32,
     test_start_time: Option<Instant>,
     unprocessed_bytes: AtomicU32,
-    read_buffer: BytesMut,  // Buffer for reading commands
-    write_buffer: BytesMut, // Buffer for writing responses
+    read_buffer: BytesMut, 
+    time_buffer: BytesMut, //TODO use ring buffer
+    write_buffer: BytesMut,
 }
 
 impl GetChunksHandler {
@@ -34,7 +35,8 @@ impl GetChunksHandler {
             chunks_received: AtomicU32::new(0),
             test_start_time: None,
             unprocessed_bytes: AtomicU32::new(0),
-            read_buffer: BytesMut::with_capacity(1024),  // Start with 1KB buffer
+            read_buffer: BytesMut::with_capacity(1024), // Start with 1KB buffer
+            time_buffer: BytesMut::with_capacity(1024), // Start with 1KB buffer
             write_buffer: BytesMut::with_capacity(1024), // Start with 1KB buffer
         })
     }
@@ -53,6 +55,7 @@ impl BasicHandler for GetChunksHandler {
         let mut buf = vec![0u8; self.chunk_size as usize];
         match self.phase {
             TestPhase::GetChunksReceiveAccept => {
+                debug!("GetChunksReceiveAccept");
                 match stream.read(&mut buf) {
                     Ok(n) if n > 0 => {
                         self.read_buffer.extend_from_slice(&buf[..n]);
@@ -66,21 +69,22 @@ impl BasicHandler for GetChunksHandler {
                                     Interest::WRITABLE,
                                 )?;
                             }
-                            // Remove processed line from buffer
                             self.read_buffer = BytesMut::from(&self.read_buffer[pos + 1..]);
                         }
                     }
                     Ok(0) => {
                         debug!("Connection closed by peer");
-                        return Err(
-                            io::Error::new(io::ErrorKind::ConnectionAborted, "Connection closed").into(),
-                        );
+                        return Err(io::Error::new(
+                            io::ErrorKind::ConnectionAborted,
+                            "Connection closed",
+                        )
+                        .into());
                     }
                     Ok(_) => {
                         debug!("Read 0 bytes");
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        debug!("WouldBlock");
+                        debug!("WouldBlock GetChunksReceiveAccept");
                         return Ok(());
                     }
                     Err(e) => return Err(e.into()),
@@ -90,15 +94,19 @@ impl BasicHandler for GetChunksHandler {
                 match stream.read(&mut buf) {
                     Ok(n) if n > 0 => {
                         // Add unprocessed bytes from previous read to current buffer
-                        let current_unprocessed = self.unprocessed_bytes.fetch_add(n as u32, Ordering::SeqCst);
+                        let current_unprocessed =
+                            self.unprocessed_bytes.fetch_add(n as u32, Ordering::SeqCst);
                         let total_bytes = current_unprocessed + n as u32;
 
                         // Calculate how many complete chunks we have
                         let complete_chunks = total_bytes / self.chunk_size;
-                        self.unprocessed_bytes.store(total_bytes % self.chunk_size, Ordering::SeqCst);
+                        self.unprocessed_bytes
+                            .store(total_bytes % self.chunk_size, Ordering::SeqCst);
 
                         // Update chunks received count
-                        let current_chunks = self.chunks_received.fetch_add(complete_chunks, Ordering::SeqCst);
+                        let current_chunks = self
+                            .chunks_received
+                            .fetch_add(complete_chunks, Ordering::SeqCst);
 
                         // Check if we've received all chunks
                         if current_chunks + complete_chunks >= self.total_chunks {
@@ -108,34 +116,35 @@ impl BasicHandler for GetChunksHandler {
                                 debug!("Received last chunk {}", current_chunks + complete_chunks);
                                 // Send OK command after receiving the last chunk
                                 self.phase = TestPhase::GetChunksSendOk;
+
                                 poll.registry().reregister(
                                     stream,
                                     self.token,
                                     Interest::WRITABLE,
                                 )?;
+                               
                                 return Ok(()); // Return immediately after changing phase
                             }
                         }
 
                         // Register for next read
-                        poll.registry().reregister(
-                            stream,
-                            self.token,
-                            Interest::READABLE,
-                        )?;
+                        poll.registry()
+                            .reregister(stream, self.token, Interest::READABLE)?;
                     }
                     Ok(0) => {
                         debug!("Connection closed by peer");
-                        return Err(
-                            io::Error::new(io::ErrorKind::ConnectionAborted, "Connection closed").into(),
-                        );
+                        return Err(io::Error::new(
+                            io::ErrorKind::ConnectionAborted,
+                            "Connection closed",
+                        )
+                        .into());
                     }
                     Ok(_) => {
                         debug!("Read 0 bytes");
+                        return Ok(());
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        debug!("WouldBlock");
-                        return Ok(());
+                        debug!("WouldBlock GetChunksReceiveChunk");
                     }
                     Err(e) => return Err(e.into()),
                 }
@@ -143,9 +152,9 @@ impl BasicHandler for GetChunksHandler {
             TestPhase::GetChunksReceiveTime => {
                 match stream.read(&mut buf) {
                     Ok(n) if n > 0 => {
-                        self.read_buffer.extend_from_slice(&buf[..n]);
-                        if let Some(pos) = self.read_buffer.windows(1).position(|w| w == b"\n") {
-                            let line = String::from_utf8_lossy(&self.read_buffer[..pos]);
+                        self.time_buffer.extend_from_slice(&buf[..n]);
+                        if let Some(pos) = self.time_buffer.windows(1).position(|w| w == b"\n") {
+                            let line: std::borrow::Cow<'_, str> = String::from_utf8_lossy(&self.time_buffer[..pos]);
                             if line.starts_with("TIME") {
                                 debug!("Received TIME response");
                                 if let Some(time_ns) = line
@@ -169,7 +178,8 @@ impl BasicHandler for GetChunksHandler {
                                                 );
                                             } else {
                                                 // Then increase chunk size
-                                                self.chunk_size = (self.chunk_size * 2).min(MAX_CHUNK_SIZE);
+                                                self.chunk_size =
+                                                    (self.chunk_size * 2).min(MAX_CHUNK_SIZE);
                                                 debug!(
                                                     "Increased chunk size to {}",
                                                     self.chunk_size
@@ -177,42 +187,49 @@ impl BasicHandler for GetChunksHandler {
                                             }
                                             self.chunks_received.store(0, Ordering::SeqCst);
                                             self.unprocessed_bytes.store(0, Ordering::SeqCst);
-                                            debug!("Test duration exceeded or max chunk size reached");
+                                            debug!(
+                                                "Test duration exceeded or max chunk size reached"
+                                            );
                                             self.phase = TestPhase::GetChunksSendChunksCommand;
                                             poll.registry().reregister(
                                                 stream,
                                                 self.token,
                                                 Interest::WRITABLE,
                                             )?;
-                                        }
-                                        else {
-                                            debug!("Test duration exceeded or max chunk size reached");
+                                        } else {
                                             self.phase = TestPhase::PingSendPing;
                                             poll.registry().reregister(
                                                 stream,
                                                 self.token,
                                                 Interest::WRITABLE,
                                             )?;
-                                            
                                         }
-                                    } 
+                                    }
                                 }
                             }
-                            // Remove processed line from buffer
-                            self.read_buffer = BytesMut::from(&self.read_buffer[pos + 1..]);
+                            self.time_buffer = BytesMut::from(&self.time_buffer[pos + 1..]);
                         }
                     }
                     Ok(0) => {
                         debug!("Connection closed by peer");
-                        return Err(
-                            io::Error::new(io::ErrorKind::ConnectionAborted, "Connection closed").into(),
-                        );
+                        return Err(io::Error::new(
+                            io::ErrorKind::ConnectionAborted,
+                            "Connection closed",
+                        )
+                        .into());
                     }
                     Ok(_) => {
                         debug!("Read 0 bytes");
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        debug!("WouldBlock");
+                        debug!("WouldBlock GetChunksReceiveTime {}", e.to_string());
+                        poll.registry().reregister(
+                            stream,
+                            self.token,
+                            Interest::READABLE,
+                        )?;
+                        self.on_read(stream, poll)?;
+
                         return Ok(());
                     }
                     Err(e) => return Err(e.into()),
@@ -242,16 +259,16 @@ impl BasicHandler for GetChunksHandler {
                         debug!("Sent GETCHUNKS command");
                         self.write_buffer = BytesMut::from(&self.write_buffer[n..]);
                         if self.write_buffer.is_empty() {
-                            self.test_start_time = Some(Instant::now());
                             self.phase = TestPhase::GetChunksReceiveChunk; // Transition to progress phase
                             self.unprocessed_bytes.store(0, Ordering::SeqCst);
                             self.chunks_received.store(0, Ordering::SeqCst);
+                            self.test_start_time = Some(Instant::now());
                             poll.registry()
                                 .reregister(stream, self.token, Interest::READABLE)?;
                         }
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        debug!("WouldBlock");
+                        debug!("WouldBlock GetChunksSendChunksCommand");
                         return Ok(());
                     }
                     Err(e) => {
@@ -262,10 +279,9 @@ impl BasicHandler for GetChunksHandler {
             }
             TestPhase::GetChunksSendOk => {
                 if self.write_buffer.is_empty() {
-                    debug!("Sending OK command");
-                    self.write_buffer.extend_from_slice(self.get_ok_command().as_bytes());
+                    self.write_buffer
+                        .extend_from_slice(self.get_ok_command().as_bytes());
                 }
-
                 match stream.write(&self.write_buffer) {
                     Ok(0) => {
                         debug!("Connection closed by peer");
@@ -276,16 +292,16 @@ impl BasicHandler for GetChunksHandler {
                         .into());
                     }
                     Ok(n) => {
-                        self.write_buffer = BytesMut::from(&self.write_buffer[n..]);
+                        self.phase = TestPhase::GetChunksReceiveTime;
+                        debug!("GetChunksSendOk");
+                        self.write_buffer =  BytesMut::with_capacity(1024);
                         if self.write_buffer.is_empty() {
-                            debug!("[on_write] Sent OK command");
                             poll.registry()
                                 .reregister(stream, self.token, Interest::READABLE)?;
-                            self.phase = TestPhase::GetChunksReceiveTime;
                         }
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        debug!("WouldBlock");
+                        debug!("WouldBlock GetChunksSendOk");
                         return Ok(());
                     }
                     Err(e) => {

@@ -1,16 +1,18 @@
 use crate::handlers::BasicHandler;
 use crate::state::TestPhase;
 use anyhow::Result;
-use bytes::BytesMut;
+use bytes::{Buf, BytesMut};
 use log::debug;
 use mio::{net::TcpStream, Interest, Poll, Token};
 use std::io::{self, Read, Write};
-use std::time::{Duration, Instant};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::{Duration, Instant};
+use std::sync::Mutex;
 
 const MIN_PINGS: u32 = 10;
 const MAX_PINGS: u32 = 200;
-const PING_TEST_DURATION_NS: u64 = 1_000_000_000; // 1 second
+const PING_DURATION_NS: u64 = 1_000_000_000; // 1 second
+const PONG_RESPONSE: &[u8] = b"PONG\n";
 
 pub struct PingHandler {
     token: Token,
@@ -18,8 +20,10 @@ pub struct PingHandler {
     pings_sent: AtomicU32,
     pings_received: AtomicU32,
     test_start_time: Option<Instant>,
-    read_buffer: BytesMut,  // Buffer for reading responses
-    write_buffer: BytesMut, // Buffer for writing requests
+    unprocessed_bytes: AtomicU32,
+    write_buffer: BytesMut,
+    time_result: Option<u64>,
+    ping_times: Mutex<Vec<u64>>, // Store all ping times for median calculation
 }
 
 impl PingHandler {
@@ -30,8 +34,10 @@ impl PingHandler {
             pings_sent: AtomicU32::new(0),
             pings_received: AtomicU32::new(0),
             test_start_time: None,
-            read_buffer: BytesMut::with_capacity(1024),  // Start with 1KB buffer
-            write_buffer: BytesMut::with_capacity(1024), // Start with 1KB buffer
+            unprocessed_bytes: AtomicU32::new(0),
+            write_buffer: BytesMut::with_capacity(1024),
+            time_result: None,
+            ping_times: Mutex::new(Vec::with_capacity(MAX_PINGS as usize)),
         })
     }
 
@@ -42,43 +48,59 @@ impl PingHandler {
     pub fn get_ok_command(&self) -> String {
         "OK\n".to_string()
     }
+
+    pub fn get_median_latency(&self) -> Option<u64> {
+        let times = self.ping_times.lock().unwrap();
+        if times.is_empty() {
+            return None;
+        }
+        
+        let mut sorted_times = times.clone();
+        sorted_times.sort_unstable();
+        
+        let mid = sorted_times.len() / 2;
+        if sorted_times.len() % 2 == 0 {
+            Some((sorted_times[mid - 1] + sorted_times[mid]) / 2)
+        } else {
+            Some(sorted_times[mid])
+        }
+    }
 }
 
 impl BasicHandler for PingHandler {
     fn on_read(&mut self, stream: &mut TcpStream, poll: &Poll) -> Result<()> {
         let mut buf = vec![0u8; 1024];
+
         match self.phase {
             TestPhase::PingReceivePong => {
                 match stream.read(&mut buf) {
                     Ok(n) if n > 0 => {
-                        self.read_buffer.extend_from_slice(&buf[..n]);
-                        if let Some(pos) = self.read_buffer.windows(1).position(|w| w == b"\n") {
-                            let line = String::from_utf8_lossy(&self.read_buffer[..pos]);
-                            if line == "PONG" {
-                                debug!("Received PONG");
-                                self.pings_received.fetch_add(1, Ordering::SeqCst);
-                                self.phase = TestPhase::PingSendOk;
-                                poll.registry().reregister(
-                                    stream,
-                                    self.token,
-                                    Interest::WRITABLE,
-                                )?;
-                            }
-                            // Remove processed line from buffer
-                            self.read_buffer = BytesMut::from(&self.read_buffer[pos + 1..]);
+                        if n == PONG_RESPONSE.len() && PONG_RESPONSE == &buf[..n] {
+                            self.pings_received.fetch_add(1, Ordering::SeqCst);
+                            self.phase = TestPhase::PingSendOk;
+                            poll.registry().reregister(
+                                stream,
+                                self.token,
+                                Interest::WRITABLE,
+                            )?;
+                        } else {
+                            debug!("Received unexpected response: {:?}", &buf[..n]);
+                            self.unprocessed_bytes.fetch_add(n as u32, Ordering::SeqCst);
                         }
                     }
                     Ok(0) => {
                         debug!("Connection closed by peer");
-                        return Err(
-                            io::Error::new(io::ErrorKind::ConnectionAborted, "Connection closed").into(),
-                        );
+                        return Err(io::Error::new(
+                            io::ErrorKind::ConnectionAborted,
+                            "Connection closed",
+                        )
+                        .into());
                     }
                     Ok(_) => {
                         debug!("Read 0 bytes");
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        debug!("WouldBlock");
+                        debug!("WouldBlock PingReceivePong");
                         return Ok(());
                     }
                     Err(e) => return Err(e.into()),
@@ -87,9 +109,7 @@ impl BasicHandler for PingHandler {
             TestPhase::PingReceiveTime => {
                 match stream.read(&mut buf) {
                     Ok(n) if n > 0 => {
-                        self.read_buffer.extend_from_slice(&buf[..n]);
-                        if let Some(pos) = self.read_buffer.windows(1).position(|w| w == b"\n") {
-                            let line = String::from_utf8_lossy(&self.read_buffer[..pos]);
+                        if let Ok(line) = String::from_utf8(buf[..n].to_vec()) {
                             if line.starts_with("TIME") {
                                 debug!("Received TIME response");
                                 if let Some(time_ns) = line
@@ -98,48 +118,60 @@ impl BasicHandler for PingHandler {
                                     .and_then(|s| s.parse::<u64>().ok())
                                 {
                                     debug!("Time: {} ns", time_ns);
-                                    // Check if we need to send more pings
+                                    // Store the time for median calculation
+                                    if let Ok(mut times) = self.ping_times.lock() {
+                                        times.push(time_ns);
+                                    }
+                                    
                                     if let Some(start_time) = self.test_start_time {
                                         let elapsed = start_time.elapsed();
                                         let pings_sent = self.pings_sent.load(Ordering::SeqCst);
                                         let pings_received = self.pings_received.load(Ordering::SeqCst);
-                                        
-                                        if elapsed.as_nanos() < PING_TEST_DURATION_NS as u128 {
-                                            if pings_sent < MAX_PINGS {
-                                                self.phase = TestPhase::PingSendPing;
-                                                poll.registry().reregister(
-                                                    stream,
-                                                    self.token,
-                                                    Interest::WRITABLE,
-                                                )?;
-                                            }
-                                        } else if pings_received >= MIN_PINGS {
-                                            // We've received enough pings and time is up
-                                            self.phase = TestPhase::GetChunksReceiveAccept;
+
+                                        if elapsed.as_nanos() < PING_DURATION_NS as u128
+                                            && pings_sent < MAX_PINGS
+                                            && pings_received >= pings_sent
+                                        {
+                                            self.phase = TestPhase::PingSendPing;
                                             poll.registry().reregister(
                                                 stream,
                                                 self.token,
-                                                Interest::READABLE,
+                                                Interest::WRITABLE,
+                                            )?;
+                                        } else {
+                                            debug!("Finishing Pings");
+                                            // Calculate final median latency
+                                            if let Some(median) = self.get_median_latency() {
+                                                debug!("Final median latency: {} ns", median);
+                                                self.time_result = Some(median);
+                                            }
+                                            // self.phase = TestPhase::GetChunksSendChunksCommand;
+                                            poll.registry().reregister(
+                                                stream,
+                                                self.token,
+                                                Interest::WRITABLE,
                                             )?;
                                         }
                                     }
                                 }
                             }
-                            // Remove processed line from buffer
-                            self.read_buffer = BytesMut::from(&self.read_buffer[pos + 1..]);
+                        } else {
+                            self.unprocessed_bytes.fetch_add(n as u32, Ordering::SeqCst);
                         }
                     }
                     Ok(0) => {
                         debug!("Connection closed by peer");
-                        return Err(
-                            io::Error::new(io::ErrorKind::ConnectionAborted, "Connection closed").into(),
-                        );
+                        return Err(io::Error::new(
+                            io::ErrorKind::ConnectionAborted,
+                            "Connection closed",
+                        )
+                        .into());
                     }
                     Ok(_) => {
                         debug!("Read 0 bytes");
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        debug!("WouldBlock");
+                        debug!("WouldBlock PingReceiveTime");
                         return Ok(());
                     }
                     Err(e) => return Err(e.into()),
@@ -154,10 +186,9 @@ impl BasicHandler for PingHandler {
         match self.phase {
             TestPhase::PingSendPing => {
                 if self.write_buffer.is_empty() {
-                    debug!("Sending PING command");
-                    self.write_buffer.extend_from_slice(self.get_ping_command().as_bytes());
+                    self.write_buffer
+                        .extend_from_slice(self.get_ping_command().as_bytes());
                 }
-
                 match stream.write(&self.write_buffer) {
                     Ok(0) => {
                         debug!("Connection closed by peer");
@@ -168,23 +199,19 @@ impl BasicHandler for PingHandler {
                         .into());
                     }
                     Ok(n) => {
+                        self.pings_sent.fetch_add(1, Ordering::SeqCst);
+                        if self.test_start_time.is_none() {
+                            self.test_start_time = Some(Instant::now());
+                        }
+                        self.phase = TestPhase::PingReceivePong;
                         self.write_buffer = BytesMut::from(&self.write_buffer[n..]);
                         if self.write_buffer.is_empty() {
-                            debug!("Sent PING command");
-                            self.pings_sent.fetch_add(1, Ordering::SeqCst);
-                            if self.test_start_time.is_none() {
-                                self.test_start_time = Some(Instant::now());
-                            }
-                            self.phase = TestPhase::PingReceivePong;
-                            poll.registry().reregister(
-                                stream,
-                                self.token,
-                                Interest::READABLE,
-                            )?;
+                            poll.registry()
+                                .reregister(stream, self.token, Interest::READABLE)?;
                         }
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        debug!("WouldBlock");
+                        debug!("WouldBlock PingSendPing");
                         return Ok(());
                     }
                     Err(e) => {
@@ -195,10 +222,9 @@ impl BasicHandler for PingHandler {
             }
             TestPhase::PingSendOk => {
                 if self.write_buffer.is_empty() {
-                    debug!("Sending OK command");
-                    self.write_buffer.extend_from_slice(self.get_ok_command().as_bytes());
+                    self.write_buffer
+                        .extend_from_slice(self.get_ok_command().as_bytes());
                 }
-
                 match stream.write(&self.write_buffer) {
                     Ok(0) => {
                         debug!("Connection closed by peer");
@@ -209,19 +235,15 @@ impl BasicHandler for PingHandler {
                         .into());
                     }
                     Ok(n) => {
+                        self.phase = TestPhase::PingReceiveTime;
                         self.write_buffer = BytesMut::from(&self.write_buffer[n..]);
                         if self.write_buffer.is_empty() {
-                            debug!("Sent OK command");
-                            self.phase = TestPhase::PingReceiveTime;
-                            poll.registry().reregister(
-                                stream,
-                                self.token,
-                                Interest::READABLE,
-                            )?;
+                            poll.registry()
+                                .reregister(stream, self.token, Interest::READABLE)?;
                         }
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        debug!("WouldBlock");
+                        debug!("WouldBlock PingSendOk");
                         return Ok(());
                     }
                     Err(e) => {

@@ -17,3 +17,4 @@ thiserror = "1.0"
 rustls = { version = "0.22.0" }
 mio = { version = "1", features = ["net"] }
 bytes = "1.10.1"
+ringbuf = "0.4.8"
