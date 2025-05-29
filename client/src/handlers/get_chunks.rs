@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 const MIN_CHUNK_SIZE: u32 = 4096; // 4KB
 const MAX_CHUNK_SIZE: u32 = 4194304; // 4MB
-const PRE_DOWNLOAD_DURATION_NS: u64 = 2_000_000_000; // 2 seconds
+const PRE_DOWNLOAD_DURATION_NS: u64 = 1_000_000_000; // 2 seconds
 
 pub struct GetChunksHandler {
     token: Token,
@@ -59,8 +59,7 @@ impl BasicHandler for GetChunksHandler {
                 match stream.read(&mut buf) {
                     Ok(n) if n > 0 => {
                         self.read_buffer.extend_from_slice(&buf[..n]);
-                        if let Some(pos) = self.read_buffer.windows(1).position(|w| w == b"\n") {
-                            let line = String::from_utf8_lossy(&self.read_buffer[..pos]);
+                            let line = String::from_utf8_lossy(&self.read_buffer);
                             if line.contains("ACCEPT") {
                                 self.phase = TestPhase::GetChunksSendChunksCommand;
                                 poll.registry().reregister(
@@ -69,8 +68,7 @@ impl BasicHandler for GetChunksHandler {
                                     Interest::WRITABLE,
                                 )?;
                             }
-                            self.read_buffer = BytesMut::from(&self.read_buffer[pos + 1..]);
-                        }
+                            self.read_buffer.clear();
                     }
                     Ok(0) => {
                         debug!("Connection closed by peer");
@@ -153,62 +151,69 @@ impl BasicHandler for GetChunksHandler {
                 match stream.read(&mut buf) {
                     Ok(n) if n > 0 => {
                         self.time_buffer.extend_from_slice(&buf[..n]);
-                        if let Some(pos) = self.time_buffer.windows(1).position(|w| w == b"\n") {
-                            let line: std::borrow::Cow<'_, str> = String::from_utf8_lossy(&self.time_buffer[..pos]);
-                            if line.starts_with("TIME") {
-                                debug!("Received TIME response");
-                                if let Some(time_ns) = line
-                                    .split_whitespace()
-                                    .nth(1)
-                                    .and_then(|s| s.parse::<u64>().ok())
-                                {
-                                    debug!("Time: {} ns", time_ns);
-                                    // Double the number of chunks for next iteration if we haven't exceeded duration
-                                    if let Some(start_time) = self.test_start_time {
-                                        let elapsed = start_time.elapsed();
-                                        if elapsed.as_nanos() < PRE_DOWNLOAD_DURATION_NS as u128
-                                            && self.chunk_size < MAX_CHUNK_SIZE
-                                        {
-                                            if self.total_chunks < 8 {
-                                                // First increase number of chunks until we reach 8
-                                                self.total_chunks *= 2;
-                                                debug!(
-                                                    "Increased total chunks to {}",
-                                                    self.total_chunks
-                                                );
-                                            } else {
-                                                // Then increase chunk size
-                                                self.chunk_size =
-                                                    (self.chunk_size * 2).min(MAX_CHUNK_SIZE);
-                                                debug!(
-                                                    "Increased chunk size to {}",
-                                                    self.chunk_size
-                                                );
-                                            }
-                                            self.chunks_received.store(0, Ordering::SeqCst);
-                                            self.unprocessed_bytes.store(0, Ordering::SeqCst);
-                                            debug!(
-                                                "Test duration exceeded or max chunk size reached"
-                                            );
-                                            self.phase = TestPhase::GetChunksSendChunksCommand;
-                                            poll.registry().reregister(
-                                                stream,
-                                                self.token,
-                                                Interest::WRITABLE,
-                                            )?;
-                                        } else {
+
                                             self.phase = TestPhase::PingSendPing;
                                             poll.registry().reregister(
                                                 stream,
                                                 self.token,
                                                 Interest::WRITABLE,
                                             )?;
-                                        }
-                                    }
-                                }
-                            }
-                            self.time_buffer = BytesMut::from(&self.time_buffer[pos + 1..]);
-                        }
+                        // if let Some(pos) = self.time_buffer.windows(1).position(|w| w == b"\n") {
+                        //     let line: std::borrow::Cow<'_, str> = String::from_utf8_lossy(&self.time_buffer[..pos]);
+                        //     if line.starts_with("TIME") {
+                        //         debug!("Received TIME response");
+                        //         if let Some(time_ns) = line
+                        //             .split_whitespace()
+                        //             .nth(1)
+                        //             .and_then(|s| s.parse::<u64>().ok())
+                        //         {
+                        //             debug!("Time: {} ns", time_ns);
+                        //             // Double the number of chunks for next iteration if we haven't exceeded duration
+                        //             if let Some(start_time) = self.test_start_time {
+                        //                 let elapsed = start_time.elapsed();
+                        //                 if elapsed.as_nanos() < PRE_DOWNLOAD_DURATION_NS as u128
+                        //                     && self.chunk_size < MAX_CHUNK_SIZE
+                        //                 {
+                        //                     if self.total_chunks < 8 {
+                        //                         // First increase number of chunks until we reach 8
+                        //                         self.total_chunks *= 2;
+                        //                         debug!(
+                        //                             "Increased total chunks to {}",
+                        //                             self.total_chunks
+                        //                         );
+                        //                     } else {
+                        //                         // Then increase chunk size
+                        //                         self.chunk_size =
+                        //                             (self.chunk_size * 2).min(MAX_CHUNK_SIZE);
+                        //                         debug!(
+                        //                             "Increased chunk size to {}",
+                        //                             self.chunk_size
+                        //                         );
+                        //                     }
+                        //                     self.chunks_received.store(0, Ordering::SeqCst);
+                        //                     self.unprocessed_bytes.store(0, Ordering::SeqCst);
+                        //                     debug!(
+                        //                         "Test duration exceeded or max chunk size reached"
+                        //                     );
+                        //                     self.phase = TestPhase::GetChunksSendChunksCommand;
+                        //                     poll.registry().reregister(
+                        //                         stream,
+                        //                         self.token,
+                        //                         Interest::WRITABLE,
+                        //                     )?;
+                        //                 } else {
+                        //                     self.phase = TestPhase::PingSendPing;
+                        //                     poll.registry().reregister(
+                        //                         stream,
+                        //                         self.token,
+                        //                         Interest::WRITABLE,
+                        //                     )?;
+                        //                 }
+                        //             }
+                        //         }
+                        //     }
+                        //     self.time_buffer = BytesMut::from(&self.time_buffer[pos + 1..]);
+                        // }
                     }
                     Ok(0) => {
                         debug!("Connection closed by peer");

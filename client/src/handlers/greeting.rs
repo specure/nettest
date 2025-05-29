@@ -46,6 +46,7 @@ impl BasicHandler for GreetingHandler {
                             let line = String::from_utf8_lossy(&self.read_buffer[..pos]);
                             if line.contains("HTTP/1.1 101") {
                                 debug!("[on_read] Received upgrade response");
+                                
                                 self.phase = TestPhase::GreetingSendToken;
                                 poll.registry().reregister(
                                     stream,

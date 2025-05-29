@@ -1,10 +1,11 @@
 use anyhow::Result;
 use bytes::{BytesMut};
-use log::{debug, info, trace};
+use log::{debug, info, trace, error};
 use mio::{net::TcpStream, Events, Interest, Poll, Token};
 use std::{
     net::SocketAddr,
     time::{Duration, Instant},
+    io,
 };
 
 use crate::handlers::handler_factory::HandlerFactory;
@@ -29,7 +30,12 @@ pub enum TestPhase {
     PingReceivePong,
     PingSendOk,
     PingReceiveTime,
-    // GetTimeCommand,
+    GetTimeCommand,
+    PutNoResultReceiveAccept,
+    PutNoResultSendCommand,
+    PutNoResultReceiveOk,
+    PutNoResultSendChunks,
+    PutNoResultReceiveTime,
     End,
 }
 
@@ -47,7 +53,7 @@ impl TestState {
         stream.set_nodelay(true)?;
 
         let mut poll = Poll::new()?;
-        let events = Events::with_capacity(1024);
+        let events = Events::with_capacity(2048);
         let token = Token(0);
 
         // Register socket for both reading and writing
@@ -71,32 +77,36 @@ impl TestState {
         let mut handler_factory = HandlerFactory::new(self.token)?;
 
         while self.phase != TestPhase::End {
-            self.poll.poll(&mut self.events, None)?;
-            let mut needs_write = true;
-            let mut needs_read = true;
 
-            trace!("[run_measurement] Events: {:?}", self.events);
+            self.poll.poll(&mut self.events, Some(Duration::from_secs(60)))?;
+            // debug!("[run_measurement] event count: {}", self.events.iter().count());
 
-            for event in self.events.iter() {
-                if event.is_readable() {
-                    needs_read = true;
-                }
-                if event.is_writable() {
-                    needs_write = true;
-                }
-            }
+            // Process one event at a time
+            if let Some(event) = self.events.iter().next() {
+                let needs_write = event.is_writable();
+                let needs_read = event.is_readable();
 
-            if needs_write {
-                if let Some(handler) = handler_factory.get_handler(&self.phase) {
-                    handler.on_write(&mut self.stream, &self.poll)?;
+                if needs_write {
+                    // debug!("Processing writable event");
+                    if let Some(handler) = handler_factory.get_handler(&self.phase) {
+                        if let Err(e) = handler.on_write(&mut self.stream, &self.poll) {
+                            error!("Error in on_write for phase {:?}: {}", self.phase, e);
+                            return Err(e);
+                        }
+                    }
                 }
-            }
 
-            if needs_read {
-                if let Some(handler) = handler_factory.get_handler(&self.phase) {
-                    handler.on_read(&mut self.stream, &self.poll)?;
-                    self.phase = handler.get_phase();
+                if needs_read {
+                    // debug!("Processing readable event");
+                    if let Some(handler) = handler_factory.get_handler(&self.phase) {
+                        if let Err(e) = handler.on_read(&mut self.stream, &self.poll) {
+                            error!("Error in on_read for phase {:?}: {}", self.phase, e);
+                            return Err(e);
+                        }
+                        self.phase = handler.get_phase();
+                    }
                 }
+
             }
         }
 

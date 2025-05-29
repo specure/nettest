@@ -10,3 +10,4 @@ pub use basic_handler::BasicHandler;
 pub use greeting::GreetingHandler;
 pub use get_chunks::GetChunksHandler;
 pub use ping::PingHandler;
+pub use put_no_result::PutNoResultHandler;
