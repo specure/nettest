@@ -51,7 +51,6 @@ impl TestState {
     pub fn new(addr: SocketAddr) -> Result<Self> {
         let mut stream = TcpStream::connect(addr)?;
         stream.set_nodelay(true)?;
-
         let mut poll = Poll::new()?;
         let events = Events::with_capacity(2048);
         let token = Token(0);

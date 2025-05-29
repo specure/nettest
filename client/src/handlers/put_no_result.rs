@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 const TEST_DURATION_NS: u64 = 7_000_000_000; // 3 seconds
 const MIN_CHUNK_SIZE: u32 = 4096; // 4KB
 const MAX_CHUNK_SIZE: u64 = 4194304; // 2MB
-const BUFFER_SIZE: usize = 10 * 1024 * 1024; // 100MB
+const BUFFER_SIZE: usize = 4 * 1024 * 1024; // 4mb
 const TERMINATION_BYTE_LAST: [u8; 1] = [0xFF];
 const TERMINATION_BYTE_NORMAL: [u8; 1] = [0x00];
 
@@ -25,6 +25,7 @@ pub struct PutNoResultHandler {
     write_buffer: BytesMut,
     read_buffer: BytesMut,
     data_buffer: Vec<u8>,
+    data_termination_buffer: Vec<u8>,
     upload_speed: Option<f64>,
 }
 
@@ -35,6 +36,12 @@ impl PutNoResultHandler {
         for byte in &mut data_buffer {
             *byte = fastrand::u8(..);
         }
+        data_buffer[BUFFER_SIZE - 1] = 0x00;
+        let mut data_termination_buffer = vec![0u8; BUFFER_SIZE];
+        for byte in &mut data_termination_buffer {
+            *byte = fastrand::u8(..);
+        }
+        data_termination_buffer[BUFFER_SIZE - 1] = 0x00;
 
         Ok(Self {
             token,
@@ -45,6 +52,7 @@ impl PutNoResultHandler {
             write_buffer: BytesMut::with_capacity(1024),
             read_buffer: BytesMut::with_capacity(1024),
             data_buffer,
+            data_termination_buffer,
             upload_speed: None,
         })
     }
@@ -276,46 +284,52 @@ impl BasicHandler for PutNoResultHandler {
                 if let Some(start_time) = self.test_start_time {
                     let elapsed = start_time.elapsed();
                     let is_last = elapsed.as_nanos() >= TEST_DURATION_NS as u128;
-                    let mut slices = Vec::new();
 
-                    // Normal chunk sending
-                    let current_pos =
-                        self.bytes_sent.load(Ordering::SeqCst) & (self.chunk_size - 1) as u64;
-                    let remaining_in_chunk: u64 = self.chunk_size - current_pos;
-
-                    // Calculate how many bytes we can send in this iteration
-                    let bytes_to_send: u64 = if remaining_in_chunk == 0 {
-                        self.chunk_size
+                    // Get current position in buffer
+                    let current_pos = self.bytes_sent.load(Ordering::SeqCst) % BUFFER_SIZE as u64;
+                    
+                    // Choose buffer based on whether time is up
+                    let buffer = if is_last {
+                        &self.data_termination_buffer
                     } else {
-                        remaining_in_chunk
+                        &self.data_buffer
                     };
 
-                    let chunk = &self.data_buffer[0..(bytes_to_send - 1) as usize];
-                    slices.push(IoSlice::new(chunk));
-                    if is_last {
-                        slices.push(IoSlice::new(&TERMINATION_BYTE_LAST));
-                    } else {
-                        slices.push(IoSlice::new(&TERMINATION_BYTE_NORMAL));
-                    }
+                    let mut remaining = &buffer[current_pos as usize..];
+                    while !is_last {
+                        if remaining.is_empty() {
+                            // Add new chunk
+                            remaining = buffer;
+                        }
 
-                    
-
-                    match stream.write_vectored(&slices) {
-                        Ok(n) => {
-                            // Update bytes sent counter
-                            self.bytes_sent.fetch_add(n as u64, Ordering::SeqCst);
-
-                            if is_last && self.bytes_sent.load(Ordering::SeqCst) & (self.chunk_size - 1) as u64 == 0 {
-                                self.phase = TestPhase::PutNoResultReceiveTime;
-                                poll.registry().reregister(
-                                    stream,
-                                    self.token,
-                                    Interest::READABLE,
-                                )?;
-                                return Ok(());
-                            } else {
+                        // Write from current position
+                        match stream.write(remaining) {
+                            Ok(written) => {
+                                // Update bytes sent counter
+                                self.bytes_sent.fetch_add(written as u64, Ordering::SeqCst);
+                                remaining = &remaining[written..];
+                            }
+                            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                                debug!("Write would block, reregistering for write");
                                 return Ok(());
                             }
+                            Err(e) => {
+                                debug!("Error in PutNoResultSendChunks: {}", e);
+                                return Err(e.into());
+                            }
+                        }
+                    }
+
+                    // Send last chunk
+                    match stream.write(&self.data_termination_buffer) {
+                        Ok(written) => {
+                            self.bytes_sent.fetch_add(written as u64, Ordering::SeqCst);
+                            self.phase = TestPhase::PutNoResultReceiveTime;
+                            poll.registry().reregister(
+                                stream,
+                                self.token,
+                                Interest::READABLE,
+                            )?;
                         }
                         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                             debug!("Write would block, reregistering for write");
@@ -326,6 +340,7 @@ impl BasicHandler for PutNoResultHandler {
                             return Err(e.into());
                         }
                     }
+                    return Ok(());
                 } else {
                     debug!("No start time set");
                     return Ok(());
