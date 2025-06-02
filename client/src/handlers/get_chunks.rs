@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 const MIN_CHUNK_SIZE: u32 = 4096; // 4KB
 const MAX_CHUNK_SIZE: u32 = 4194304; // 4MB
-const PRE_DOWNLOAD_DURATION_NS: u64 = 1_000_000_000; // 2 seconds
+const PRE_DOWNLOAD_DURATION_NS: u64 = 2_000_000_000; // 2 seconds
 
 pub struct GetChunksHandler {
     token: Token,
@@ -20,7 +20,7 @@ pub struct GetChunksHandler {
     chunks_received: AtomicU32,
     test_start_time: Option<Instant>,
     unprocessed_bytes: AtomicU32,
-    read_buffer: BytesMut, 
+    read_buffer: BytesMut,
     time_buffer: BytesMut, //TODO use ring buffer
     write_buffer: BytesMut,
 }
@@ -59,16 +59,15 @@ impl BasicHandler for GetChunksHandler {
                 match stream.read(&mut buf) {
                     Ok(n) if n > 0 => {
                         self.read_buffer.extend_from_slice(&buf[..n]);
-                            let line = String::from_utf8_lossy(&self.read_buffer);
-                            if line.contains("ACCEPT") {
-                                self.phase = TestPhase::GetChunksSendChunksCommand;
-                                poll.registry().reregister(
-                                    stream,
-                                    self.token,
-                                    Interest::WRITABLE,
-                                )?;
-                            }
+                        let buffer_str = String::from_utf8_lossy(&self.read_buffer);
+                        debug!("Received data: {}", buffer_str);
+                        if buffer_str.contains("ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n") {
+                            debug!("Received full ACCEPT command");
+                            self.phase = TestPhase::GetChunksSendChunksCommand;
+                            poll.registry()
+                                .reregister(stream, self.token, Interest::WRITABLE)?;
                             self.read_buffer.clear();
+                        }
                     }
                     Ok(0) => {
                         debug!("Connection closed by peer");
@@ -120,11 +119,10 @@ impl BasicHandler for GetChunksHandler {
                                     self.token,
                                     Interest::WRITABLE,
                                 )?;
-                               
+
                                 return Ok(()); // Return immediately after changing phase
                             }
                         }
-
                         // Register for next read
                         poll.registry()
                             .reregister(stream, self.token, Interest::READABLE)?;
@@ -151,69 +149,58 @@ impl BasicHandler for GetChunksHandler {
                 match stream.read(&mut buf) {
                     Ok(n) if n > 0 => {
                         self.time_buffer.extend_from_slice(&buf[..n]);
+                        let buffer_str = String::from_utf8_lossy(&self.time_buffer);
+                        debug!("Received data: {}", buffer_str);
 
-                                            self.phase = TestPhase::PingSendPing;
-                                            poll.registry().reregister(
-                                                stream,
-                                                self.token,
-                                                Interest::WRITABLE,
-                                            )?;
-                        // if let Some(pos) = self.time_buffer.windows(1).position(|w| w == b"\n") {
-                        //     let line: std::borrow::Cow<'_, str> = String::from_utf8_lossy(&self.time_buffer[..pos]);
-                        //     if line.starts_with("TIME") {
-                        //         debug!("Received TIME response");
-                        //         if let Some(time_ns) = line
-                        //             .split_whitespace()
-                        //             .nth(1)
-                        //             .and_then(|s| s.parse::<u64>().ok())
-                        //         {
-                        //             debug!("Time: {} ns", time_ns);
-                        //             // Double the number of chunks for next iteration if we haven't exceeded duration
-                        //             if let Some(start_time) = self.test_start_time {
-                        //                 let elapsed = start_time.elapsed();
-                        //                 if elapsed.as_nanos() < PRE_DOWNLOAD_DURATION_NS as u128
-                        //                     && self.chunk_size < MAX_CHUNK_SIZE
-                        //                 {
-                        //                     if self.total_chunks < 8 {
-                        //                         // First increase number of chunks until we reach 8
-                        //                         self.total_chunks *= 2;
-                        //                         debug!(
-                        //                             "Increased total chunks to {}",
-                        //                             self.total_chunks
-                        //                         );
-                        //                     } else {
-                        //                         // Then increase chunk size
-                        //                         self.chunk_size =
-                        //                             (self.chunk_size * 2).min(MAX_CHUNK_SIZE);
-                        //                         debug!(
-                        //                             "Increased chunk size to {}",
-                        //                             self.chunk_size
-                        //                         );
-                        //                     }
-                        //                     self.chunks_received.store(0, Ordering::SeqCst);
-                        //                     self.unprocessed_bytes.store(0, Ordering::SeqCst);
-                        //                     debug!(
-                        //                         "Test duration exceeded or max chunk size reached"
-                        //                     );
-                        //                     self.phase = TestPhase::GetChunksSendChunksCommand;
-                        //                     poll.registry().reregister(
-                        //                         stream,
-                        //                         self.token,
-                        //                         Interest::WRITABLE,
-                        //                     )?;
-                        //                 } else {
-                        //                     self.phase = TestPhase::PingSendPing;
-                        //                     poll.registry().reregister(
-                        //                         stream,
-                        //                         self.token,
-                        //                         Interest::WRITABLE,
-                        //                     )?;
-                        //                 }
-                        //             }
-                        //         }
-                        //     }
-                        //     self.time_buffer = BytesMut::from(&self.time_buffer[pos + 1..]);
-                        // }
+                        if buffer_str.contains("ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n") {
+                            // Parse time from the message
+                            if let Some(time_start) = buffer_str.find("TIME ") {
+                                if let Some(time_end) = buffer_str[time_start..].find('\n') {
+                                    let time_str = &buffer_str[time_start + 5..time_start + time_end];
+                                    if let Ok(time_ns) = time_str.parse::<u64>() {
+                                        debug!("Time: {} ns", time_ns);
+                                        // Double the number of chunks for next iteration if we haven't exceeded duration
+                                        if let Some(start_time) = self.test_start_time {
+                                            let elapsed = start_time.elapsed();
+                                            if elapsed.as_nanos() < PRE_DOWNLOAD_DURATION_NS as u128
+                                                && self.chunk_size < MAX_CHUNK_SIZE
+                                            {
+                                                if self.total_chunks < 8 {
+                                                    // First increase number of chunks until we reach 8
+                                                    self.total_chunks *= 2;
+                                                    debug!(
+                                                        "Increased total chunks to {}",
+                                                        self.total_chunks
+                                                    );
+                                                } else {
+                                                    // Then increase chunk size
+                                                    self.chunk_size =
+                                                        (self.chunk_size * 2).min(MAX_CHUNK_SIZE);
+                                                    debug!("Increased chunk size to {}", self.chunk_size);
+                                                }
+                                                self.chunks_received.store(0, Ordering::SeqCst);
+                                                self.unprocessed_bytes.store(0, Ordering::SeqCst);
+                                                debug!("Test duration exceeded or max chunk size reached");
+                                                self.phase = TestPhase::GetChunksSendChunksCommand;
+                                                poll.registry().reregister(
+                                                    stream,
+                                                    self.token,
+                                                    Interest::WRITABLE,
+                                                )?;
+                                            } else {
+                                                self.phase = TestPhase::PingSendPing;
+                                                poll.registry().reregister(
+                                                    stream,
+                                                    self.token,
+                                                    Interest::WRITABLE,
+                                                )?;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            self.time_buffer.clear();
+                        }
                     }
                     Ok(0) => {
                         debug!("Connection closed by peer");
@@ -228,13 +215,6 @@ impl BasicHandler for GetChunksHandler {
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                         debug!("WouldBlock GetChunksReceiveTime {}", e.to_string());
-                        poll.registry().reregister(
-                            stream,
-                            self.token,
-                            Interest::READABLE,
-                        )?;
-                        self.on_read(stream, poll)?;
-
                         return Ok(());
                     }
                     Err(e) => return Err(e.into()),
@@ -299,7 +279,7 @@ impl BasicHandler for GetChunksHandler {
                     Ok(n) => {
                         self.phase = TestPhase::GetChunksReceiveTime;
                         debug!("GetChunksSendOk");
-                        self.write_buffer =  BytesMut::with_capacity(1024);
+                        self.write_buffer = BytesMut::with_capacity(1024);
                         if self.write_buffer.is_empty() {
                             poll.registry()
                                 .reregister(stream, self.token, Interest::READABLE)?;

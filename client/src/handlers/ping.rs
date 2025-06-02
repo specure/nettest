@@ -2,7 +2,7 @@ use crate::handlers::BasicHandler;
 use crate::state::TestPhase;
 use anyhow::Result;
 use bytes::{Buf, BytesMut};
-use log::{debug, info};
+use log::debug;
 use mio::{net::TcpStream, Interest, Poll, Token};
 use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use std::sync::Mutex;
 
 const MIN_PINGS: u32 = 10;
-const MAX_PINGS: u32 = 15;
+const MAX_PINGS: u32 = 200;
 const PING_DURATION_NS: u64 = 1_000_000_000; // 1 second
 const PONG_RESPONSE: &[u8] = b"PONG\n";
 
@@ -75,12 +75,10 @@ impl BasicHandler for PingHandler {
 
         match self.phase {
             TestPhase::PingReceivePong => {
-                info!("PingReceivePong");
                 let mut buf1 = vec![0u8; PONG_RESPONSE.len()];
                 match stream.read(&mut buf1) {
                     Ok(n) if n > 0 => {
-                        debug!("Received PONG");
-                            self.pings_received.fetch_add(1, Ordering::SeqCst);
+                        debug!("Received PONG {}", String::from_utf8_lossy(&buf1));
                             self.phase = TestPhase::PingSendOk;
                             poll.registry().reregister(
                                 stream,
@@ -110,64 +108,58 @@ impl BasicHandler for PingHandler {
                 let mut buf = vec![0u8; 128];
                 match stream.read(&mut buf) {
                     Ok(n) if n > 0 => {
-                        debug!("Received TIME");
                         self.time_buffer.extend_from_slice(&buf[..n]);
-                        self.phase = TestPhase::PutNoResultSendCommand;
-                        poll.registry().reregister(
-                            stream,
-                            self.token,
-                            Interest::WRITABLE,
-                        )?;
-                        // if let Some(pos) = self.time_buffer.windows(1).position(|w| w == b"\n") {
-                        //     let line = String::from_utf8_lossy(&self.time_buffer[..pos]);
-                        //     if line.starts_with("TIME") {
-                        //         debug!("Received TIME response");
-                        //         if let Some(time_ns) = line
-                        //             .split_whitespace()
-                        //             .nth(1)
-                        //             .and_then(|s| s.parse::<u64>().ok())
-                        //         {
-                        //             debug!("Time: {} ns", time_ns);
-                        //             // Store the time for median calculation
-                        //             if let Ok(mut times) = self.ping_times.lock() {
-                        //                 times.push(time_ns);
-                        //             }
-                                    
-                        //             if let Some(start_time) = self.test_start_time {
-                        //                 let elapsed = start_time.elapsed();
-                        //                 let pings_sent = self.pings_sent.load(Ordering::SeqCst);
-                        //                 let pings_received = self.pings_received.load(Ordering::SeqCst);
+                        let buffer_str = String::from_utf8_lossy(&self.time_buffer);
+                        debug!("Received data: {}", buffer_str);
 
-                        //                 if elapsed.as_nanos() < PING_DURATION_NS as u128
-                        //                     && pings_sent < MAX_PINGS
-                        //                     && pings_received >= pings_sent
-                        //                 {
-                        //                     self.phase = TestPhase::PingSendPing;
-                        //                     poll.registry().reregister(
-                        //                         stream,
-                        //                         self.token,
-                        //                         Interest::WRITABLE,
-                        //                     )?;
-                        //                 } else {
-                        //                     debug!("Finishing Pings");
-                        //                     // Calculate final median latency
-                        //                     if let Some(median) = self.get_median_latency() {
-                        //                         debug!("Final median latency: {} ns", median);
-                        //                         self.time_result = Some(median);
-                        //                     }
-                        //                     self.phase = TestPhase::PutNoResultSendCommand;
-                        //                     poll.registry().reregister(
-                        //                         stream,
-                        //                         self.token,
-                        //                         Interest::WRITABLE,
-                        //                     )?;
-                        //                 }
-                        //             }
-                        //         }
-                        //     }
-                            // Remove processed line from buffer
-                        //     self.time_buffer = BytesMut::from(&self.time_buffer[pos + 1..]);
-                        // }
+                        if buffer_str.contains("ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n") {
+                            self.pings_received.fetch_add(1, Ordering::SeqCst);
+                            // Parse time from the message
+                            if let Some(time_start) = buffer_str.find("TIME ") {
+                                if let Some(time_end) = buffer_str[time_start..].find('\n') {
+                                    let time_str = &buffer_str[time_start + 5..time_start + time_end];
+                                    if let Ok(time_ns) = time_str.parse::<u64>() {
+                                        debug!("Time: {} ns", time_ns);
+                                        // Store the time for median calculation
+                                        if let Ok(mut times) = self.ping_times.lock() {
+                                            times.push(time_ns);
+                                        }
+                                        
+                                        if let Some(start_time) = self.test_start_time {
+                                            let elapsed = start_time.elapsed();
+                                            let pings_sent = self.pings_sent.load(Ordering::SeqCst);
+                                            let pings_received = self.pings_received.load(Ordering::SeqCst);
+
+                                            if elapsed.as_nanos() < PING_DURATION_NS as u128
+                                                && pings_sent < MAX_PINGS
+                                                && pings_received >= pings_sent
+                                            {
+                                                self.phase = TestPhase::PingSendPing;
+                                                poll.registry().reregister(
+                                                    stream,
+                                                    self.token,
+                                                    Interest::WRITABLE,
+                                                )?;
+                                            } else {
+                                                debug!("Finishing Pings");
+                                                // Calculate final median latency
+                                                if let Some(median) = self.get_median_latency() {
+                                                    debug!("Final median latency: {} ns", median);
+                                                    self.time_result = Some(median);
+                                                }
+                                                self.phase = TestPhase::PutNoResultSendCommand;
+                                                poll.registry().reregister(
+                                                    stream,
+                                                    self.token,
+                                                    Interest::WRITABLE,
+                                                )?;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            self.time_buffer.clear();
+                        }
                     }
                     Ok(0) => {
                         debug!("Connection closed by peer");

@@ -1,10 +1,10 @@
 use crate::handlers::BasicHandler;
 use crate::state::TestPhase;
 use anyhow::Result;
+use bytes::BytesMut;
 use log::debug;
 use mio::{net::TcpStream, Interest, Poll, Token};
 use std::io::{self, Read, Write};
-use bytes::BytesMut;
 
 pub struct GreetingHandler {
     token: Token,
@@ -20,7 +20,7 @@ impl GreetingHandler {
             token,
             phase: TestPhase::GreetingSendConnectionType,
             token_sent: false,
-            read_buffer: BytesMut::with_capacity(1024),  // Start with 1KB buffer
+            read_buffer: BytesMut::with_capacity(1024), // Start with 1KB buffer
             write_buffer: BytesMut::with_capacity(1024), // Start with 1KB buffer
         })
     }
@@ -41,30 +41,16 @@ impl BasicHandler for GreetingHandler {
             TestPhase::GreetingReceiveGreeting => {
                 match stream.read(&mut buf) {
                     Ok(n) if n > 0 => {
-                        self.read_buffer.extend_from_slice(&buf[..n]);
-                        if let Some(pos) = self.read_buffer.windows(2).position(|w| w == b"\r\n") {
-                            let line = String::from_utf8_lossy(&self.read_buffer[..pos]);
-                            if line.contains("HTTP/1.1 101") {
-                                debug!("[on_read] Received upgrade response");
-                                
-                                self.phase = TestPhase::GreetingSendToken;
-                                poll.registry().reregister(
-                                    stream,
-                                    self.token,
-                                    Interest::WRITABLE,
-                                )?;
-                            }
-                            // Remove processed line from buffer
-                            self.read_buffer = BytesMut::from(&self.read_buffer[pos + 2..]);
+                      self.read_buffer.extend_from_slice(&buf[..n]);
+                      let buffer_str = String::from_utf8_lossy(&self.read_buffer);
+                        debug!("[on_read] Received data: {}", buffer_str);
+                        if buffer_str.contains("ACCEPT TOKEN") {
+                            debug!("[on_read] Received ACCEPT command");
+                            self.phase = TestPhase::GreetingSendToken;
+                            poll.registry()
+                                .reregister(stream, self.token, Interest::WRITABLE)?;
+                            self.read_buffer.clear();
                         }
-                    }
-                    Ok(0) => {
-                        debug!("[on_read] Connection closed by peer");
-                        return Err(io::Error::new(
-                            io::ErrorKind::ConnectionAborted,
-                            "Connection closed",
-                        )
-                        .into());
                     }
                     Ok(_) => {
                         debug!("[on_read] Read 0 bytes");
@@ -74,34 +60,6 @@ impl BasicHandler for GreetingHandler {
                         return Ok(());
                     }
                     Err(e) => return Err(e.into()),
-                }
-            }
-            TestPhase::GreetingReceiveVersion => {
-                if let Some(pos) = self.read_buffer.windows(1).position(|w| w == b"\n") {
-                    let line = String::from_utf8_lossy(&self.read_buffer[..pos]);
-                    if line.starts_with("RMBTv") {
-                        debug!("[on_read] Received version: {}", line);
-                        self.read_buffer = BytesMut::from(&self.read_buffer[pos + 1..]); // Remove version including \n
-                        self.phase = TestPhase::GreetingReceiveAcceptToken;
-                        self.on_read(stream, poll)?;
-                    }
-                }
-            }
-            TestPhase::GreetingReceiveAcceptToken => {
-                // Read until \n
-                debug!("[on_read] Received accept token");
-                if let Some(pos) = self.read_buffer.windows(1).position(|w| w == b"\n") {
-                    let line = String::from_utf8_lossy(&self.read_buffer[..pos]);
-                    if line.contains("ACCEPT TOKEN") {
-                        debug!("[on_read] Received ACCEPT command");
-                        self.read_buffer = BytesMut::from(&self.read_buffer[pos + 1..]); // Remove read portion including newline
-                        self.phase = TestPhase::GreetingSendToken;
-                        poll.registry().reregister(
-                            stream,
-                            self.token,
-                            Interest::WRITABLE,
-                        )?;
-                    }
                 }
             }
             _ => {}
@@ -118,7 +76,8 @@ impl BasicHandler for GreetingHandler {
                     Upgrade: RMBT\r\n\
                     RMBT-Version: 1.2.0\r\n\
                     \r\n";
-                    self.write_buffer.extend_from_slice(upgrade_request.as_bytes());
+                    self.write_buffer
+                        .extend_from_slice(upgrade_request.as_bytes());
                 }
 
                 match stream.write(&self.write_buffer) {
@@ -151,21 +110,11 @@ impl BasicHandler for GreetingHandler {
             TestPhase::GreetingSendToken => {
                 if self.write_buffer.is_empty() {
                     debug!("[on_write] Sending token command");
-                    self.write_buffer.extend_from_slice(self.get_token_command().as_bytes());
+                    self.write_buffer
+                        .extend_from_slice(self.get_token_command().as_bytes());
                 }
 
                 match stream.write(&self.write_buffer) {
-                    Ok(0) => {
-                        if stream.peer_addr().is_err() {
-                            debug!("[on_write] Connection closed by peer");
-                            return Err(io::Error::new(
-                                io::ErrorKind::ConnectionAborted,
-                                "Connection closed",
-                            )
-                            .into());
-                        }
-                        return Ok(());
-                    }
                     Ok(n) => {
                         self.write_buffer = BytesMut::from(&self.write_buffer[n..]);
                         if self.write_buffer.is_empty() {
