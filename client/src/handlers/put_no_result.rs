@@ -21,7 +21,7 @@ pub struct PutNoResultHandler {
     phase: TestPhase,
     chunk_size: u64,
     test_start_time: Option<Instant>,
-    bytes_sent: AtomicU64,
+    bytes_sent: u64,
     write_buffer: BytesMut,
     read_buffer: BytesMut,
     data_buffer: Vec<u8>,
@@ -41,14 +41,14 @@ impl PutNoResultHandler {
         for byte in &mut data_termination_buffer {
             *byte = fastrand::u8(..);
         }
-        data_termination_buffer[BUFFER_SIZE - 1] = 0x00;
+        data_termination_buffer[BUFFER_SIZE - 1] = 0xFF;
 
         Ok(Self {
             token,
             phase: TestPhase::PutNoResultSendCommand,
             chunk_size: MAX_CHUNK_SIZE,
             test_start_time: None,
-            bytes_sent: AtomicU64::new(0),
+            bytes_sent: 0,
             write_buffer: BytesMut::with_capacity(1024),
             read_buffer: BytesMut::with_capacity(1024),
             data_buffer,
@@ -62,9 +62,8 @@ impl PutNoResultHandler {
     }
 
     fn calculate_upload_speed(&mut self, time_ns: u64) {
-        let bytes = self.bytes_sent.load(Ordering::SeqCst) ;
+        let bytes = self.bytes_sent;
 
-        
         // Convert nanoseconds to seconds, ensuring we don't lose precision
         let time_seconds = if time_ns > u64::MAX / 1_000_000_000 {
             // If time_ns is very large, divide first to avoid overflow
@@ -76,8 +75,18 @@ impl PutNoResultHandler {
         self.upload_speed = Some(speed_bps);
         info!("Upload speed calculation:");
         info!("  Total bytes sent: {}", bytes);
+        info!(
+            " Total bytes sent GB: {}",
+            bytes as f64 / (1024.0 * 1024.0 * 1024.0)
+        );
         info!("  Total time: {:.9} seconds ({} ns)", time_seconds, time_ns);
-        info!("  Speed: {:.2} MB/s ({:.2} GB/s)", speed_bps / (1024.0 * 1024.0), speed_bps / (1024.0 * 1024.0 * 1024.0));
+        info!(
+            "  Speed: {:.2} MB/s ({:.2} GB/s)  GBit/s: {}  Mbit/s: {}",
+            speed_bps / (1024.0 * 1024.0),
+            speed_bps / (1024.0 * 1024.0 * 1024.0),
+            speed_bps * 8.0 / (1024.0 * 1024.0 * 1024.0),
+            speed_bps * 8.0 / (1024.0 * 1024.0)
+        );
     }
 }
 
@@ -90,6 +99,22 @@ impl BasicHandler for PutNoResultHandler {
                     Ok(n) => {
                         if n > 0 {
                             self.read_buffer.extend_from_slice(&buf[..n]);
+                            let line = String::from_utf8_lossy(&self.read_buffer);
+                            debug!("Received line in Accept phase: {}", line);
+
+                            if line.contains("ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT") {
+                                debug!("Received correct ACCEPT line");
+                                self.phase = TestPhase::PutNoResultSendCommand;
+                                // Clear the buffer completely for new test
+                                self.read_buffer.clear();
+                                poll.registry().reregister(
+                                    stream,
+                                    self.token,
+                                    Interest::WRITABLE,
+                                )?;
+                            } else {
+                                debug!("Received unexpected line in Accept phase: {}", line);
+                            }
                             debug!(
                                 "Read {} bytes in Accept phase, total buffer size: {}",
                                 n,
@@ -108,24 +133,6 @@ impl BasicHandler for PutNoResultHandler {
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                         debug!("Would block in PutNoResultReceiveAccept, checking buffer");
                         // Now we know we have all data, check for complete line
-                        if let Some(pos) = self.read_buffer.windows(1).position(|w| w == b"\n") {
-                            let line = String::from_utf8_lossy(&self.read_buffer[..pos]);
-                            debug!("Received line in Accept phase: {}", line);
-
-                            if line.contains("ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT") {
-                                debug!("Received correct ACCEPT line");
-                                self.phase = TestPhase::PutNoResultSendCommand;
-                                // Clear the buffer completely for new test
-                                self.read_buffer.clear();
-                                poll.registry().reregister(
-                                    stream,
-                                    self.token,
-                                    Interest::WRITABLE,
-                                )?;
-                            } else {
-                                debug!("Received unexpected line in Accept phase: {}", line);
-                            }
-                        }
                         return Ok(());
                     }
                     Err(e) => {
@@ -139,37 +146,20 @@ impl BasicHandler for PutNoResultHandler {
                     Ok(n) => {
                         if n > 0 {
                             self.read_buffer.extend_from_slice(&buf[..n]);
-                            debug!(
-                                "Read {} bytes, total buffer size: {}",
-                                n,
-                                self.read_buffer.len()
-                            );
 
-                            // Check if we have a complete line
-                            if let Some(pos) = self.read_buffer.windows(1).position(|w| w == b"\n")
-                            {
-                                let line = String::from_utf8_lossy(&self.read_buffer[..pos]);
-                                debug!("Received line: {}", line);
+                            let line = String::from_utf8_lossy(&self.read_buffer);
+                            debug!("Received line  PutNoResultReceiveOk: {}", line);
 
-                                if line.trim() == "OK" {
-                                    debug!("Received OK for PUTNORESULT");
-                                    self.phase = TestPhase::PutNoResultSendChunks;
-                                    poll.registry().reregister(
-                                        stream,
-                                        self.token,
-                                        Interest::WRITABLE,
-                                    )?;
-                                }
-                                // Remove processed line from buffer
-                                self.read_buffer = BytesMut::from(&self.read_buffer[pos + 1..]);
+                            if line.trim() == "OK" {
+                                self.phase = TestPhase::PutNoResultSendChunks;
+                                poll.registry().reregister(
+                                    stream,
+                                    self.token,
+                                    Interest::WRITABLE,
+                                )?;
                             }
-                        } else {
-                            debug!("Connection closed by peer");
-                            return Err(io::Error::new(
-                                io::ErrorKind::ConnectionAborted,
-                                "Connection closed",
-                            )
-                            .into());
+                            // Remove processed line from buffer
+                            self.read_buffer.clear();
                         }
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -191,30 +181,27 @@ impl BasicHandler for PutNoResultHandler {
                             );
 
                             // Check if we have a complete line
-                            if let Some(pos) = self.read_buffer.windows(1).position(|w| w == b"\n")
-                            {
-                                let line = String::from_utf8_lossy(&self.read_buffer[..pos]);
-                                debug!("Received line: {}", line);
+                            let line = String::from_utf8_lossy(&self.read_buffer);
+                            debug!("Received line PutNoResultReceiveTime: {}", line);
 
-                                if line.starts_with("TIME") {
-                                    debug!("Received final TIME response");
-                                    if let Some(time_ns) = line
-                                        .split_whitespace()
-                                        .nth(1)
-                                        .and_then(|s| s.parse::<u64>().ok())
-                                    {
-                                        debug!("Final time: {} ns", time_ns);
-                                        self.calculate_upload_speed(time_ns);
-                                        self.phase = TestPhase::End;
-                                        poll.registry().reregister(
-                                            stream,
-                                            self.token,
-                                            Interest::WRITABLE,
-                                        )?;
-                                    }
+                            if line.starts_with("TIME") {
+                                debug!("Received final TIME response");
+                                if let Some(time_ns) = line
+                                    .split_whitespace()
+                                    .nth(1)
+                                    .and_then(|s| s.parse::<u64>().ok())
+                                {
+                                    debug!("Final time: {} ns", time_ns);
+                                    self.calculate_upload_speed(time_ns);
+                                    self.phase = TestPhase::End;
+                                    poll.registry().reregister(
+                                        stream,
+                                        self.token,
+                                        Interest::WRITABLE,
+                                    )?;
                                 }
                                 // Remove processed line from buffer
-                                self.read_buffer = BytesMut::from(&self.read_buffer[pos + 1..]);
+                                self.read_buffer.clear();
                             }
                         } else {
                             debug!("Connection closed by peer");
@@ -283,11 +270,11 @@ impl BasicHandler for PutNoResultHandler {
 
                 if let Some(start_time) = self.test_start_time {
                     let elapsed = start_time.elapsed();
-                    let is_last = elapsed.as_nanos() >= TEST_DURATION_NS as u128;
+                    let mut is_last = elapsed.as_nanos() >= TEST_DURATION_NS as u128;
 
                     // Get current position in buffer
-                    let current_pos = self.bytes_sent.load(Ordering::SeqCst) % BUFFER_SIZE as u64;
-                    
+                    let current_pos = self.bytes_sent & (BUFFER_SIZE as u64 - 1);
+
                     // Choose buffer based on whether time is up
                     let buffer = if is_last {
                         &self.data_termination_buffer
@@ -298,19 +285,40 @@ impl BasicHandler for PutNoResultHandler {
                     let mut remaining = &buffer[current_pos as usize..];
                     while !is_last {
                         if remaining.is_empty() {
+                            // debug!("PutNoResultSendChunks processing chunk");
                             // Add new chunk
-                            remaining = buffer;
+                            is_last = elapsed.as_nanos() >= TEST_DURATION_NS as u128;
+                            if is_last {
+                                return Ok(());
+                            } else {
+                                remaining = &self.data_buffer;
+                            }
                         }
-
                         // Write from current position
                         match stream.write(remaining) {
                             Ok(written) => {
-                                // Update bytes sent counter
-                                self.bytes_sent.fetch_add(written as u64, Ordering::SeqCst);
+                                self.bytes_sent += written as u64;
                                 remaining = &remaining[written..];
                             }
                             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                                debug!("Write would block, reregistering for write");
+                                // debug!("PutNoResultSendChunks processing chunk");
+                                return Ok(());
+                            }
+                            Err(e) => {
+                                return Err(e.into());
+                            }
+                        }
+                    }
+
+                    while is_last && !remaining.is_empty() {
+                        // Send last chunk
+                        match stream.write(remaining) {
+                            Ok(written) => {
+                                self.bytes_sent += written as u64;
+                                remaining = &remaining[written..];
+                            }
+                            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                                debug!("Write would block, reregistering for write last chunk");
                                 return Ok(());
                             }
                             Err(e) => {
@@ -319,27 +327,10 @@ impl BasicHandler for PutNoResultHandler {
                             }
                         }
                     }
-
-                    // Send last chunk
-                    match stream.write(&self.data_termination_buffer) {
-                        Ok(written) => {
-                            self.bytes_sent.fetch_add(written as u64, Ordering::SeqCst);
-                            self.phase = TestPhase::PutNoResultReceiveTime;
-                            poll.registry().reregister(
-                                stream,
-                                self.token,
-                                Interest::READABLE,
-                            )?;
-                        }
-                        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                            debug!("Write would block, reregistering for write");
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            debug!("Error in PutNoResultSendChunks: {}", e);
-                            return Err(e.into());
-                        }
-                    }
+                    debug!("PutNoResultSendChunks finished with kast chunk");
+                    self.phase = TestPhase::PutNoResultReceiveTime;
+                    poll.registry()
+                        .reregister(stream, self.token, Interest::READABLE)?;
                     return Ok(());
                 } else {
                     debug!("No start time set");
