@@ -1,15 +1,16 @@
+use std::io::{self, Write};
+
 use crate::handlers::BasicHandler;
 use crate::state::TestPhase;
+use crate::utils::{read_until, write_all, DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE, RMBT_UPGRADE_REQUEST};
 use anyhow::Result;
 use bytes::BytesMut;
 use log::debug;
 use mio::{net::TcpStream, Interest, Poll, Token};
-use std::io::{self, Read, Write};
 
 pub struct GreetingHandler {
     token: Token,
     phase: TestPhase,
-    token_sent: bool,
     read_buffer: BytesMut,  // Buffer for reading responses
     write_buffer: BytesMut, // Buffer for writing requests
 }
@@ -19,45 +20,29 @@ impl GreetingHandler {
         Ok(Self {
             token,
             phase: TestPhase::GreetingSendConnectionType,
-            token_sent: false,
-            read_buffer: BytesMut::with_capacity(1024), // Start with 1KB buffer
-            write_buffer: BytesMut::with_capacity(1024), // Start with 1KB buffer
+            read_buffer: BytesMut::with_capacity(DEFAULT_READ_BUFFER_SIZE),
+            write_buffer: BytesMut::with_capacity(DEFAULT_WRITE_BUFFER_SIZE),
         })
     }
 
     pub fn get_token_command(&self) -> String {
         format!("TOKEN {}\n", self.token.0)
     }
-
-    pub fn mark_token_sent(&mut self) {
-        self.token_sent = true;
-    }
 }
 
 impl BasicHandler for GreetingHandler {
     fn on_read(&mut self, stream: &mut TcpStream, poll: &Poll) -> Result<()> {
-        let mut buf = vec![0u8; 1024];
         match self.phase {
             TestPhase::GreetingReceiveGreeting => {
-                match stream.read(&mut buf) {
-                    Ok(n) if n > 0 => {
-                      self.read_buffer.extend_from_slice(&buf[..n]);
-                      let buffer_str = String::from_utf8_lossy(&self.read_buffer);
-                        debug!("[on_read] Received data: {}", buffer_str);
-                        if buffer_str.contains("ACCEPT TOKEN") {
-                            debug!("[on_read] Received ACCEPT command");
-                            self.phase = TestPhase::GreetingSendToken;
-                            poll.registry()
-                                .reregister(stream, self.token, Interest::WRITABLE)?;
-                            self.read_buffer.clear();
-                        }
+                match read_until(stream, &mut self.read_buffer, "ACCEPT TOKEN") {
+                    Ok(true) => {
+                        self.phase = TestPhase::GreetingSendToken;
+                        poll.registry()
+                            .reregister(stream, self.token, Interest::WRITABLE)?;
+                        self.read_buffer.clear();
                     }
-                    Ok(_) => {
-                        debug!("[on_read] Read 0 bytes");
-                    }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        debug!("[on_read] WouldBlock");
-                        return Ok(());
+                    Ok(false) => {
+                        // Continue reading
                     }
                     Err(e) => return Err(e.into()),
                 }
@@ -71,40 +56,19 @@ impl BasicHandler for GreetingHandler {
         match self.phase {
             TestPhase::GreetingSendConnectionType => {
                 if self.write_buffer.is_empty() {
-                    let upgrade_request = "GET /rmbt HTTP/1.1 \r\n\
-                    Connection: Upgrade \r\n\
-                    Upgrade: RMBT\r\n\
-                    RMBT-Version: 1.2.0\r\n\
-                    \r\n";
-                    self.write_buffer
-                        .extend_from_slice(upgrade_request.as_bytes());
+                    self.write_buffer.extend_from_slice(RMBT_UPGRADE_REQUEST.as_bytes());
                 }
 
-                match stream.write(&self.write_buffer) {
-                    Ok(0) => {
-                        if stream.peer_addr().is_err() {
-                            return Err(io::Error::new(
-                                io::ErrorKind::ConnectionAborted,
-                                "Connection closed",
-                            )
-                            .into());
-                        }
-                        return Ok(());
+                match write_all(stream, &mut self.write_buffer) {
+                    Ok(true) => {
+                        poll.registry()
+                            .reregister(stream, self.token, Interest::READABLE)?;
+                        self.phase = TestPhase::GreetingReceiveGreeting;
                     }
-                    Ok(n) => {
-                        self.write_buffer = BytesMut::from(&self.write_buffer[n..]);
-                        if self.write_buffer.is_empty() {
-                            poll.registry()
-                                .reregister(stream, self.token, Interest::READABLE)?;
-                            self.phase = TestPhase::GreetingReceiveGreeting;
-                        }
+                    Ok(false) => {
+                        // Continue writing
                     }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        return Ok(());
-                    }
-                    Err(e) => {
-                        return Err(e.into());
-                    }
+                    Err(e) => return Err(e.into()),
                 }
             }
             TestPhase::GreetingSendToken => {
@@ -114,26 +78,18 @@ impl BasicHandler for GreetingHandler {
                         .extend_from_slice(self.get_token_command().as_bytes());
                 }
 
-                match stream.write(&self.write_buffer) {
-                    Ok(n) => {
-                        self.write_buffer = BytesMut::from(&self.write_buffer[n..]);
-                        if self.write_buffer.is_empty() {
-                            debug!("[on_write] Sent token command");
-                            self.mark_token_sent();
-                            debug!("[on_write] Registering for readable");
-                            self.phase = TestPhase::GetChunksReceiveAccept;
-                            poll.registry()
-                                .reregister(stream, self.token, Interest::READABLE)?;
-                        }
+                match write_all(stream, &mut self.write_buffer) {
+                    Ok(true) => {
+                        debug!("[on_write] Sent token command");
+                        debug!("[on_write] Registering for readable");
+                        self.phase = TestPhase::GetChunksReceiveAccept;
+                        poll.registry()
+                            .reregister(stream, self.token, Interest::READABLE)?;
                     }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        debug!("[on_write] WouldBlock");
-                        return Ok(());
+                    Ok(false) => {
+                        // Continue writing
                     }
-                    Err(e) => {
-                        debug!("[on_write] Error: {}", e);
-                        return Err(e.into());
-                    }
+                    Err(e) => return Err(e.into()),
                 }
             }
             _ => {}

@@ -3,9 +3,16 @@ use std::{net::SocketAddr};
 
 mod state;
 mod handlers;
-mod utils;
 use state::TestState;
+pub mod utils;
 
+pub use handlers::{
+    greeting::GreetingHandler,
+    get_chunks::GetChunksHandler,
+    put::PutHandler,
+    put_no_result::PutNoResultHandler,
+};
+pub use utils::{read_until, write_all, DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE, RMBT_UPGRADE_REQUEST};
 
 #[tokio::main]
 async fn main() {
