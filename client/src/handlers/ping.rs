@@ -134,6 +134,7 @@ impl BasicHandler for PingHandler {
                                                 && pings_sent < MAX_PINGS
                                                 && pings_received >= pings_sent
                                             {
+                                                debug!("Finishing Pings and sending PING");
                                                 self.phase = TestPhase::PingSendPing;
                                                 poll.registry().reregister(
                                                     stream,
@@ -141,13 +142,13 @@ impl BasicHandler for PingHandler {
                                                     Interest::WRITABLE,
                                                 )?;
                                             } else {
-                                                debug!("Finishing Pings");
+                                                debug!("Finishing Pings and sending GETTIME");
                                                 // Calculate final median latency
                                                 if let Some(median) = self.get_median_latency() {
                                                     debug!("Final median latency: {} ns", median);
                                                     self.time_result = Some(median);
                                                 }
-                                                self.phase = TestPhase::PutNoResultSendCommand;
+                                                self.phase = TestPhase::GetTimeSendCommand;
                                                 poll.registry().reregister(
                                                     stream,
                                                     self.token,

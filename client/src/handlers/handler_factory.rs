@@ -1,13 +1,15 @@
 use anyhow::Result;
 use mio::Token;
 use crate::state::TestPhase;
-use crate::handlers::{BasicHandler, GreetingHandler, GetChunksHandler, PingHandler, PutNoResultHandler};
+use crate::handlers::{BasicHandler, GreetingHandler, GetChunksHandler, PingHandler, PutNoResultHandler, PutHandler, GetTimeHandler};
 
 pub struct HandlerFactory {
     greeting_handler: GreetingHandler,
     get_chunks_handler: GetChunksHandler,
     ping_handler: PingHandler,
     put_no_result_handler: PutNoResultHandler,
+    put_handler: PutHandler,
+    get_time_handler: GetTimeHandler,
 }
 
 impl HandlerFactory {
@@ -17,18 +19,29 @@ impl HandlerFactory {
             get_chunks_handler: GetChunksHandler::new(token)?,
             ping_handler: PingHandler::new(token)?,
             put_no_result_handler: PutNoResultHandler::new(token)?,
+            put_handler: PutHandler::new(token)?,
+            get_time_handler: GetTimeHandler::new(token)?,
         })
     }
     
     pub fn get_handler(&mut self, phase: &TestPhase) -> Option<&mut dyn BasicHandler> {
         match phase {
+
             TestPhase::GreetingReceiveGreeting => Some(&mut self.greeting_handler),
             TestPhase::GreetingSendConnectionType => Some(&mut self.greeting_handler),
             TestPhase::GreetingSendToken => Some(&mut self.greeting_handler),
             TestPhase::GreetingReceiveVersion => Some(&mut self.greeting_handler),
             TestPhase::GreetingReceiveAcceptToken => Some(&mut self.greeting_handler),
             TestPhase::GreetingReceiveOK => Some(&mut self.greeting_handler),
-            
+
+            TestPhase::GetTimeReceiveAccept => Some(&mut self.get_time_handler),
+            TestPhase::GetTimeSendCommand => Some(&mut self.get_time_handler),
+            TestPhase::GetTimeReceiveOk => Some(&mut self.get_time_handler),
+            TestPhase::GetTimeSendChunks => Some(&mut self.get_time_handler),
+            TestPhase::GetTimeReceiveChunk => Some(&mut self.get_time_handler),
+            TestPhase::GetTimeSendOk => Some(&mut self.get_time_handler),
+            TestPhase::GetTimeReceiveTime => Some(&mut self.get_time_handler),
+
             TestPhase::GetChunksReceiveAccept => Some(&mut self.get_chunks_handler),
             TestPhase::GetChunksReceiveChunk => Some(&mut self.get_chunks_handler),
             TestPhase::GetChunksSendOk => Some(&mut self.get_chunks_handler),
@@ -47,7 +60,14 @@ impl HandlerFactory {
             TestPhase::PutNoResultReceiveOk => Some(&mut self.put_no_result_handler),
             TestPhase::PutNoResultSendChunks => Some(&mut self.put_no_result_handler),
             TestPhase::PutNoResultReceiveTime => Some(&mut self.put_no_result_handler),
-           
+
+            TestPhase::PutReceiveAccept => Some(&mut self.put_handler),
+            TestPhase::PutSendCommand => Some(&mut self.put_handler),
+            TestPhase::PutReceiveOk => Some(&mut self.put_handler),
+            TestPhase::PutSendChunks => Some(&mut self.put_handler),
+            TestPhase::PutReceiveTime => Some(&mut self.put_handler),
+            TestPhase::PutReceiveBytesTime => Some(&mut self.put_handler),
+
             TestPhase::End => None,
         }
     }

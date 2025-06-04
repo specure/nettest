@@ -21,6 +21,7 @@ pub enum TestPhase {
     GreetingReceiveVersion,
     GreetingReceiveAcceptToken,
     GreetingReceiveOK,
+
     GetChunksReceiveAccept,
     GetChunksSendChunksCommand,
     GetChunksReceiveChunk,
@@ -36,6 +37,22 @@ pub enum TestPhase {
     PutNoResultReceiveOk,
     PutNoResultSendChunks,
     PutNoResultReceiveTime,
+    PutReceiveAccept,
+    PutSendCommand,
+    PutReceiveOk,
+    PutSendChunks,
+    PutReceiveBytesTime,
+    PutReceiveTime,
+
+
+    GetTimeReceiveAccept,
+    GetTimeSendCommand,
+    GetTimeReceiveOk,
+    GetTimeSendChunks,
+    GetTimeReceiveChunk,
+    GetTimeSendOk,
+    GetTimeReceiveTime,
+
     End,
 }
 
@@ -77,8 +94,9 @@ impl TestState {
 
         while self.phase != TestPhase::End {
 
-            self.poll.poll(&mut self.events, Some(Duration::from_secs(60)))?;
+            self.poll.poll(&mut self.events, Some(Duration::from_secs(120)))?;
             // debug!("[run_measurement] event count: {}", self.events.iter().count());
+
 
             // Process one event at a time
             if let Some(event) = self.events.iter().next() {

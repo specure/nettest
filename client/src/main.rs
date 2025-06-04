@@ -3,7 +3,9 @@ use std::{net::SocketAddr};
 
 mod state;
 mod handlers;
+mod utils;
 use state::TestState;
+
 
 #[tokio::main]
 async fn main() {

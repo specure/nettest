@@ -63,7 +63,6 @@ impl PutNoResultHandler {
 
     fn calculate_upload_speed(&mut self, time_ns: u64) {
         let bytes = self.bytes_sent;
-
         // Convert nanoseconds to seconds, ensuring we don't lose precision
         let time_seconds = if time_ns > u64::MAX / 1_000_000_000 {
             // If time_ns is very large, divide first to avoid overflow
@@ -184,23 +183,25 @@ impl BasicHandler for PutNoResultHandler {
                             let line = String::from_utf8_lossy(&self.read_buffer);
                             debug!("Received line PutNoResultReceiveTime: {}", line);
 
-                            if line.starts_with("TIME") {
-                                debug!("Received final TIME response");
-                                if let Some(time_ns) = line
-                                    .split_whitespace()
-                                    .nth(1)
-                                    .and_then(|s| s.parse::<u64>().ok())
-                                {
-                                    debug!("Final time: {} ns", time_ns);
-                                    self.calculate_upload_speed(time_ns);
-                                    self.phase = TestPhase::End;
-                                    poll.registry().reregister(
-                                        stream,
-                                        self.token,
-                                        Interest::WRITABLE,
-                                    )?;
+                            if line.contains("ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n") {
+                                debug!("Received ACCEPT message");
+                                // Now parse TIME from the buffer
+                                if let Some(time_line) = line.lines().find(|l| l.starts_with("TIME")) {
+                                    if let Some(time_ns) = time_line
+                                        .split_whitespace()
+                                        .nth(1)
+                                        .and_then(|s| s.parse::<u64>().ok())
+                                    {
+                                        debug!("Time: {} ns", time_ns);
+                                        self.calculate_upload_speed(time_ns);
+                                    }
                                 }
-                                // Remove processed line from buffer
+                                self.phase = TestPhase::PutSendCommand;
+                                poll.registry().reregister(
+                                    stream,
+                                    self.token,
+                                    Interest::WRITABLE,
+                                )?;
                                 self.read_buffer.clear();
                             }
                         } else {
@@ -278,7 +279,7 @@ impl BasicHandler for PutNoResultHandler {
                     // Choose buffer based on whether time is up
                     let buffer = if is_last {
                         &self.data_termination_buffer
-                    } else {
+    } else {
                         &self.data_buffer
                     };
 
@@ -321,7 +322,7 @@ impl BasicHandler for PutNoResultHandler {
                                 debug!("Write would block, reregistering for write last chunk");
                                 return Ok(());
                             }
-                            Err(e) => {
+                Err(e) => {
                                 debug!("Error in PutNoResultSendChunks: {}", e);
                                 return Err(e.into());
                             }
@@ -348,3 +349,4 @@ impl BasicHandler for PutNoResultHandler {
         self.phase.clone()
     }
 }
+
