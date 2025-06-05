@@ -78,7 +78,6 @@ impl BasicHandler for PingHandler {
                 let mut buf1 = vec![0u8; PONG_RESPONSE.len()];
                 match stream.read(&mut buf1) {
                     Ok(n) if n > 0 => {
-                        debug!("Received PONG {}", String::from_utf8_lossy(&buf1));
                             self.phase = TestPhase::PingSendOk;
                             poll.registry().reregister(
                                 stream,
@@ -110,8 +109,6 @@ impl BasicHandler for PingHandler {
                     Ok(n) if n > 0 => {
                         self.time_buffer.extend_from_slice(&buf[..n]);
                         let buffer_str = String::from_utf8_lossy(&self.time_buffer);
-                        debug!("Received data: {}", buffer_str);
-
                         if buffer_str.contains("ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n") {
                             self.pings_received.fetch_add(1, Ordering::SeqCst);
                             // Parse time from the message
@@ -119,7 +116,6 @@ impl BasicHandler for PingHandler {
                                 if let Some(time_end) = buffer_str[time_start..].find('\n') {
                                     let time_str = &buffer_str[time_start + 5..time_start + time_end];
                                     if let Ok(time_ns) = time_str.parse::<u64>() {
-                                        debug!("Time: {} ns", time_ns);
                                         // Store the time for median calculation
                                         if let Ok(mut times) = self.ping_times.lock() {
                                             times.push(time_ns);
@@ -134,7 +130,6 @@ impl BasicHandler for PingHandler {
                                                 && pings_sent < MAX_PINGS
                                                 && pings_received >= pings_sent
                                             {
-                                                debug!("Finishing Pings and sending PING");
                                                 self.phase = TestPhase::PingSendPing;
                                                 poll.registry().reregister(
                                                     stream,
@@ -142,7 +137,6 @@ impl BasicHandler for PingHandler {
                                                     Interest::WRITABLE,
                                                 )?;
                                             } else {
-                                                debug!("Finishing Pings and sending GETTIME");
                                                 // Calculate final median latency
                                                 if let Some(median) = self.get_median_latency() {
                                                     debug!("Final median latency: {} ns", median);
@@ -203,7 +197,6 @@ impl BasicHandler for PingHandler {
                         .into());
                     }
                     Ok(n) => {
-                        debug!("Ping sent");
                         self.pings_sent.fetch_add(1, Ordering::SeqCst);
                         if self.test_start_time.is_none() {
                             self.test_start_time = Some(Instant::now());
@@ -240,7 +233,6 @@ impl BasicHandler for PingHandler {
                         .into());
                     }
                     Ok(n) => {
-                        debug!("Ok sent");
                         self.phase = TestPhase::PingReceiveTime;
                         self.write_buffer = BytesMut::from(&self.write_buffer[n..]);
                         if self.write_buffer.is_empty() {

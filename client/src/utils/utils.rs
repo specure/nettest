@@ -1,5 +1,5 @@
 use std::io::{self, Read, Write};
-use bytes::BytesMut;
+use bytes::{Buf, BytesMut};
 use mio::net::TcpStream;
 use log::debug;
 
@@ -84,15 +84,35 @@ pub fn write_all(stream: &mut TcpStream, buffer: &mut BytesMut) -> io::Result<bo
     }
 }
 
-/// Formats a token command string
-/// 
-/// # Arguments
-/// 
-/// * `token` - The token value to format
-/// 
-/// # Returns
-/// 
-/// A formatted token command string
-pub fn format_token_command(token: usize) -> String {
-    format!("TOKEN {}\n", token)
-} 
+
+
+pub fn write_all_nb(buf: &mut BytesMut, stream: &mut TcpStream) -> io::Result<bool> {
+    match stream.write(&buf) {
+        Ok(n) => {
+            buf.advance(n);
+            Ok(buf.is_empty())
+        }
+        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => Ok(false),
+        Err(e) => Err(e.into()),
+    }
+}
+
+pub fn write_all_nb_loop(buf: &mut BytesMut, stream: &mut TcpStream) -> io::Result<bool> {
+    while !buf.is_empty() {
+        match stream.write(&buf) {
+            Ok(0) => {
+                // Это может указывать на разрыв соединения
+                return Err(io::Error::new(io::ErrorKind::WriteZero, "write zero"));
+            }
+            Ok(n) => {
+                buf.advance(n);
+            }
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                return Ok(false); // не можем продолжать прямо сейчас
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    Ok(true) // всё записано
+}

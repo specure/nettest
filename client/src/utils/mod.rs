@@ -1,5 +1,17 @@
 pub mod constants;
 pub mod utils;
-
-pub use constants::{DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE, RMBT_UPGRADE_REQUEST};
-pub use utils::{read_until, write_all};
+pub use utils::{read_until, write_all, write_all_nb};
+pub use constants::{
+    DEFAULT_READ_BUFFER_SIZE,
+    DEFAULT_WRITE_BUFFER_SIZE,
+    RMBT_UPGRADE_REQUEST,
+    ACCEPT_TOKEN_STRING,
+    ACCEPT_GETCHUNKS_STRING,
+    GETCHUNKS_COMMAND,
+    MIN_CHUNK_SIZE,
+    MAX_CHUNK_SIZE,
+    PRE_DOWNLOAD_DURATION_NS,
+    MAX_CHUNKS_BEFORE_SIZE_INCREASE,
+    TIME_BUFFER_SIZE,
+    OK_COMMAND,
+};

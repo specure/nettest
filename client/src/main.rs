@@ -12,7 +12,7 @@ pub use handlers::{
     put::PutHandler,
     put_no_result::PutNoResultHandler,
 };
-pub use utils::{read_until, write_all, DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE, RMBT_UPGRADE_REQUEST};
+pub use utils::{read_until, write_all, write_all_nb, DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE, RMBT_UPGRADE_REQUEST};
 
 #[tokio::main]
 async fn main() {

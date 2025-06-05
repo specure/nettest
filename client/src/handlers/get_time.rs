@@ -1,12 +1,12 @@
 use crate::handlers::BasicHandler;
 use crate::state::TestPhase;
+use crate::utils::ACCEPT_GETCHUNKS_STRING;
+use crate::{read_until, write_all_nb};
 use anyhow::Result;
-use bytes::{Buf, BytesMut};
+use bytes::BytesMut;
 use log::{debug, info};
 use mio::{net::TcpStream, Interest, Poll, Token};
-use std::io::{self, Read, Write};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::{Duration, Instant};
+use std::io::{self, Read};
 
 const TEST_DURATION_NS: u64 = 7_000_000_000; // 7 seconds
 const MIN_CHUNK_SIZE: u32 = 4096; // 4KB
@@ -16,11 +16,11 @@ pub struct GetTimeHandler {
     token: Token,
     phase: TestPhase,
     chunk_size: u32,
-    test_start_time: Option<Instant>,
     bytes_received: u64,
     read_buffer: BytesMut,
     write_buffer: BytesMut,
     responses: Vec<(u64, u64)>, // (time_ns, bytes)
+    chunk_buffer: Vec<u8>,      // Буфер для чтения чанков
 }
 
 impl GetTimeHandler {
@@ -28,22 +28,40 @@ impl GetTimeHandler {
         Ok(Self {
             token,
             phase: TestPhase::GetTimeSendCommand,
-            chunk_size: MIN_CHUNK_SIZE,
-            test_start_time: None,
+            chunk_size: MAX_CHUNK_SIZE,
             bytes_received: 0,
-            read_buffer: BytesMut::with_capacity(1024),
+            read_buffer: BytesMut::with_capacity(MAX_CHUNK_SIZE as usize),
             write_buffer: BytesMut::with_capacity(1024),
             responses: Vec::new(),
+            chunk_buffer: vec![0u8; MAX_CHUNK_SIZE as usize],
         })
     }
-
-    pub fn get_time_command(&self) -> String {
-        format!("GETTIME {} {}\n", TEST_DURATION_NS / 1_000_000_000, self.chunk_size)
-    }
-
     pub fn calculate_download_speed(&self, time_ns: u64) -> f64 {
-        let speed = self.bytes_received as f64 / time_ns as f64;
-        speed
+        let bytes = self.bytes_received;
+        // Convert nanoseconds to seconds, ensuring we don't lose precision
+        let time_seconds = if time_ns > u64::MAX / 1_000_000_000 {
+            // If time_ns is very large, divide first to avoid overflow
+            (time_ns / 1_000_000_000) as f64 + (time_ns % 1_000_000_000) as f64 / 1_000_000_000.0
+        } else {
+            time_ns as f64 / 1_000_000_000.0
+        };
+        let speed_bps: f64 = bytes as f64 / time_seconds; // Convert to bytes per second
+                                                          // self.upload_speed = Some(speed_bps);
+        info!("Upload speed calculation:");
+        info!("  Total bytes sent: {}", bytes);
+        info!(
+            " Total bytes sent GB: {}",
+            bytes as f64 / (1024.0 * 1024.0 * 1024.0)
+        );
+        info!("  Total time: {:.9} seconds ({} ns)", time_seconds, time_ns);
+        info!(
+            "  Speed: {:.2} MB/s ({:.2} GB/s)  GBit/s: {}  Mbit/s: {}",
+            speed_bps / (1024.0 * 1024.0),
+            speed_bps / (1024.0 * 1024.0 * 1024.0),
+            speed_bps * 8.0 / (1024.0 * 1024.0 * 1024.0),
+            speed_bps * 8.0 / (1024.0 * 1024.0)
+        );
+        speed_bps
     }
 
     pub fn get_ok_command(&self) -> String {
@@ -53,66 +71,19 @@ impl GetTimeHandler {
 
 impl BasicHandler for GetTimeHandler {
     fn on_read(&mut self, stream: &mut TcpStream, poll: &Poll) -> Result<()> {
-        let mut buf = vec![0u8; self.chunk_size as usize];
         match self.phase {
-            TestPhase::GetTimeReceiveAccept => {
-                match stream.read(&mut buf) {
-                    Ok(n) if n > 0 => {
-                        self.read_buffer.extend_from_slice(&buf[..n]);
-                        let line = String::from_utf8_lossy(&self.read_buffer);
-                        debug!("Received line in Accept phase: {}", line);
-
-                        if line.contains("ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT") {
-                            debug!("Received correct ACCEPT line");
-                            self.phase = TestPhase::GetTimeSendCommand;
-                            self.read_buffer.clear();
-                            poll.registry().reregister(
-                                stream,
-                                self.token,
-                                Interest::WRITABLE,
-                            )?;
-                        }
-                        self.read_buffer.clear();
-                    }
-                    Ok(0) => {
-                        debug!("Connection closed by peer");
-                        return Err(io::Error::new(
-                            io::ErrorKind::ConnectionAborted,
-                            "Connection closed",
-                        )
-                        .into());
-                    }
-                    Ok(_) => {
-                        debug!("Read 0 bytes");
-                    }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        debug!("Would block in GetTimeReceiveAccept");
-                        return Ok(());
-                    }
-                    Err(e) => return Err(e.into()),
-                }
-            }
-            TestPhase::GetTimeReceiveChunk => {
-                match stream.read(&mut buf) {
+            TestPhase::GetTimeReceiveChunk => loop {
+                match stream.read(&mut self.chunk_buffer) {
                     Ok(n) if n > 0 => {
                         self.bytes_received += n as u64;
-                        // Check if this is the last chunk (has termination byte 0xFF)
-                        let is_last_chunk = buf[n - 1] == 0xFF;
-                        if is_last_chunk {
+                        if self.chunk_buffer[n - 1] == 0xFF
+                            && (self.bytes_received & (self.chunk_size as u64 - 1)) == 0
+                        {
                             debug!("Received last chunk");
                             self.phase = TestPhase::GetTimeSendOk;
-                            poll.registry().reregister(
-                                stream,
-                                self.token,
-                                Interest::WRITABLE,
-                            )?;
-                        } else {
-                            // Continue reading
-                            poll.registry().reregister(
-                                stream,
-                                self.token,
-                                Interest::READABLE,
-                            )?;
+                            poll.registry()
+                                .reregister(stream, self.token, Interest::WRITABLE)?;
+                            return Ok(());
                         }
                     }
                     Ok(0) => {
@@ -125,58 +96,28 @@ impl BasicHandler for GetTimeHandler {
                     }
                     Ok(_) => {
                         debug!("Read 0 bytes");
+                        return Ok(());
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        debug!("Would block in GetTimeReceiveChunk");
                         return Ok(());
                     }
                     Err(e) => return Err(e.into()),
                 }
-            }
+            },
             TestPhase::GetTimeReceiveTime => {
-                match stream.read(&mut buf) {
-                    Ok(n) if n > 0 => {
-                        self.read_buffer.extend_from_slice(&buf[..n]);
-                        let line = String::from_utf8_lossy(&self.read_buffer);
-                        debug!("Received line in GetTimeReceiveTime: {}", line);
-
-                        if line.contains("ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n") {
-                            debug!("Received TIME response");
-                            if let Some(time_ns) = line
-                                .split_whitespace()
-                                .nth(1)
-                                .and_then(|s| s.parse::<u64>().ok())
-                            {
-                                info!("Time download: {} ns", time_ns);
-                                info!("Download speed: {} MB/s  {} GB/s", self.calculate_download_speed(time_ns), self.calculate_download_speed(time_ns) / 1000.0);
-
-                                self.responses.push((time_ns, self.bytes_received));
-                                self.phase = TestPhase::PutNoResultSendCommand;
-                                poll.registry().reregister(
-                                    stream,
-                                    self.token,
-                                    Interest::WRITABLE,
-                                )?;
-                            }
-                            self.read_buffer.clear();
-                        }
+                if read_until(stream, &mut self.read_buffer, ACCEPT_GETCHUNKS_STRING)? {
+                    if let Some(time_ns) = String::from_utf8_lossy(&self.read_buffer)
+                        .split_whitespace()
+                        .nth(1)
+                        .and_then(|s| s.parse::<u64>().ok())
+                    {
+                        self.responses.push((time_ns, self.bytes_received));
+                        self.calculate_download_speed(time_ns);
+                        self.phase = TestPhase::PutNoResultSendCommand;
+                        poll.registry()
+                            .reregister(stream, self.token, Interest::WRITABLE)?;
                     }
-                    Ok(0) => {
-                        debug!("Connection closed by peer");
-                        return Err(io::Error::new(
-                            io::ErrorKind::ConnectionAborted,
-                            "Connection closed",
-                        )
-                        .into());
-                    }
-                    Ok(_) => {
-                        debug!("Read 0 bytes");
-                    }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        debug!("Would block in GetTimeReceiveTime");
-                        return Ok(());
-                    }
-                    Err(e) => return Err(e.into()),
+                    self.read_buffer.clear();
                 }
             }
             _ => {}
@@ -185,64 +126,36 @@ impl BasicHandler for GetTimeHandler {
     }
 
     fn on_write(&mut self, stream: &mut TcpStream, poll: &Poll) -> Result<()> {
-        debug!("Writing to stream in GetTimeSendCommand {:?}", self.phase);
         match self.phase {
             TestPhase::GetTimeSendCommand => {
                 if self.write_buffer.is_empty() {
-                    self.write_buffer
-                        .extend_from_slice(self.get_time_command().as_bytes());
-                }
-                debug!("Sending command: {}", self.get_time_command());
-                match stream.write(&self.write_buffer) {
-                    Ok(0) => {
-                        debug!("Connection closed by peer");
-                        return Err(io::Error::new(
-                            io::ErrorKind::ConnectionAborted,
-                            "Connection closed",
+                    self.write_buffer.extend_from_slice(
+                        format!(
+                            "GETTIME {} {}\n",
+                            TEST_DURATION_NS / 1_000_000_000,
+                            self.chunk_size
                         )
-                        .into());
-                    }
-                    Ok(n) => {
-                        self.write_buffer = BytesMut::from(&self.write_buffer[n..]);
-                        if self.write_buffer.is_empty() {
-                            self.phase = TestPhase::GetTimeReceiveChunk;
-                            self.test_start_time = Some(Instant::now());
-                            poll.registry()
-                                .reregister(stream, self.token, Interest::READABLE)?;
-                        }
-                    }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        return Ok(());
-                    }
-                    Err(e) => return Err(e.into()),
+                        .as_bytes(),
+                    );
+                }
+                if write_all_nb(&mut self.write_buffer, stream)? {
+                    self.phase = TestPhase::GetTimeReceiveChunk;
+                    poll.registry()
+                        .reregister(stream, self.token, Interest::READABLE)?;
+                    self.write_buffer.clear();
                 }
             }
             TestPhase::GetTimeSendOk => {
+                debug!("Writing to stream in GetTimeSendOk {:?}", self.phase);
                 if self.write_buffer.is_empty() {
                     self.write_buffer
                         .extend_from_slice(self.get_ok_command().as_bytes());
                 }
-                match stream.write(&self.write_buffer) {
-                    Ok(0) => {
-                        debug!("Connection closed by peer");
-                        return Err(io::Error::new(
-                            io::ErrorKind::ConnectionAborted,
-                            "Connection closed",
-                        )
-                        .into());
-                    }
-                    Ok(n) => {
-                        self.write_buffer = BytesMut::from(&self.write_buffer[n..]);
-                        if self.write_buffer.is_empty() {
-                            self.phase = TestPhase::GetTimeReceiveTime;
-                            poll.registry()
-                                .reregister(stream, self.token, Interest::READABLE)?;
-                        }
-                    }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        return Ok(());
-                    }
-                    Err(e) => return Err(e.into()),
+                if write_all_nb(&mut self.write_buffer, stream)? {
+                    self.phase = TestPhase::GetTimeReceiveTime;
+                    poll.registry()
+                        .reregister(stream, self.token, Interest::READABLE)?;
+                    self.write_buffer.clear();
                 }
             }
             _ => {}
