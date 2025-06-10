@@ -1,11 +1,11 @@
 use anyhow::Result;
-use bytes::{BytesMut};
-use log::{debug, info, trace, error};
+use bytes::BytesMut;
+use log::{debug, error, info, trace};
 use mio::{net::TcpStream, Events, Interest, Poll, Token};
 use std::{
+    io,
     net::SocketAddr,
     time::{Duration, Instant},
-    io,
 };
 
 use crate::handlers::handler_factory::HandlerFactory;
@@ -18,10 +18,6 @@ pub enum TestPhase {
     GreetingSendConnectionType,
     GreetingSendToken,
     GreetingReceiveGreeting,
-    GreetingReceiveVersion,
-    GreetingReceiveAcceptToken,
-    GreetingReceiveOK,
-
     GetChunksReceiveAccept,
     GetChunksSendChunksCommand,
     GetChunksReceiveChunk,
@@ -31,28 +27,19 @@ pub enum TestPhase {
     PingReceivePong,
     PingSendOk,
     PingReceiveTime,
-    GetTimeCommand,
-    PutNoResultReceiveAccept,
     PutNoResultSendCommand,
     PutNoResultReceiveOk,
     PutNoResultSendChunks,
     PutNoResultReceiveTime,
-    PutReceiveAccept,
     PutSendCommand,
     PutReceiveOk,
     PutSendChunks,
     PutReceiveBytesTime,
     PutReceiveTime,
-
-
-    GetTimeReceiveAccept,
     GetTimeSendCommand,
-    GetTimeReceiveOk,
-    GetTimeSendChunks,
     GetTimeReceiveChunk,
     GetTimeSendOk,
     GetTimeReceiveTime,
-
     End,
 }
 
@@ -61,7 +48,19 @@ pub struct TestState {
     poll: Poll,
     events: Events,
     token: Token,
-    phase: TestPhase,
+}
+
+pub struct MeasurementState {
+   pub phase: TestPhase,
+    pub upload_results_for_graph: Vec<(u64, u64)>,
+    pub upload_bytes: Option<u64>,
+    pub upload_time: Option<u64>,
+    pub upload_speed: Option<f64>,
+    pub download_time: Option<u64>,
+    pub download_bytes: Option<u64>,
+    pub download_speed: Option<f64>,
+    pub chunk_size: u32,
+    pub ping_median: Option<u64>,
 }
 
 impl TestState {
@@ -81,22 +80,32 @@ impl TestState {
             poll,
             events,
             token,
-            phase: TestPhase::GreetingSendConnectionType,
         })
     }
 
-    pub fn run_measurement(&mut self) -> Result<()> {
+    pub fn run_measurement(&mut self) -> Result<MeasurementState> {
         self.poll
             .registry()
             .reregister(&mut self.stream, self.token, Interest::WRITABLE)?;
 
         let mut handler_factory = HandlerFactory::new(self.token)?;
 
-        while self.phase != TestPhase::End {
+        let mut measurement_state = MeasurementState {
+            phase: TestPhase::GreetingSendConnectionType,
+            upload_results_for_graph: Vec::new(),
+            upload_bytes: None,
+            upload_time: None,
+            upload_speed: None,
+            download_time: None,
+            download_bytes: None,
+            download_speed: None,
+            chunk_size: 0,
+            ping_median: None,
+        };
 
-            self.poll.poll(&mut self.events, Some(Duration::from_secs(120)))?;
-            // debug!("[run_measurement] event count: {}", self.events.iter().count());
-
+        while measurement_state.phase != TestPhase::End {
+            self.poll
+                .poll(&mut self.events, Some(Duration::from_secs(120)))?;
 
             // Process one event at a time
             if let Some(event) = self.events.iter().next() {
@@ -104,30 +113,25 @@ impl TestState {
                 let needs_read = event.is_readable();
 
                 if needs_write {
-                    // debug!("Processing writable event");
-                    if let Some(handler) = handler_factory.get_handler(&self.phase) {
-                        if let Err(e) = handler.on_write(&mut self.stream, &self.poll) {
-                            error!("Error in on_write for phase {:?}: {}", self.phase, e);
+                    if let Some(handler) = handler_factory.get_handler(&measurement_state.phase) {
+                        if let Err(e) = handler.on_write(&mut self.stream, &self.poll, &mut measurement_state) {
+                            error!("Error in on_write for phase {:?}: {}", measurement_state.phase, e);
                             return Err(e);
                         }
                     }
                 }
 
                 if needs_read {
-                    // debug!("Processing readable event");
-                    if let Some(handler) = handler_factory.get_handler(&self.phase) {
-                        if let Err(e) = handler.on_read(&mut self.stream, &self.poll) {
-                            error!("Error in on_read for phase {:?}: {}", self.phase, e);
+                    if let Some(handler) = handler_factory.get_handler(&measurement_state.phase) {
+                        if let Err(e) = handler.on_read(&mut self.stream, &self.poll, &mut measurement_state) {
+                            error!("Error in on_read for phase {:?}: {}", measurement_state.phase, e);
                             return Err(e);
                         }
-                        self.phase = handler.get_phase();
                     }
                 }
-
             }
         }
 
-        debug!("[run_measurement] Finished. Final phase: {:?}", self.phase);
-        Ok(())
+        Ok(measurement_state)
     }
 }

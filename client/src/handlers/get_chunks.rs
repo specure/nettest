@@ -1,5 +1,5 @@
 use crate::handlers::BasicHandler;
-use crate::state::TestPhase;
+use crate::state::{MeasurementState, TestPhase};
 use crate::utils::{
     read_until, ACCEPT_GETCHUNKS_STRING, DEFAULT_READ_BUFFER_SIZE, MAX_CHUNKS_BEFORE_SIZE_INCREASE,
     MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, OK_COMMAND, PRE_DOWNLOAD_DURATION_NS, TIME_BUFFER_SIZE,
@@ -15,7 +15,6 @@ use std::time::Instant;
 
 pub struct GetChunksHandler {
     token: Token,
-    phase: TestPhase,
     chunk_size: u32,
     total_chunks: u32,
     chunks_received: AtomicU32,
@@ -30,7 +29,6 @@ impl GetChunksHandler {
     pub fn new(token: Token) -> Result<Self> {
         Ok(Self {
             token,
-            phase: TestPhase::GetChunksReceiveAccept,
             chunk_size: MIN_CHUNK_SIZE,
             total_chunks: 1, // Start with 1 chunk as per specification
             chunks_received: AtomicU32::new(0),
@@ -42,25 +40,6 @@ impl GetChunksHandler {
         })
     }
 
-    fn process_time_response(
-        &mut self,
-        time_ns: u64,
-        poll: &Poll,
-        stream: &mut TcpStream,
-    ) -> Result<()> {
-        if time_ns < PRE_DOWNLOAD_DURATION_NS && self.chunk_size < MAX_CHUNK_SIZE {
-            self.increase_chunk_size();
-            self.reset_chunk_counters();
-            self.phase = TestPhase::GetChunksSendChunksCommand;
-            poll.registry()
-                .reregister(stream, self.token, Interest::WRITABLE)?;
-        } else {
-            self.phase = TestPhase::PingSendPing;
-            poll.registry()
-                .reregister(stream, self.token, Interest::WRITABLE)?;
-        }
-        Ok(())
-    }
 
     fn increase_chunk_size(&mut self) {
         if self.total_chunks < MAX_CHUNKS_BEFORE_SIZE_INCREASE {
@@ -91,11 +70,11 @@ impl GetChunksHandler {
 }
 
 impl BasicHandler for GetChunksHandler {
-    fn on_read(&mut self, stream: &mut TcpStream, poll: &Poll) -> Result<()> {
-        match self.phase {
+    fn on_read(&mut self, stream: &mut TcpStream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+        match measurement_state.phase {
             TestPhase::GetChunksReceiveAccept => {
                 if read_until(stream, &mut self.read_buffer, ACCEPT_GETCHUNKS_STRING)? {
-                    self.phase = TestPhase::GetChunksSendChunksCommand;
+                    measurement_state.phase = TestPhase::GetChunksSendChunksCommand;
                     poll.registry()
                         .reregister(stream, self.token, Interest::WRITABLE)?;
                     self.read_buffer.clear();
@@ -122,7 +101,7 @@ impl BasicHandler for GetChunksHandler {
                                         "Received last chunk {}",
                                         current_chunks + complete_chunks
                                     );
-                                    self.phase = TestPhase::GetChunksSendOk;
+                                    measurement_state.phase = TestPhase::GetChunksSendOk;
                                     poll.registry().reregister(
                                         stream,
                                         self.token,
@@ -149,7 +128,18 @@ impl BasicHandler for GetChunksHandler {
                     let buffer_str = String::from_utf8_lossy(&self.time_buffer);
                     if let Some(time_ns) = self.parse_time_response(&buffer_str) {
                         debug!("Time: {} ns", time_ns);
-                        self.process_time_response(time_ns, poll, stream)?;
+                        if time_ns < PRE_DOWNLOAD_DURATION_NS && self.chunk_size < MAX_CHUNK_SIZE {
+                            self.increase_chunk_size();
+                            self.reset_chunk_counters();
+                            measurement_state.phase = TestPhase::GetChunksSendChunksCommand;
+                            poll.registry()
+                                .reregister(stream, self.token, Interest::WRITABLE)?;
+                        } else {
+                            measurement_state.chunk_size = self.chunk_size;
+                            measurement_state.phase = TestPhase::PingSendPing;
+                            poll.registry()
+                                .reregister(stream, self.token, Interest::WRITABLE)?;
+                        }
                     }
                     self.time_buffer.clear();
                 }
@@ -159,13 +149,13 @@ impl BasicHandler for GetChunksHandler {
         Ok(())
     }
 
-    fn on_write(&mut self, stream: &mut TcpStream, poll: &Poll) -> Result<()> {
-        match self.phase {
+    fn on_write(&mut self, stream: &mut TcpStream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+        match measurement_state.phase {
             TestPhase::GetChunksSendChunksCommand => {
                 let command = format!("GETCHUNKS {} {}\n", self.total_chunks, self.chunk_size);
                 self.write_buffer.extend_from_slice(command.as_bytes());
                 if write_all_nb(&mut self.write_buffer, stream)? {
-                    self.phase = TestPhase::GetChunksReceiveChunk;
+                    measurement_state.phase = TestPhase::GetChunksReceiveChunk;
                     self.unprocessed_bytes.store(0, Ordering::SeqCst);
                     self.chunks_received.store(0, Ordering::SeqCst);
                     self.test_start_time = Some(Instant::now());
@@ -181,7 +171,7 @@ impl BasicHandler for GetChunksHandler {
                     );
                 }
                 if write_all_nb(&mut self.write_buffer, stream)? {
-                    self.phase = TestPhase::GetChunksReceiveTime;
+                    measurement_state.phase = TestPhase::GetChunksReceiveTime;
                     self.write_buffer = BytesMut::with_capacity(TIME_BUFFER_SIZE);
                     if self.write_buffer.is_empty() {
                         poll.registry()
@@ -195,7 +185,4 @@ impl BasicHandler for GetChunksHandler {
         Ok(())
     }
 
-    fn get_phase(&self) -> TestPhase {
-        self.phase.clone()
-    }
 }

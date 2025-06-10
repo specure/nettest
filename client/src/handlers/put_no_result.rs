@@ -1,5 +1,5 @@
 use crate::handlers::BasicHandler;
-use crate::state::TestPhase;
+use crate::state::{MeasurementState, TestPhase};
 use crate::{read_until, write_all_nb};
 use anyhow::Result;
 use bytes::{BytesMut};
@@ -14,7 +14,6 @@ const MAX_CHUNK_SIZE: u64 = 4194304; // 2MB
 
 pub struct PutNoResultHandler {
     token: Token,
-    phase: TestPhase,
     chunk_size: u64,
     test_start_time: Option<Instant>,
     bytes_sent: u64,
@@ -41,7 +40,6 @@ impl PutNoResultHandler {
 
         Ok(Self {
             token,
-            phase: TestPhase::PutNoResultSendCommand,
             chunk_size: MAX_CHUNK_SIZE,
             test_start_time: None,
             bytes_sent: 0,
@@ -57,7 +55,7 @@ impl PutNoResultHandler {
         format!("PUTNORESULT {}\n", self.chunk_size)
     }
 
-    fn calculate_upload_speed(&mut self, time_ns: u64) {
+    fn calculate_upload_speed(&mut self, time_ns: u64) -> f64 {
         let bytes = self.bytes_sent;
         // Convert nanoseconds to seconds, ensuring we don't lose precision
         let time_seconds = if time_ns > u64::MAX / 1_000_000_000 {
@@ -68,29 +66,30 @@ impl PutNoResultHandler {
         };
         let speed_bps: f64 = bytes as f64 / time_seconds; // Convert to bytes per second
         self.upload_speed = Some(speed_bps);
-        info!("Upload speed calculation:");
-        info!("  Total bytes sent: {}", bytes);
-        info!(
+        debug!("Upload speed calculation:");
+        debug!("  Total bytes sent: {}", bytes);
+        debug!(
             " Total bytes sent GB: {}",
             bytes as f64 / (1024.0 * 1024.0 * 1024.0)
         );
-        info!("  Total time: {:.9} seconds ({} ns)", time_seconds, time_ns);
-        info!(
+        debug!("  Total time: {:.9} seconds ({} ns)", time_seconds, time_ns);
+        debug!(
             "  Speed: {:.2} MB/s ({:.2} GB/s)  GBit/s: {}  Mbit/s: {}",
             speed_bps / (1024.0 * 1024.0),
             speed_bps / (1024.0 * 1024.0 * 1024.0),
             speed_bps * 8.0 / (1024.0 * 1024.0 * 1024.0),
             speed_bps * 8.0 / (1024.0 * 1024.0)
         );
+        speed_bps
     }
 }
 
 impl BasicHandler for PutNoResultHandler {
-    fn on_read(&mut self, stream: &mut TcpStream, poll: &Poll) -> Result<()> {
-        match self.phase {
+    fn on_read(&mut self, stream: &mut TcpStream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+        match measurement_state.phase {
             TestPhase::PutNoResultReceiveOk => {
                 if read_until(stream, &mut self.read_buffer, "OK\n")? {
-                    self.phase = TestPhase::PutNoResultSendChunks;
+                    measurement_state.phase = TestPhase::PutNoResultSendChunks;
                     poll.registry()
                         .reregister(stream, self.token, Interest::WRITABLE)?;
                     self.read_buffer.clear();
@@ -112,30 +111,33 @@ impl BasicHandler for PutNoResultHandler {
                             .and_then(|s| s.parse::<u64>().ok())
                         {
                             debug!("Time: {} ns", time_ns);
-                            self.calculate_upload_speed(time_ns);
+                            let speed_bps = self.calculate_upload_speed(time_ns);
+                            measurement_state.upload_speed = Some(speed_bps);
+                            measurement_state.upload_time = Some(time_ns);
+                            measurement_state.upload_bytes = Some(self.bytes_sent);
                         }
                     }
-                    self.phase = TestPhase::PutSendCommand;
+                    measurement_state.phase = TestPhase::PutSendCommand;
                     poll.registry()
                         .reregister(stream, self.token, Interest::WRITABLE)?;
                     self.read_buffer.clear();
                 }
             }
             _ => {
-                debug!("Unknown phase11: {:?}", self.phase);
+                debug!("Unknown phase11: {:?}", measurement_state.phase);
                 return Ok(());
             }
         }
         Ok(())
     }
 
-    fn on_write(&mut self, stream: &mut TcpStream, poll: &Poll) -> Result<()> {
-        match self.phase {
+    fn on_write(&mut self, stream: &mut TcpStream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+        match measurement_state.phase {
             TestPhase::PutNoResultSendCommand => {
                 self.write_buffer
                     .extend_from_slice(self.get_put_no_result_command().as_bytes());
                 if write_all_nb(&mut self.write_buffer, stream)? {
-                    self.phase = TestPhase::PutNoResultReceiveOk;
+                    measurement_state.phase = TestPhase::PutNoResultReceiveOk;
                     poll.registry()
                         .reregister(stream, self.token, Interest::READABLE)?;
                     return Ok(());
@@ -203,7 +205,7 @@ impl BasicHandler for PutNoResultHandler {
                         }
                     }
                     debug!("PutNoResultSendChunks finished with kast chunk");
-                    self.phase = TestPhase::PutNoResultReceiveTime;
+                    measurement_state.phase = TestPhase::PutNoResultReceiveTime;
                     poll.registry()
                         .reregister(stream, self.token, Interest::READABLE)?;
                     return Ok(());
@@ -213,13 +215,9 @@ impl BasicHandler for PutNoResultHandler {
                 }
             }
             _ => {
-                debug!("Unknown phase: {:?}", self.phase);
+                debug!("Unknown phase: {:?}", measurement_state.phase);
                 return Ok(());
             }
         }
-    }
-
-    fn get_phase(&self) -> TestPhase {
-        self.phase.clone()
     }
 }

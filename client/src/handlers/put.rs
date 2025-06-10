@@ -1,5 +1,5 @@
 use crate::handlers::BasicHandler;
-use crate::state::TestPhase;
+use crate::state::{MeasurementState, TestPhase};
 use crate::utils::utils::write_all_nb_loop;
 use crate::{read_until, write_all_nb};
 use anyhow::Result;
@@ -12,15 +12,11 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering}
 use std::time::{Duration, Instant};
 
 const TEST_DURATION_NS: u64 = 7_000_000_000; // 7 seconds
-const MIN_CHUNK_SIZE: u32 = 4096; // 4KB
 const MAX_CHUNK_SIZE: u64 = 4194304; // 4MB
 const BUFFER_SIZE: usize = 4 * 1024 * 1024; // 4mb
-const TERMINATION_BYTE_LAST: [u8; 1] = [0xFF];
-const TERMINATION_BYTE_NORMAL: [u8; 1] = [0x00];
 
 pub struct PutHandler {
     token: Token,
-    phase: TestPhase,
     chunk_size: u64,
     test_start_time: Option<Instant>,
     bytes_sent: u64,
@@ -47,7 +43,6 @@ impl PutHandler {
 
         Ok(Self {
             token,
-            phase: TestPhase::PutSendCommand,
             chunk_size: MAX_CHUNK_SIZE,
             test_start_time: None,
             bytes_sent: 0,
@@ -65,12 +60,12 @@ impl PutHandler {
 }
 
 impl BasicHandler for PutHandler {
-    fn on_read(&mut self, stream: &mut TcpStream, poll: &Poll) -> Result<()> {
-        match self.phase {
+    fn on_read(&mut self, stream: &mut TcpStream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+        match measurement_state.phase {
             TestPhase::PutReceiveOk => {
                 debug!("PutReceiveOk");
                 if read_until(stream, &mut self.read_buffer, "OK\n")? {
-                    self.phase = TestPhase::PutSendChunks;
+                    measurement_state.phase = TestPhase::PutSendChunks;
                     self.read_buffer.clear();
                     poll.registry()
                         .reregister(stream, self.token, Interest::WRITABLE)?;
@@ -95,7 +90,7 @@ impl BasicHandler for PutHandler {
                             self.responses.push((time_ns, bytes));
                             // self.phase = TestPhase::PutSendChunks;
                             self.read_buffer.clear();
-                            self.phase = TestPhase::PutSendChunks;
+                            measurement_state.phase = TestPhase::PutSendChunks;
 
                             // return Ok(());
                             poll.registry()
@@ -116,7 +111,8 @@ impl BasicHandler for PutHandler {
                         .and_then(|s| s.parse::<u64>().ok())
                     {
                         debug!("Final Time: {} ns", time_ns);
-                        self.phase = TestPhase::End;
+                        measurement_state.upload_results_for_graph.push((self.bytes_sent, time_ns));
+                        measurement_state.phase = TestPhase::End;
                         poll.registry()
                             .reregister(stream, self.token, Interest::WRITABLE)?;
                     }
@@ -128,14 +124,14 @@ impl BasicHandler for PutHandler {
         Ok(())
     }
 
-    fn on_write(&mut self, stream: &mut TcpStream, poll: &Poll) -> Result<()> {
-        match self.phase {
+    fn on_write(&mut self, stream: &mut TcpStream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+        match measurement_state.phase {
             TestPhase::PutSendCommand => {
                 self.write_buffer
                     .extend_from_slice(self.get_put_command().as_bytes());
 
                 if write_all_nb(&mut self.write_buffer, stream)? {
-                    self.phase = TestPhase::PutReceiveOk;
+                    measurement_state.phase = TestPhase::PutReceiveOk;
                     poll.registry()
                         .reregister(stream, self.token, Interest::READABLE)?;
                     return Ok(());
@@ -164,7 +160,7 @@ impl BasicHandler for PutHandler {
                         debug!("PutSendChunks not last {}", self.write_buffer.len());
                        if write_all_nb_loop(&mut self.write_buffer, stream)? {
                         debug!("PutSendChunks write_all_nb {}" , self.write_buffer.len());
-                        self.phase = TestPhase::PutReceiveBytesTime;
+                        measurement_state.phase = TestPhase::PutReceiveBytesTime;
                         poll.registry()
                             .reregister(stream, self.token, Interest::READABLE )?;
                         return Ok(());
@@ -174,7 +170,7 @@ impl BasicHandler for PutHandler {
                     } else {
                         debug!("PutSendChunks last");
                         if write_all_nb_loop(&mut self.write_buffer, stream)? {
-                            self.phase = TestPhase::PutReceiveTime;
+                            measurement_state.phase = TestPhase::PutReceiveTime;
                             poll.registry()
                                 .reregister(stream, self.token, Interest::READABLE)?;
                             return Ok(());
@@ -183,13 +179,9 @@ impl BasicHandler for PutHandler {
                 }
             }
             _ => {
-                debug!("PutHandler phase {:?}", self.phase);
+                debug!("PutHandler phase {:?}", measurement_state.phase);
             }
         }
         Ok(())
-    }
-
-    fn get_phase(&self) -> TestPhase {
-        self.phase.clone()
     }
 }

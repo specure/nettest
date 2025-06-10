@@ -30,14 +30,8 @@ impl HandlerFactory {
             TestPhase::GreetingReceiveGreeting => Some(&mut self.greeting_handler),
             TestPhase::GreetingSendConnectionType => Some(&mut self.greeting_handler),
             TestPhase::GreetingSendToken => Some(&mut self.greeting_handler),
-            TestPhase::GreetingReceiveVersion => Some(&mut self.greeting_handler),
-            TestPhase::GreetingReceiveAcceptToken => Some(&mut self.greeting_handler),
-            TestPhase::GreetingReceiveOK => Some(&mut self.greeting_handler),
 
-            TestPhase::GetTimeReceiveAccept => Some(&mut self.get_time_handler),
             TestPhase::GetTimeSendCommand => Some(&mut self.get_time_handler),
-            TestPhase::GetTimeReceiveOk => Some(&mut self.get_time_handler),
-            TestPhase::GetTimeSendChunks => Some(&mut self.get_time_handler),
             TestPhase::GetTimeReceiveChunk => Some(&mut self.get_time_handler),
             TestPhase::GetTimeSendOk => Some(&mut self.get_time_handler),
             TestPhase::GetTimeReceiveTime => Some(&mut self.get_time_handler),
@@ -53,15 +47,11 @@ impl HandlerFactory {
             TestPhase::PingSendOk => Some(&mut self.ping_handler),
             TestPhase::PingReceiveTime => Some(&mut self.ping_handler),
 
-            TestPhase::GetTimeCommand => Some(&mut self.ping_handler),
-
-            TestPhase::PutNoResultReceiveAccept => Some(&mut self.put_no_result_handler),
             TestPhase::PutNoResultSendCommand => Some(&mut self.put_no_result_handler),
             TestPhase::PutNoResultReceiveOk => Some(&mut self.put_no_result_handler),
             TestPhase::PutNoResultSendChunks => Some(&mut self.put_no_result_handler),
             TestPhase::PutNoResultReceiveTime => Some(&mut self.put_no_result_handler),
 
-            TestPhase::PutReceiveAccept => Some(&mut self.put_handler),
             TestPhase::PutSendCommand => Some(&mut self.put_handler),
             TestPhase::PutReceiveOk => Some(&mut self.put_handler),
             TestPhase::PutSendChunks => Some(&mut self.put_handler),

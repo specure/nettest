@@ -1,5 +1,5 @@
 use crate::handlers::BasicHandler;
-use crate::state::TestPhase;
+use crate::state::{MeasurementState, TestPhase};
 use crate::utils::ACCEPT_GETCHUNKS_STRING;
 use crate::{read_until, write_all_nb};
 use anyhow::Result;
@@ -9,12 +9,10 @@ use mio::{net::TcpStream, Interest, Poll, Token};
 use std::io::{self, Read};
 
 const TEST_DURATION_NS: u64 = 7_000_000_000; // 7 seconds
-const MIN_CHUNK_SIZE: u32 = 4096; // 4KB
 const MAX_CHUNK_SIZE: u32 = 4194304; // 4MB
 
 pub struct GetTimeHandler {
     token: Token,
-    phase: TestPhase,
     chunk_size: u32,
     bytes_received: u64,
     read_buffer: BytesMut,
@@ -27,7 +25,6 @@ impl GetTimeHandler {
     pub fn new(token: Token) -> Result<Self> {
         Ok(Self {
             token,
-            phase: TestPhase::GetTimeSendCommand,
             chunk_size: MAX_CHUNK_SIZE,
             bytes_received: 0,
             read_buffer: BytesMut::with_capacity(MAX_CHUNK_SIZE as usize),
@@ -47,14 +44,14 @@ impl GetTimeHandler {
         };
         let speed_bps: f64 = bytes as f64 / time_seconds; // Convert to bytes per second
                                                           // self.upload_speed = Some(speed_bps);
-        info!("Upload speed calculation:");
-        info!("  Total bytes sent: {}", bytes);
-        info!(
+        debug!("Upload speed calculation:");
+        debug!("  Total bytes sent: {}", bytes);
+        debug!(
             " Total bytes sent GB: {}",
             bytes as f64 / (1024.0 * 1024.0 * 1024.0)
         );
-        info!("  Total time: {:.9} seconds ({} ns)", time_seconds, time_ns);
-        info!(
+        debug!("  Total time: {:.9} seconds ({} ns)", time_seconds, time_ns);
+        debug!(
             "  Speed: {:.2} MB/s ({:.2} GB/s)  GBit/s: {}  Mbit/s: {}",
             speed_bps / (1024.0 * 1024.0),
             speed_bps / (1024.0 * 1024.0 * 1024.0),
@@ -70,8 +67,8 @@ impl GetTimeHandler {
 }
 
 impl BasicHandler for GetTimeHandler {
-    fn on_read(&mut self, stream: &mut TcpStream, poll: &Poll) -> Result<()> {
-        match self.phase {
+    fn on_read(&mut self, stream: &mut TcpStream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+        match measurement_state.phase {
             TestPhase::GetTimeReceiveChunk => loop {
                 match stream.read(&mut self.chunk_buffer) {
                     Ok(n) if n > 0 => {
@@ -80,7 +77,7 @@ impl BasicHandler for GetTimeHandler {
                             && (self.bytes_received & (self.chunk_size as u64 - 1)) == 0
                         {
                             debug!("Received last chunk");
-                            self.phase = TestPhase::GetTimeSendOk;
+                            measurement_state.phase = TestPhase::GetTimeSendOk;
                             poll.registry()
                                 .reregister(stream, self.token, Interest::WRITABLE)?;
                             return Ok(());
@@ -113,7 +110,10 @@ impl BasicHandler for GetTimeHandler {
                     {
                         self.responses.push((time_ns, self.bytes_received));
                         self.calculate_download_speed(time_ns);
-                        self.phase = TestPhase::PutNoResultSendCommand;
+                        measurement_state.download_time = Some(time_ns);
+                        measurement_state.download_bytes = Some(self.bytes_received);
+                        measurement_state.download_speed = Some(self.calculate_download_speed(time_ns));
+                        measurement_state.phase = TestPhase::PutNoResultSendCommand;
                         poll.registry()
                             .reregister(stream, self.token, Interest::WRITABLE)?;
                     }
@@ -125,9 +125,10 @@ impl BasicHandler for GetTimeHandler {
         Ok(())
     }
 
-    fn on_write(&mut self, stream: &mut TcpStream, poll: &Poll) -> Result<()> {
-        match self.phase {
+    fn on_write(&mut self, stream: &mut TcpStream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+        match measurement_state.phase {
             TestPhase::GetTimeSendCommand => {
+                self.chunk_size = measurement_state.chunk_size;
                 if self.write_buffer.is_empty() {
                     self.write_buffer.extend_from_slice(
                         format!(
@@ -139,20 +140,19 @@ impl BasicHandler for GetTimeHandler {
                     );
                 }
                 if write_all_nb(&mut self.write_buffer, stream)? {
-                    self.phase = TestPhase::GetTimeReceiveChunk;
+                    measurement_state.phase = TestPhase::GetTimeReceiveChunk;
                     poll.registry()
                         .reregister(stream, self.token, Interest::READABLE)?;
                     self.write_buffer.clear();
                 }
             }
             TestPhase::GetTimeSendOk => {
-                debug!("Writing to stream in GetTimeSendOk {:?}", self.phase);
                 if self.write_buffer.is_empty() {
                     self.write_buffer
                         .extend_from_slice(self.get_ok_command().as_bytes());
                 }
                 if write_all_nb(&mut self.write_buffer, stream)? {
-                    self.phase = TestPhase::GetTimeReceiveTime;
+                    measurement_state.phase = TestPhase::GetTimeReceiveTime;
                     poll.registry()
                         .reregister(stream, self.token, Interest::READABLE)?;
                     self.write_buffer.clear();
@@ -163,7 +163,4 @@ impl BasicHandler for GetTimeHandler {
         Ok(())
     }
 
-    fn get_phase(&self) -> TestPhase {
-        self.phase.clone()
-    }
 }

@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 
 use crate::handlers::BasicHandler;
-use crate::state::TestPhase;
+use crate::state::{MeasurementState, TestPhase};
 use crate::utils::{read_until, write_all,write_all_nb, DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE, RMBT_UPGRADE_REQUEST};
 use anyhow::Result;
 use bytes::BytesMut;
@@ -10,7 +10,6 @@ use mio::{net::TcpStream, Interest, Poll, Token};
 
 pub struct GreetingHandler {
     token: Token,
-    phase: TestPhase,
     read_buffer: BytesMut,  // Buffer for reading responses
     write_buffer: BytesMut, // Buffer for writing requests
 }
@@ -19,7 +18,6 @@ impl GreetingHandler {
     pub fn new(token: Token) -> Result<Self> {
         Ok(Self {
             token,
-            phase: TestPhase::GreetingSendConnectionType,
             read_buffer: BytesMut::with_capacity(DEFAULT_READ_BUFFER_SIZE),
             write_buffer: BytesMut::with_capacity(DEFAULT_WRITE_BUFFER_SIZE),
         })
@@ -27,11 +25,11 @@ impl GreetingHandler {
 }
 
 impl BasicHandler for GreetingHandler {
-    fn on_read(&mut self, stream: &mut TcpStream, poll: &Poll) -> Result<()> {
-        match self.phase {
+    fn on_read(&mut self, stream: &mut TcpStream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+        match measurement_state.phase {
             TestPhase::GreetingReceiveGreeting => {
                 if read_until(stream, &mut self.read_buffer, "ACCEPT TOKEN QUIT\n")? {
-                    self.phase = TestPhase::GreetingSendToken;
+                    measurement_state.phase = TestPhase::GreetingSendToken;
                     poll.registry()
                         .reregister(stream, self.token, Interest::WRITABLE)?;
                     self.read_buffer.clear();
@@ -42,8 +40,8 @@ impl BasicHandler for GreetingHandler {
         Ok(())
     }
 
-    fn on_write(&mut self, stream: &mut TcpStream, poll: &Poll) -> Result<()> {
-        match self.phase {
+    fn on_write(&mut self, stream: &mut TcpStream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+        match measurement_state.phase {
             TestPhase::GreetingSendConnectionType => {
                 if self.write_buffer.is_empty() {
                     self.write_buffer.extend_from_slice(RMBT_UPGRADE_REQUEST.as_bytes());
@@ -51,7 +49,7 @@ impl BasicHandler for GreetingHandler {
                 if write_all_nb(&mut self.write_buffer, stream)? {
                     poll.registry()
                     .reregister(stream, self.token, Interest::READABLE)?;
-                self.phase = TestPhase::GreetingReceiveGreeting;
+                measurement_state.phase = TestPhase::GreetingReceiveGreeting;
                 }
             }
             TestPhase::GreetingSendToken => {
@@ -63,7 +61,7 @@ impl BasicHandler for GreetingHandler {
                 if write_all_nb(&mut self.write_buffer, stream)? {
                     poll.registry()
                     .reregister(stream, self.token, Interest::READABLE)?;
-                    self.phase = TestPhase::GetChunksReceiveAccept;
+                    measurement_state.phase = TestPhase::GetChunksReceiveAccept;
                 }
             }
             _ => {}
@@ -71,7 +69,4 @@ impl BasicHandler for GreetingHandler {
         Ok(())
     }
 
-    fn get_phase(&self) -> TestPhase {
-        self.phase.clone()
-    }
 }
