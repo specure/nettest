@@ -110,7 +110,6 @@ impl BasicHandler for PutNoResultHandler {
                             .nth(1)
                             .and_then(|s| s.parse::<u64>().ok())
                         {
-                            debug!("Time: {} ns", time_ns);
                             let speed_bps = self.calculate_upload_speed(time_ns);
                             measurement_state.upload_speed = Some(speed_bps);
                             measurement_state.upload_time = Some(time_ns);
@@ -123,7 +122,6 @@ impl BasicHandler for PutNoResultHandler {
                 }
             }
             _ => {
-                debug!("Unknown phase11: {:?}", measurement_state.phase);
                 return Ok(());
             }
         }
@@ -148,9 +146,6 @@ impl BasicHandler for PutNoResultHandler {
                 } 
                 if let Some(start_time) = self.test_start_time {
                     let elapsed = start_time.elapsed();
-                    trace!("PutNoResultSendChunks chunk size: {}", self.chunk_size);
-
-                    trace!("Elapsed: {} ns", elapsed.as_nanos());
                     let mut is_last = elapsed.as_nanos() >= TEST_DURATION_NS as u128;
 
                     let current_pos = self.bytes_sent & (self.chunk_size as u64 - 1);
@@ -177,7 +172,6 @@ impl BasicHandler for PutNoResultHandler {
                         // Write from current position
                         match stream.write(remaining) {
                             Ok(written) => {
-                                trace!("Written PUTNORESULT {} bytes", written);
                                 self.bytes_sent += written as u64;
                                 remaining = &remaining[written..];
                             }
@@ -199,26 +193,21 @@ impl BasicHandler for PutNoResultHandler {
                                 remaining = &remaining[written..];
                             }
                             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                                debug!("Write would block, reregistering for write last chunk");
                                 return Ok(());
                             }
                             Err(e) => {
-                                debug!("Error in PutNoResultSendChunks: {}", e);
                                 return Err(e.into());
                             }
                         }
                     }
-                    debug!("PutNoResultSendChunks finished with kast chunk");
                     measurement_state.phase = TestPhase::PutNoResultReceiveTime;
                     stream.reregister(&poll, self.token, Interest::READABLE)?;
                     return Ok(());
                 } else {
-                    debug!("No start time set");
                     return Ok(());
                 }
             }
             _ => {
-                debug!("Unknown phase: {:?}", measurement_state.phase);
                 return Ok(());
             }
         }

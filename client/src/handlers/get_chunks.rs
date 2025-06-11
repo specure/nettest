@@ -78,11 +78,14 @@ impl BasicHandler for GetChunksHandler {
     ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::GetChunksReceiveAccept => {
+                debug!("Reading accept");
                 if read_until(stream, &mut self.read_buffer, ACCEPT_GETCHUNKS_STRING)? {
+                    debug!("Accept received");
                     measurement_state.phase = TestPhase::GetChunksSendChunksCommand;
                     stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                     self.read_buffer.clear();
                 }
+                return self.on_read(stream, poll, measurement_state);
             }
             TestPhase::GetChunksReceiveChunk => {
                 let mut buf: Vec<u8> = vec![0u8; self.chunk_size as usize];
@@ -143,6 +146,7 @@ impl BasicHandler for GetChunksHandler {
                     }
                     self.time_buffer.clear();
                 }
+                return self.on_read(stream, poll, measurement_state);
             }
             _ => {}
         }

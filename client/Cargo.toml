@@ -23,5 +23,5 @@ rustls-pemfile = "2.0.0"
 webpki-roots = "0.26"
 rustls-native-certs = "0.7"
 native-tls = "0.2"
-openssl = { version = "0.10", features = ["vendored"] }
+openssl = "0.10"
 tokio-openssl = "0.6"

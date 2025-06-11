@@ -68,7 +68,8 @@ impl TestState {
        
 
         let mut stream = if use_tls {
-            Stream::new_rustls(addr, cert_path, key_path)?
+                Stream::new_openssl(addr)?
+                // Stream::new_rustls(addr, cert_path, key_path)?
         } else {
             Stream::new_tcp(addr)?
         };

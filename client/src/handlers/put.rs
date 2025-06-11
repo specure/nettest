@@ -151,12 +151,10 @@ impl BasicHandler for PutHandler {
                 }
 
                 if let Some(start_time) = self.test_start_time {
-                    debug!("PutSendChunks");
                     let elapsed = start_time.elapsed();
                     let is_last = elapsed.as_nanos() >= TEST_DURATION_NS as u128;
 
                     if self.write_buffer.is_empty() {
-                        debug!("PutSendChunks buffer empty");
                         let buffer = if is_last {
                             &self.data_termination_buffer
                         } else {
@@ -165,17 +163,12 @@ impl BasicHandler for PutHandler {
                         self.write_buffer.extend_from_slice(buffer);
                     }
                     if !is_last {
-                        debug!("PutSendChunks not last {}", self.write_buffer.len());
                         if write_all_nb_loop(&mut self.write_buffer, stream)? {
-                            debug!("PutSendChunks write_all_nb {}", self.write_buffer.len());
                             measurement_state.phase = TestPhase::PutReceiveBytesTime;
                             stream.reregister(&poll, self.token, Interest::READABLE)?;
                             return Ok(());
-                        } else {
-                            debug!("PutSendChunks write_all_nb failed");
-                        }
+                        } 
                     } else {
-                        debug!("PutSendChunks last");
                         if write_all_nb_loop(&mut self.write_buffer, stream)? {
                             measurement_state.phase = TestPhase::PutReceiveTime;
                             stream.reregister(&poll, self.token, Interest::READABLE)?;
