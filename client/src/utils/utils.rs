@@ -3,6 +3,9 @@ use bytes::{Buf, BytesMut};
 use mio::net::TcpStream;
 use log::debug;
 
+use crate::stream::Stream;
+
+
 /// Reads from the stream until the specified string is found in the buffer
 /// 
 /// # Arguments
@@ -16,9 +19,10 @@ use log::debug;
 /// * `Ok(true)` if the target string was found
 /// * `Ok(false)` if no more data is available (WouldBlock)
 /// * `Err` if an error occurred during reading
-pub fn read_until(stream: &mut TcpStream, buffer: &mut BytesMut, until: &str) -> io::Result<bool> {
-    let mut temp_buf = vec![0u8; 1024];
-    
+pub fn read_until(stream: &mut Stream, buffer: &mut BytesMut, until: &str) -> io::Result<bool> {
+    let mut temp_buf = vec![0u8; 8096];
+    debug!("[read_until] Reading from stream");
+
     match stream.read(&mut temp_buf) {
         Ok(n) if n > 0 => {
             buffer.extend_from_slice(&temp_buf[..n]);
@@ -86,9 +90,11 @@ pub fn write_all(stream: &mut TcpStream, buffer: &mut BytesMut) -> io::Result<bo
 
 
 
-pub fn write_all_nb(buf: &mut BytesMut, stream: &mut TcpStream) -> io::Result<bool> {
+pub fn write_all_nb(buf: &mut BytesMut, stream: &mut Stream) -> io::Result<bool> {
+    debug!("[write_all_nb] Writing {} bytes", buf.len());
     match stream.write(&buf) {
         Ok(n) => {
+            debug!("[write_all_nb] Wrote {} bytes", n);
             buf.advance(n);
             Ok(buf.is_empty())
         }
@@ -97,7 +103,7 @@ pub fn write_all_nb(buf: &mut BytesMut, stream: &mut TcpStream) -> io::Result<bo
     }
 }
 
-pub fn write_all_nb_loop(buf: &mut BytesMut, stream: &mut TcpStream) -> io::Result<bool> {
+pub fn write_all_nb_loop(buf: &mut BytesMut, stream: &mut Stream) -> io::Result<bool> {
     while !buf.is_empty() {
         match stream.write(&buf) {
             Ok(0) => {

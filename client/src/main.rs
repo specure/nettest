@@ -1,10 +1,12 @@
 use log::{info};
-use std::{net::SocketAddr};
+use std::{net::SocketAddr, path::Path};
 
 mod state;
 mod handlers;
 use state::TestState;
 pub mod utils;
+pub mod stream;
+pub mod rustls;
 
 pub use handlers::{
     greeting::GreetingHandler,
@@ -26,12 +28,13 @@ async fn async_main() -> anyhow::Result<()> {
     info!("Starting measurement client...");
     info!("Connecting to server...");
 
-    // let addr = "10.35.2.151:8081".parse::<SocketAddr>()?;
+    // let addr = "10.35.2.151:8082".parse::<SocketAddr>()?;
     let addr = "127.0.0.1:8080".parse::<SocketAddr>()?;
 
     info!("Connected to server at {}", addr);
 
-    let mut state = TestState::new(addr)?;
+    // Используем небезопасную конфигурацию дл я тестирования
+    let mut state = TestState::new(addr, true, None, None)?;
     let measurement_state = state.run_measurement()?;
 
     info!("Measurement completed");

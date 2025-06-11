@@ -2,6 +2,7 @@ use crate::handlers::BasicHandler;
 use crate::state::{MeasurementState, TestPhase};
 use crate::utils::utils::write_all_nb_loop;
 use crate::{read_until, write_all_nb};
+use crate::stream::Stream;
 use anyhow::Result;
 use bytes::{Buf, BytesMut};
 use fastrand;
@@ -60,21 +61,25 @@ impl PutHandler {
 }
 
 impl BasicHandler for PutHandler {
-    fn on_read(&mut self, stream: &mut TcpStream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+    fn on_read(
+        &mut self,
+        stream: &mut Stream,
+        poll: &Poll,
+        measurement_state: &mut MeasurementState,
+    ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::PutReceiveOk => {
                 debug!("PutReceiveOk");
                 if read_until(stream, &mut self.read_buffer, "OK\n")? {
                     measurement_state.phase = TestPhase::PutSendChunks;
                     self.read_buffer.clear();
-                    poll.registry()
-                        .reregister(stream, self.token, Interest::WRITABLE)?;
+                    stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                 }
             }
             TestPhase::PutReceiveBytesTime => {
                 debug!("PutReceiveBytesTime");
                 debug!("Read {} bytes", String::from_utf8_lossy(&self.read_buffer));
-                
+
                 if read_until(stream, &mut self.read_buffer, "\n")? {
                     if let Some(time_ns) = String::from_utf8_lossy(&self.read_buffer)
                         .split_whitespace()
@@ -92,9 +97,7 @@ impl BasicHandler for PutHandler {
                             self.read_buffer.clear();
                             measurement_state.phase = TestPhase::PutSendChunks;
 
-                            // return Ok(());
-                            poll.registry()
-                                .reregister(stream, self.token, Interest::WRITABLE)?;
+                            stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                         }
                     }
                 }
@@ -111,10 +114,11 @@ impl BasicHandler for PutHandler {
                         .and_then(|s| s.parse::<u64>().ok())
                     {
                         debug!("Final Time: {} ns", time_ns);
-                        measurement_state.upload_results_for_graph.push((self.bytes_sent, time_ns));
+                        measurement_state
+                            .upload_results_for_graph
+                            .push((self.bytes_sent, time_ns));
                         measurement_state.phase = TestPhase::End;
-                        poll.registry()
-                            .reregister(stream, self.token, Interest::WRITABLE)?;
+                        stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                     }
                     self.read_buffer.clear();
                 }
@@ -124,7 +128,12 @@ impl BasicHandler for PutHandler {
         Ok(())
     }
 
-    fn on_write(&mut self, stream: &mut TcpStream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+    fn on_write(
+        &mut self,
+        stream: &mut Stream,
+        poll: &Poll,
+        measurement_state: &mut MeasurementState,
+    ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::PutSendCommand => {
                 self.write_buffer
@@ -132,8 +141,7 @@ impl BasicHandler for PutHandler {
 
                 if write_all_nb(&mut self.write_buffer, stream)? {
                     measurement_state.phase = TestPhase::PutReceiveOk;
-                    poll.registry()
-                        .reregister(stream, self.token, Interest::READABLE)?;
+                    stream.reregister(&poll, self.token, Interest::READABLE)?;
                     return Ok(());
                 }
             }
@@ -141,7 +149,7 @@ impl BasicHandler for PutHandler {
                 if self.test_start_time.is_none() {
                     self.test_start_time = Some(Instant::now());
                 }
-               
+
                 if let Some(start_time) = self.test_start_time {
                     debug!("PutSendChunks");
                     let elapsed = start_time.elapsed();
@@ -158,21 +166,19 @@ impl BasicHandler for PutHandler {
                     }
                     if !is_last {
                         debug!("PutSendChunks not last {}", self.write_buffer.len());
-                       if write_all_nb_loop(&mut self.write_buffer, stream)? {
-                        debug!("PutSendChunks write_all_nb {}" , self.write_buffer.len());
-                        measurement_state.phase = TestPhase::PutReceiveBytesTime;
-                        poll.registry()
-                            .reregister(stream, self.token, Interest::READABLE )?;
-                        return Ok(());
-                       } else {
-                        debug!("PutSendChunks write_all_nb failed");
-                       }
+                        if write_all_nb_loop(&mut self.write_buffer, stream)? {
+                            debug!("PutSendChunks write_all_nb {}", self.write_buffer.len());
+                            measurement_state.phase = TestPhase::PutReceiveBytesTime;
+                            stream.reregister(&poll, self.token, Interest::READABLE)?;
+                            return Ok(());
+                        } else {
+                            debug!("PutSendChunks write_all_nb failed");
+                        }
                     } else {
                         debug!("PutSendChunks last");
                         if write_all_nb_loop(&mut self.write_buffer, stream)? {
                             measurement_state.phase = TestPhase::PutReceiveTime;
-                            poll.registry()
-                                .reregister(stream, self.token, Interest::READABLE)?;
+                            stream.reregister(&poll, self.token, Interest::READABLE)?;
                             return Ok(());
                         }
                     }

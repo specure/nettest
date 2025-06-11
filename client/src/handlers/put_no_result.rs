@@ -1,6 +1,7 @@
 use crate::handlers::BasicHandler;
 use crate::state::{MeasurementState, TestPhase};
 use crate::{read_until, write_all_nb};
+use crate::stream::Stream;
 use anyhow::Result;
 use bytes::{BytesMut};
 use fastrand;
@@ -85,13 +86,12 @@ impl PutNoResultHandler {
 }
 
 impl BasicHandler for PutNoResultHandler {
-    fn on_read(&mut self, stream: &mut TcpStream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+    fn on_read(&mut self, stream: &mut Stream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
         match measurement_state.phase {
             TestPhase::PutNoResultReceiveOk => {
                 if read_until(stream, &mut self.read_buffer, "OK\n")? {
                     measurement_state.phase = TestPhase::PutNoResultSendChunks;
-                    poll.registry()
-                        .reregister(stream, self.token, Interest::WRITABLE)?;
+                    stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                     self.read_buffer.clear();
                     return Ok(());
                 }
@@ -118,8 +118,7 @@ impl BasicHandler for PutNoResultHandler {
                         }
                     }
                     measurement_state.phase = TestPhase::PutSendCommand;
-                    poll.registry()
-                        .reregister(stream, self.token, Interest::WRITABLE)?;
+                    stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                     self.read_buffer.clear();
                 }
             }
@@ -131,15 +130,14 @@ impl BasicHandler for PutNoResultHandler {
         Ok(())
     }
 
-    fn on_write(&mut self, stream: &mut TcpStream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+    fn on_write(&mut self, stream: &mut Stream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
         match measurement_state.phase {
             TestPhase::PutNoResultSendCommand => {
                 self.write_buffer
                     .extend_from_slice(self.get_put_no_result_command().as_bytes());
                 if write_all_nb(&mut self.write_buffer, stream)? {
                     measurement_state.phase = TestPhase::PutNoResultReceiveOk;
-                    poll.registry()
-                        .reregister(stream, self.token, Interest::READABLE)?;
+                    stream.reregister(&poll, self.token, Interest::READABLE)?;
                     return Ok(());
                 }
                 Ok(())
@@ -147,9 +145,12 @@ impl BasicHandler for PutNoResultHandler {
             TestPhase::PutNoResultSendChunks => {
                 if self.test_start_time.is_none() {
                     self.test_start_time = Some(Instant::now());
-                }
+                } 
                 if let Some(start_time) = self.test_start_time {
                     let elapsed = start_time.elapsed();
+                    trace!("PutNoResultSendChunks chunk size: {}", self.chunk_size);
+
+                    trace!("Elapsed: {} ns", elapsed.as_nanos());
                     let mut is_last = elapsed.as_nanos() >= TEST_DURATION_NS as u128;
 
                     let current_pos = self.bytes_sent & (self.chunk_size as u64 - 1);
@@ -164,7 +165,9 @@ impl BasicHandler for PutNoResultHandler {
                         if remaining.is_empty() {
                             // debug!("PutNoResultSendChunks processing chunk");
                             // Add new chunk
-                            is_last = elapsed.as_nanos() >= TEST_DURATION_NS as u128;
+                            // trace!("Elapsed: {} ns", elapsed.as_nanos());
+                            is_last = start_time.elapsed().as_nanos() >= TEST_DURATION_NS as u128;
+
                             if is_last {
                                 return Ok(());
                             } else {
@@ -174,6 +177,7 @@ impl BasicHandler for PutNoResultHandler {
                         // Write from current position
                         match stream.write(remaining) {
                             Ok(written) => {
+                                trace!("Written PUTNORESULT {} bytes", written);
                                 self.bytes_sent += written as u64;
                                 remaining = &remaining[written..];
                             }
@@ -206,8 +210,7 @@ impl BasicHandler for PutNoResultHandler {
                     }
                     debug!("PutNoResultSendChunks finished with kast chunk");
                     measurement_state.phase = TestPhase::PutNoResultReceiveTime;
-                    poll.registry()
-                        .reregister(stream, self.token, Interest::READABLE)?;
+                    stream.reregister(&poll, self.token, Interest::READABLE)?;
                     return Ok(());
                 } else {
                     debug!("No start time set");

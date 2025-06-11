@@ -2,7 +2,11 @@ use std::io::{self, Write};
 
 use crate::handlers::BasicHandler;
 use crate::state::{MeasurementState, TestPhase};
-use crate::utils::{read_until, write_all,write_all_nb, DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE, RMBT_UPGRADE_REQUEST};
+use crate::utils::{
+    read_until, write_all, write_all_nb, DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE,
+    RMBT_UPGRADE_REQUEST,
+};
+use crate::stream::Stream;
 use anyhow::Result;
 use bytes::BytesMut;
 use log::debug;
@@ -25,13 +29,18 @@ impl GreetingHandler {
 }
 
 impl BasicHandler for GreetingHandler {
-    fn on_read(&mut self, stream: &mut TcpStream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+    fn on_read(
+        &mut self,
+        stream: &mut Stream,
+        poll: &Poll,
+        measurement_state: &mut MeasurementState,
+    ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::GreetingReceiveGreeting => {
+                debug!("[on_read] Receiving greeting");
                 if read_until(stream, &mut self.read_buffer, "ACCEPT TOKEN QUIT\n")? {
                     measurement_state.phase = TestPhase::GreetingSendToken;
-                    poll.registry()
-                        .reregister(stream, self.token, Interest::WRITABLE)?;
+                    stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                     self.read_buffer.clear();
                 }
             }
@@ -40,16 +49,24 @@ impl BasicHandler for GreetingHandler {
         Ok(())
     }
 
-    fn on_write(&mut self, stream: &mut TcpStream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+    fn on_write(
+        &mut self,
+        stream: &mut Stream,
+        poll: &Poll,
+        measurement_state: &mut MeasurementState,
+    ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::GreetingSendConnectionType => {
+                debug!("[on_write] Sending connection type command");
                 if self.write_buffer.is_empty() {
-                    self.write_buffer.extend_from_slice(RMBT_UPGRADE_REQUEST.as_bytes());
+                    debug!("[on_write] Writing connection 1 type command");
+                    self.write_buffer
+                        .extend_from_slice(RMBT_UPGRADE_REQUEST.as_bytes());
                 }
                 if write_all_nb(&mut self.write_buffer, stream)? {
-                    poll.registry()
-                    .reregister(stream, self.token, Interest::READABLE)?;
-                measurement_state.phase = TestPhase::GreetingReceiveGreeting;
+                    debug!("[on_write] Writing connection 2 type command");
+                    stream.reregister(&poll, self.token, Interest::READABLE)?;
+                    measurement_state.phase = TestPhase::GreetingReceiveGreeting;
                 }
             }
             TestPhase::GreetingSendToken => {
@@ -59,8 +76,8 @@ impl BasicHandler for GreetingHandler {
                         .extend_from_slice(format!("TOKEN {}\n", self.token.0).as_bytes());
                 }
                 if write_all_nb(&mut self.write_buffer, stream)? {
-                    poll.registry()
-                    .reregister(stream, self.token, Interest::READABLE)?;
+                    debug!("[on_write] Writing token command");
+                    stream.reregister(&poll, self.token, Interest::READABLE)?;
                     measurement_state.phase = TestPhase::GetChunksReceiveAccept;
                 }
             }
@@ -68,5 +85,4 @@ impl BasicHandler for GreetingHandler {
         }
         Ok(())
     }
-
 }

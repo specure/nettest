@@ -1,86 +1,100 @@
+use crate::rustls::RustlsStream;
 use anyhow::Result;
+use log::{debug, trace};
 use mio::{net::TcpStream, Interest, Poll, Token};
-use rustls::{ClientConfig, ClientConnection};
+use openssl::ssl::{Ssl, SslContext, SslMethod, SslStream};
 use std::io::{self, Read, Write};
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::path::Path;
 
+#[derive(Debug)]
 pub enum Stream {
     Tcp(TcpStream),
-    Tls(ClientConnection, TcpStream),
+    Rustls(RustlsStream),
+    OpenSsl(OpenSslStream),
+}
+
+#[derive(Debug)]
+pub struct OpenSslStream {
+    pub stream: SslStream<TcpStream>,
+}
+
+impl OpenSslStream {
+    pub fn new(stream: TcpStream, hostname: &str) -> Result<Self> {
+        let mut ctx = SslContext::builder(SslMethod::tls_client())?;
+        ctx.set_verify(openssl::ssl::SslVerifyMode::NONE);
+        let ssl = Ssl::new(&ctx.build())?;
+        let stream = SslStream::new(ssl, stream)?;
+        Ok(Self { stream })
+    }
 }
 
 impl Stream {
     pub fn new_tcp(addr: SocketAddr) -> Result<Self> {
         let stream = TcpStream::connect(addr)?;
-        Ok(Stream::Tcp(stream))
+        stream.set_nodelay(true)?;
+        Ok(Self::Tcp(stream))
     }
 
-    pub fn new_tls(addr: SocketAddr, config: Arc<ClientConfig>) -> Result<Self> {
+    pub fn new_rustls(addr: SocketAddr, cert_path: Option<&Path>, key_path: Option<&Path>) -> Result<Self> {
         let stream = TcpStream::connect(addr)?;
-        let server_name = "localhost".try_into()?;
-        let conn = ClientConnection::new(config, server_name)?;
-        Ok(Stream::Tls(conn, stream))
+        stream.set_nodelay(true)?;
+        let stream = RustlsStream::new(addr, cert_path, key_path)?;
+        Ok(Self::Rustls(stream))
+    }
+
+    pub fn new_openssl(addr: SocketAddr) -> Result<Self> {
+        let stream = TcpStream::connect(addr)?;
+        stream.set_nodelay(true)?;
+        let stream = OpenSslStream::new(stream, "localhost")?;
+        Ok(Self::OpenSsl(stream))
     }
 
     pub fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             Stream::Tcp(stream) => stream.read(buf),
-            Stream::Tls(conn, stream) => {
-                while conn.wants_read() {
-                    match conn.read_tls(stream) {
-                        Ok(0) => return Ok(0),
-                        Ok(_) => {
-                            if let Err(e) = conn.process_new_packets() {
-                                return Err(io::Error::new(io::ErrorKind::Other, e));
-                            }
-                        }
-                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
-                        Err(e) => return Err(e),
-                    }
-                }
-                conn.reader().read(buf)
-            }
+            Stream::Rustls(stream) => stream.read(buf),
+            Stream::OpenSsl(stream) => stream.stream.read(buf),
         }
     }
 
     pub fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
             Stream::Tcp(stream) => stream.write(buf),
-            Stream::Tls(conn, stream) => {
-                let mut total_written = 0;
-                while total_written < buf.len() {
-                    match conn.writer().write(&buf[total_written..]) {
-                        Ok(n) => {
-                            total_written += n;
-                            while conn.wants_write() {
-                                match conn.write_tls(stream) {
-                                    Ok(_) => {}
-                                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
-                                    Err(e) => return Err(e),
-                                }
-                            }
-                        }
-                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
-                        Err(e) => return Err(e),
-                    }
-                }
-                Ok(total_written)
+            Stream::Rustls(stream) => stream.write(buf),
+            Stream::OpenSsl(stream) => stream.stream.write(buf),
+        }
+    }
+
+    pub fn register(&mut self, poll: &Poll, token: Token, interest: Interest) -> Result<()> {
+        match self {
+            Stream::Tcp(stream) => {
+                poll.registry().register(stream, token, interest)?;
+            }
+            Stream::Rustls(stream) => {
+                poll.registry().register(&mut stream.stream, token, interest)?;
+            }
+            Stream::OpenSsl(stream) => {
+                let tcp_stream = stream.stream.get_mut();
+                poll.registry().register(tcp_stream, token, interest)?;
             }
         }
+        Ok(())
     }
 
-    pub fn register(&self, poll: &Poll, token: Token, interests: Interest) -> io::Result<()> {
+    pub fn reregister(&mut self, poll: &Poll, token: Token, interest: Interest) -> Result<()> {
         match self {
-            Stream::Tcp(stream) => poll.registry().register(stream, token, interests),
-            Stream::Tls(_, stream) => poll.registry().register(stream, token, interests),
+            Stream::Tcp(stream) => {
+                poll.registry().reregister(stream, token, interest)?;
+            }
+            Stream::Rustls(stream) => {
+                poll.registry().reregister(&mut stream.stream, token, interest)?;
+            }
+            Stream::OpenSsl(stream) => {
+                let tcp_stream = stream.stream.get_mut();
+                poll.registry().reregister(tcp_stream, token, interest)?;
+            }
         }
-    }
-
-    pub fn reregister(&self, poll: &Poll, token: Token, interests: Interest) -> io::Result<()> {
-        match self {
-            Stream::Tcp(stream) => poll.registry().reregister(stream, token, interests),
-            Stream::Tls(_, stream) => poll.registry().reregister(stream, token, interests),
-        }
+        Ok(())
     }
 } 

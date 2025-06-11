@@ -1,6 +1,7 @@
 use crate::handlers::BasicHandler;
 use crate::state::{MeasurementState, TestPhase};
 use crate::{read_until, write_all_nb};
+use crate::stream::Stream;
 use anyhow::Result;
 use bytes::{Buf, BytesMut};
 use log::debug;
@@ -60,7 +61,7 @@ impl PingHandler {
 impl BasicHandler for PingHandler {
     fn on_read(
         &mut self,
-        stream: &mut TcpStream,
+        stream: &mut Stream,
         poll: &Poll,
         measurement_state: &mut MeasurementState,
     ) -> Result<()> {
@@ -70,8 +71,7 @@ impl BasicHandler for PingHandler {
                 match stream.read(&mut buf1) {
                     Ok(n) if n > 0 => {
                         measurement_state.phase = TestPhase::PingSendOk;
-                        poll.registry()
-                            .reregister(stream, self.token, Interest::WRITABLE)?;
+                        stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                     }
                     Ok(0) => {
                         debug!("Connection closed by peer");
@@ -111,11 +111,7 @@ impl BasicHandler for PingHandler {
                                     && pings_sent < MAX_PINGS as usize
                                 {
                                     measurement_state.phase = TestPhase::PingSendPing;
-                                    poll.registry().reregister(
-                                        stream,
-                                        self.token,
-                                        Interest::WRITABLE,
-                                    )?;
+                                    stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                                     self.read_buffer.clear();
                                 } else {
                                     // Calculate final median latency
@@ -125,11 +121,7 @@ impl BasicHandler for PingHandler {
                                         measurement_state.ping_median = Some(median);
                                     }
                                     measurement_state.phase = TestPhase::GetTimeSendCommand;
-                                    poll.registry().reregister(
-                                        stream,
-                                        self.token,
-                                        Interest::WRITABLE,
-                                    )?;
+                                    stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                                     self.read_buffer.clear();
                                 }
                             }
@@ -144,7 +136,7 @@ impl BasicHandler for PingHandler {
 
     fn on_write(
         &mut self,
-        stream: &mut TcpStream,
+        stream: &mut Stream,
         poll: &Poll,
         measurement_state: &mut MeasurementState,
     ) -> Result<()> {
@@ -159,8 +151,7 @@ impl BasicHandler for PingHandler {
                         self.test_start_time = Some(Instant::now());
                     }
                     measurement_state.phase = TestPhase::PingReceivePong;
-                    poll.registry()
-                        .reregister(stream, self.token, Interest::READABLE)?;
+                    stream.reregister(&poll, self.token, Interest::READABLE)?;
                     self.write_buffer.clear();
                 }
             }
@@ -172,8 +163,7 @@ impl BasicHandler for PingHandler {
                 }
                 if write_all_nb(&mut self.write_buffer, stream)? {
                     measurement_state.phase = TestPhase::PingReceiveTime;
-                    poll.registry()
-                        .reregister(stream, self.token, Interest::READABLE)?;
+                    stream.reregister(&poll, self.token, Interest::READABLE)?;
                     self.write_buffer.clear();
                 }
             }
