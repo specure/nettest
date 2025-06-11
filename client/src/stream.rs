@@ -45,7 +45,31 @@ impl OpenSslStream {
             Interest::READABLE | Interest::WRITABLE,
         )?;
 
-        // Выполняем handshake с обработкой WouldBlock
+        // Ждем, пока TCP соединение будет установлено
+        loop {
+            poll.poll(&mut events, None)?;
+            let mut connection_ready = false;
+            
+            for event in events.iter() {
+                if event.is_writable() {
+                    // Проверяем, что соединение действительно установлено
+                    if let Err(e) = stream.get_ref().peer_addr() {
+                        if e.kind() == io::ErrorKind::NotConnected {
+                            debug!("TCP connection not ready yet, waiting...");
+                            continue;
+                        }
+                    }
+                    connection_ready = true;
+                    break;
+                }
+            }
+            
+            if connection_ready {
+                break;
+            }
+        }
+
+        // Теперь можно начинать TLS handshake
         loop {
             match stream.connect() {
                 Ok(_) => {
@@ -92,7 +116,7 @@ impl Stream {
     pub fn new_openssl(addr: SocketAddr) -> Result<Self> {
         let stream = TcpStream::connect(addr)?;
         stream.set_nodelay(true)?;
-        let stream = OpenSslStream::new(stream, "localhost")?;
+        let stream = OpenSslStream::new(stream, "specure.com")?;
         Ok(Self::OpenSsl(stream))
     }
 
