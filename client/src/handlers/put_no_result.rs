@@ -10,7 +10,7 @@ use mio::{net::TcpStream, Interest, Poll, Token};
 use std::io::{self, Write};
 use std::time::{Instant};
 
-const TEST_DURATION_NS: u64 = 7_000_000_000; // 3 seconds
+const TEST_DURATION_NS: u64 = 2_000_000_000; // 3 seconds
 const MAX_CHUNK_SIZE: u64 = 4194304; // 2MB
 
 pub struct PutNoResultHandler {

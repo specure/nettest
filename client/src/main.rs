@@ -34,7 +34,7 @@ async fn async_main() -> anyhow::Result<()> {
     info!("Connected to server at {}", addr);
 
     // Используем небезопасную конфигурацию дл я тестирования
-    let mut state = TestState::new(addr, true, None, None)?;
+    let mut state = TestState::new(addr, false, None, None)?;
     let measurement_state = state.run_measurement()?;
 
     info!("Measurement completed");

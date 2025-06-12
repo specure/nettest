@@ -134,26 +134,26 @@ impl TestState {
         self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
 
 
-        measurement_state = self.process_phase(measurement_state, &mut handler_factory, TestPhase::GetChunksCompleted)?;
+        // measurement_state = self.process_phase(measurement_state, &mut handler_factory, TestPhase::GetChunksCompleted)?;
 
-        info!("Get chunks completed");
+        // info!("Get chunks completed");
 
-        measurement_state.phase = TestPhase::PingSendPing;
+        // measurement_state.phase = TestPhase::PingSendPing;
 
-        self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
-
-
-        measurement_state = self.process_phase(measurement_state, &mut handler_factory, TestPhase::PingCompleted)?;
+        // self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
 
 
-        info!("Ping completed");
-
-        measurement_state.phase = TestPhase::GetTimeSendCommand;
-
-        measurement_state = self.process_phase(measurement_state, &mut handler_factory, TestPhase::GetTimeCompleted)?;
+        // measurement_state = self.process_phase(measurement_state, &mut handler_factory, TestPhase::PingCompleted)?;
 
 
-        info!("Get time completed");
+        // info!("Ping completed");
+
+        // measurement_state.phase = TestPhase::GetTimeSendCommand;
+
+        // measurement_state = self.process_phase(measurement_state, &mut handler_factory, TestPhase::GetTimeCompleted)?;
+
+
+        // info!("Get time completed");
 
         measurement_state.phase = TestPhase::PutNoResultSendCommand;
 

@@ -104,7 +104,7 @@ pub fn write_all_nb_loop(buf: &mut BytesMut, stream: &mut Stream) -> io::Result<
                 buf.advance(n);
             }
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                return Ok(false); // не можем продолжать прямо сейчас
+                return Ok(false); 
             }
             Err(e) => return Err(e),
         }
