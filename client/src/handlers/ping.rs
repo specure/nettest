@@ -156,7 +156,6 @@ impl BasicHandler for PingHandler {
                 }
             }
             TestPhase::PingSendOk => {
-                debug!("PingSendOk");
                 if self.write_buffer.is_empty() {
                     self.write_buffer
                         .extend_from_slice(self.get_ok_command().as_bytes());

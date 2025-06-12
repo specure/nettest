@@ -29,7 +29,7 @@ async fn async_main() -> anyhow::Result<()> {
     info!("Connecting to server...");
 
     // let addr = "10.35.2.151:8082".parse::<SocketAddr>()?;
-    let addr = "127.0.0.1:8080".parse::<SocketAddr>()?;
+    let addr = "127.0.0.1:8082".parse::<SocketAddr>()?;
 
     info!("Connected to server at {}", addr);
 
@@ -43,10 +43,10 @@ async fn async_main() -> anyhow::Result<()> {
     info!("Ping median mS: {:?}", measurement_state.ping_median.unwrap() / 1_000_000);
     info!("Upload bytes: {:?}", measurement_state.upload_bytes);
     info!("Upload time: {:?}", measurement_state.upload_time);
-    info!("Upload speed GBit/s: {}", (measurement_state.upload_speed.unwrap() * 8.0 / (1024.0 * 1024.0 * 1024.0)).round());
+    info!("Upload speed gbps: {:.2}", measurement_state.upload_speed.unwrap() * 8.0 / (1024.0 * 1024.0 * 1024.0));
     info!("Download time: {:?}", measurement_state.download_time);
     info!("Download bytes: {:?}", measurement_state.download_bytes);
-    info!("Download speed GBit/s: {}", (measurement_state.download_speed.unwrap() * 8.0 / (1024.0 * 1024.0 * 1024.0)).round());
+    info!("Download speed gbps: {:.2}", measurement_state.download_speed.unwrap() * 8.0 / (1024.0 * 1024.0 * 1024.0));
 
     
     info!("Test completed");

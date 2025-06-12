@@ -69,7 +69,6 @@ impl BasicHandler for PutHandler {
     ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::PutReceiveOk => {
-                debug!("PutReceiveOk");
                 if read_until(stream, &mut self.read_buffer, "OK\n")? {
                     measurement_state.phase = TestPhase::PutSendChunks;
                     self.read_buffer.clear();
@@ -77,9 +76,6 @@ impl BasicHandler for PutHandler {
                 }
             }
             TestPhase::PutReceiveBytesTime => {
-                debug!("PutReceiveBytesTime");
-                debug!("Read {} bytes", String::from_utf8_lossy(&self.read_buffer));
-
                 if read_until(stream, &mut self.read_buffer, "\n")? {
                     if let Some(time_ns) = String::from_utf8_lossy(&self.read_buffer)
                         .split_whitespace()
@@ -91,7 +87,6 @@ impl BasicHandler for PutHandler {
                             .nth(3)
                             .and_then(|s| s.parse::<u64>().ok())
                         {
-                            debug!("Time: {} ns, Bytes: {}", time_ns, bytes);
                             self.responses.push((time_ns, bytes));
                             // self.phase = TestPhase::PutSendChunks;
                             self.read_buffer.clear();
@@ -103,17 +98,14 @@ impl BasicHandler for PutHandler {
                 }
             }
             TestPhase::PutReceiveTime => {
-                debug!("PutReceiveTime");
                 if read_until(stream, &mut self.read_buffer, "\n")? {
                     let line = String::from_utf8_lossy(&self.read_buffer);
 
-                    debug!("Received TIME response");
                     if let Some(time_ns) = line
                         .split_whitespace()
                         .nth(1)
                         .and_then(|s| s.parse::<u64>().ok())
                     {
-                        debug!("Final Time: {} ns", time_ns);
                         measurement_state
                             .upload_results_for_graph
                             .push((self.bytes_sent, time_ns));

@@ -37,12 +37,15 @@ impl BasicHandler for GreetingHandler {
     ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::GreetingReceiveGreeting => {
-                debug!("[on_read] Receiving greeting");
+                debug!("[on_read] Receiving greeting {}", String::from_utf8_lossy(&self.read_buffer));
                 if read_until(stream, &mut self.read_buffer, "ACCEPT TOKEN QUIT\n")? {
                     measurement_state.phase = TestPhase::GreetingSendToken;
                     stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                     self.read_buffer.clear();
                 }
+                // else {
+                //     self.on_read(stream, poll, measurement_state)?;
+                // }
             }
             _ => {}
         }
@@ -79,7 +82,9 @@ impl BasicHandler for GreetingHandler {
                     debug!("[on_write] Writing token command");
                     stream.reregister(&poll, self.token, Interest::READABLE)?;
                     measurement_state.phase = TestPhase::GetChunksReceiveAccept;
+                    return Ok(());
                 }
+                stream.reregister(&poll, self.token, Interest::WRITABLE)?;
             }
             _ => {}
         }

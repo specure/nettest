@@ -21,27 +21,21 @@ use crate::stream::Stream;
 /// * `Err` if an error occurred during reading
 pub fn read_until(stream: &mut Stream, buffer: &mut BytesMut, until: &str) -> io::Result<bool> {
     let mut temp_buf = vec![0u8; 8096];
-    debug!("[read_until] Reading from stream");
 
     match stream.read(&mut temp_buf) {
         Ok(n) if n > 0 => {
             buffer.extend_from_slice(&temp_buf[..n]);
             let buffer_str = String::from_utf8_lossy(buffer);
-            debug!("[read_until] Received data: {}", buffer_str);
-            
             if buffer_str.contains(until) {
-                debug!("[read_until] Found target string: {}", until);
                 Ok(true)
             } else {
                 Ok(false)
             }
         }
         Ok(_) => {
-            debug!("[read_until] Read 0 bytes");
             Ok(false)
         }
         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-            debug!("[read_until] WouldBlock");
             Ok(false)
         }
         Err(e) => Err(e),
@@ -77,11 +71,9 @@ pub fn write_all(stream: &mut TcpStream, buffer: &mut BytesMut) -> io::Result<bo
         }
         Ok(n) => {
             *buffer = BytesMut::from(&buffer[n..]);
-            debug!("[write_all] Wrote {} bytes, {} remaining", n, buffer.len());
             Ok(buffer.is_empty())
         }
         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-            debug!("[write_all] WouldBlock");
             Ok(false)
         }
         Err(e) => Err(e),
@@ -91,10 +83,8 @@ pub fn write_all(stream: &mut TcpStream, buffer: &mut BytesMut) -> io::Result<bo
 
 
 pub fn write_all_nb(buf: &mut BytesMut, stream: &mut Stream) -> io::Result<bool> {
-    debug!("[write_all_nb] Writing {} bytes", buf.len());
     match stream.write(&buf) {
         Ok(n) => {
-            debug!("[write_all_nb] Wrote {} bytes", n);
             buf.advance(n);
             Ok(buf.is_empty())
         }

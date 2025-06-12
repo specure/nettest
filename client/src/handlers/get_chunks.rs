@@ -84,8 +84,9 @@ impl BasicHandler for GetChunksHandler {
                     measurement_state.phase = TestPhase::GetChunksSendChunksCommand;
                     stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                     self.read_buffer.clear();
+                    return Ok(());
                 }
-                return self.on_read(stream, poll, measurement_state);
+                stream.reregister(&poll, self.token, Interest::READABLE)?;
             }
             TestPhase::GetChunksReceiveChunk => {
                 let mut buf: Vec<u8> = vec![0u8; self.chunk_size as usize];
@@ -129,6 +130,7 @@ impl BasicHandler for GetChunksHandler {
                 }
             }
             TestPhase::GetChunksReceiveTime => {
+                debug!("Reading time");
                 if read_until(stream, &mut self.time_buffer, ACCEPT_GETCHUNKS_STRING)? {
                     let buffer_str = String::from_utf8_lossy(&self.time_buffer);
                     if let Some(time_ns) = self.parse_time_response(&buffer_str) {
@@ -173,6 +175,7 @@ impl BasicHandler for GetChunksHandler {
                 }
             }
             TestPhase::GetChunksSendOk => {
+                debug!("GetChunksSendOk");
                 if self.write_buffer.is_empty() {
                     self.write_buffer.extend_from_slice(
                         String::from_utf8_lossy(OK_COMMAND).to_string().as_bytes(),

@@ -2,7 +2,7 @@ use crate::rustls::RustlsStream;
 use anyhow::Result;
 use log::{debug, trace};
 use mio::{net::TcpStream, Interest, Poll, Token};
-use openssl::ssl::{Ssl, SslContext, SslMethod, SslStream};
+use openssl::ssl::{Ssl, SslContext, SslMethod, SslMode, SslOptions, SslStream};
 use std::io::{self, Read, Write};
 use std::net::SocketAddr;
 use std::path::Path;
@@ -24,12 +24,20 @@ impl OpenSslStream {
         debug!("Creating SSL context");
         let mut ctx = SslContext::builder(SslMethod::tls_client())?;
         debug!("Setting verify mode to NONE");
+
         ctx.set_verify(openssl::ssl::SslVerifyMode::NONE);
+        ctx.set_mode(SslMode::RELEASE_BUFFERS);
+        ctx.set_options(SslOptions::NO_TICKET);
+        ctx.set_options(SslOptions::NO_COMPRESSION);
+        ctx.set_ciphersuites("TLS_AES_128_GCM_SHA256")?;
+
         let mut ssl = Ssl::new(&ctx.build())?;
         ssl.set_hostname(hostname)?;
         debug!("Creating SSL stream");
         let mut stream = SslStream::new(ssl, stream)?;
         debug!("SSL stream created");
+
+       
 
         // Устанавливаем неблокирующий режим
         stream.get_mut().set_nodelay(true)?;
@@ -124,16 +132,19 @@ impl Stream {
         match self {
             Stream::Tcp(stream) => stream.read(buf),
             Stream::Rustls(stream) => stream.read(buf),
-            Stream::OpenSsl(stream) => match stream.stream.read(buf) {
+            Stream::OpenSsl(stream) => match stream.stream.ssl_read(buf) {
                 Ok(n) => Ok(n),
                 Err(e) => {
-                    if e.kind() == io::ErrorKind::WouldBlock {
-                        Err(io::Error::new(
-                            io::ErrorKind::WouldBlock,
-                            "Resource temporarily unavailable",
-                        ))
+                    // Проверяем на вложенную ошибку WouldBlock
+                    if let Some(io_error) = e.io_error() {
+                        if io_error.kind() == io::ErrorKind::WouldBlock {
+                            Err(io::Error::new(io::ErrorKind::WouldBlock, "SSL write would block"))
+                        } else {
+                            Err(io::Error::new(io::ErrorKind::Other, e.to_string()))
+                        }
                     } else {
-                        Err(e)
+                        // Если это не ошибка ввода-вывода, преобразуем её в io::Error
+                        Err(io::Error::new(io::ErrorKind::Other, e.to_string()))
                     }
                 }
             },
@@ -144,19 +155,24 @@ impl Stream {
         match self {
             Stream::Tcp(stream) => stream.write(buf),
             Stream::Rustls(stream) => stream.write(buf),
-            Stream::OpenSsl(stream) => match stream.stream.write(buf) {
-                Ok(n) => Ok(n),
-                Err(e) => {
-                    if e.kind() == io::ErrorKind::WouldBlock {
-                        Err(io::Error::new(
-                            io::ErrorKind::WouldBlock,
-                            "Resource temporarily unavailable",
-                        ))
-                    } else {
-                        Err(e)
+            Stream::OpenSsl(stream) => {
+                match stream.stream.ssl_write(buf) {
+                    Ok(n) => Ok(n),
+                    Err(e) => {
+                        // Проверяем на вложенную ошибку WouldBlock
+                        if let Some(io_error) = e.io_error() {
+                            if io_error.kind() == io::ErrorKind::WouldBlock {
+                                Err(io::Error::new(io::ErrorKind::WouldBlock, "SSL write would block"))
+                            } else {
+                                Err(io::Error::new(io::ErrorKind::Other, e.to_string()))
+                            }
+                        } else {
+                            // Если это не ошибка ввода-вывода, преобразуем её в io::Error
+                            Err(io::Error::new(io::ErrorKind::Other, e.to_string()))
+                        }
                     }
                 }
-            },
+            }
         }
     }
 
