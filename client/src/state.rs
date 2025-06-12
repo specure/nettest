@@ -1,10 +1,12 @@
 use anyhow::Result;
-use log::{error};
-use mio::{net::TcpStream, Events, Interest, Poll, Token};
+use bytes::BytesMut;
+use log::{error, info};
+use mio::{Events, Interest, Poll, Token};
 use std::{
     net::SocketAddr, path::Path, time::Duration
 };
 
+use crate::DEFAULT_READ_BUFFER_SIZE;
 use crate::{handlers::handler_factory::HandlerFactory};
 use crate::stream::Stream;
 
@@ -14,29 +16,42 @@ pub enum TestPhase {
     GreetingSendConnectionType,
     GreetingSendToken,
     GreetingReceiveGreeting,
-    GetChunksReceiveAccept,
+    GreetingReceiveResponse,
+    GreetingCompleted,
+
     GetChunksSendChunksCommand,
     GetChunksReceiveChunk,
     GetChunksSendOk,
     GetChunksReceiveTime,
+    GetChunksCompleted,
+
+
     PingSendPing,
     PingReceivePong,
     PingSendOk,
     PingReceiveTime,
+    PingCompleted,
+
+
+    GetTimeSendCommand,
+    GetTimeReceiveChunk,
+    GetTimeSendOk,
+    GetTimeReceiveTime,
+    GetTimeCompleted,
+
+
     PutNoResultSendCommand,
     PutNoResultReceiveOk,
     PutNoResultSendChunks,
     PutNoResultReceiveTime,
+    PutNoResultCompleted,
+
     PutSendCommand,
     PutReceiveOk,
     PutSendChunks,
     PutReceiveBytesTime,
     PutReceiveTime,
-    GetTimeSendCommand,
-    GetTimeReceiveChunk,
-    GetTimeSendOk,
-    GetTimeReceiveTime,
-    End,
+    PutCompleted
 }
 
 pub struct TestState {
@@ -48,6 +63,7 @@ pub struct TestState {
 
 pub struct MeasurementState {
    pub phase: TestPhase,
+   pub buffer: BytesMut,
     pub upload_results_for_graph: Vec<(u64, u64)>,
     pub upload_bytes: Option<u64>,
     pub upload_time: Option<u64>,
@@ -96,6 +112,7 @@ impl TestState {
         let mut handler_factory = HandlerFactory::new(self.token)?;
 
         let mut measurement_state = MeasurementState {
+            buffer: BytesMut::with_capacity(DEFAULT_READ_BUFFER_SIZE),
             phase: TestPhase::GreetingSendConnectionType,
             upload_results_for_graph: Vec::new(),
             upload_bytes: None,
@@ -108,9 +125,61 @@ impl TestState {
             ping_median: None,
         };
 
-        while measurement_state.phase != TestPhase::End {
+        measurement_state = self.process_phase(measurement_state, &mut handler_factory, TestPhase::GreetingCompleted)?;
+
+        info!("Greeting completed");
+
+        measurement_state.phase = TestPhase::GetChunksSendChunksCommand;
+
+        self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
+
+
+        measurement_state = self.process_phase(measurement_state, &mut handler_factory, TestPhase::GetChunksCompleted)?;
+
+        info!("Get chunks completed");
+
+        measurement_state.phase = TestPhase::PingSendPing;
+
+        self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
+
+
+        measurement_state = self.process_phase(measurement_state, &mut handler_factory, TestPhase::PingCompleted)?;
+
+
+        info!("Ping completed");
+
+        measurement_state.phase = TestPhase::GetTimeSendCommand;
+
+        measurement_state = self.process_phase(measurement_state, &mut handler_factory, TestPhase::GetTimeCompleted)?;
+
+
+        info!("Get time completed");
+
+        measurement_state.phase = TestPhase::PutNoResultSendCommand;
+
+        self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
+
+        measurement_state = self.process_phase(measurement_state, &mut handler_factory, TestPhase::PutNoResultCompleted)?;
+
+        info!("Put no result completed");
+
+        measurement_state.phase = TestPhase::PutSendCommand;
+
+        self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
+
+        measurement_state = self.process_phase(measurement_state, &mut handler_factory, TestPhase::PutCompleted)?;
+        
+
+        Ok(measurement_state)
+
+
+
+    }
+
+    fn process_phase(&mut self, mut measurement_state: MeasurementState, handler_factory: &mut HandlerFactory, phase: TestPhase) -> Result<MeasurementState> {
+        while measurement_state.phase != phase {
             self.poll
-                .poll(&mut self.events, Some(Duration::from_secs(120)))?;
+                .poll(&mut self.events, Some(Duration::from_secs(20)))?;
 
             // Process events in the current poll iteration
             for event in &self.events {
@@ -139,3 +208,4 @@ impl TestState {
         Ok(measurement_state)
     }
 }
+

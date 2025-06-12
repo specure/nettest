@@ -55,63 +55,6 @@ impl RustlsStream {
         
         let mut conn = ClientConnection::new(Arc::new(config), server_name)?;
 
-        // let mut poll = Poll::new()?;
-        // let mut events = Events::with_capacity(8);
-        
-        // // Register for both read and write events
-        // poll.registry().register(&mut stream, Token(0), Interest::READABLE.add(Interest::WRITABLE))?;
-
-        // let mut handshake_done = false;
-
-        // while !handshake_done {
-        //     debug!("Polling for events");
-        //     poll.poll(&mut events, None)?;
-
-        //     for event in events.iter() {
-        //         if event.is_writable() || event.is_readable() {
-        //             // Read any pending TLS data
-        //             match conn.read_tls(&mut stream) {
-        //                 Ok(0) => {
-        //                     trace!("TLS connection closed during handshake");
-        //                     return Err(Error::msg("TLS connection closed during handshake"));
-        //                 }
-        //                 Ok(_) => {
-        //                     // Process any new TLS messages
-        //                     if let Err(e) = conn.process_new_packets() {
-        //                         trace!("Error processing new packets during handshake: {:?}", e);
-        //                         return Err(Error::from(e));
-        //                     }
-        //                 }
-        //                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-        //                     continue;
-        //                 }
-        //                 Err(e) => {
-        //                     trace!("TLS read error during handshake: {:?}", e);
-        //                     return Err(Error::from(e));
-        //                 }
-        //             }
-
-        //             // Write any pending TLS data
-        //             while conn.wants_write() {
-        //                 if let Err(e) = conn.write_tls(&mut stream) {
-        //                     if e.kind() == io::ErrorKind::WouldBlock {
-        //                         break;
-        //                     }
-        //                     trace!("TLS write error during handshake: {:?}", e);
-        //                     return Err(Error::from(e));
-        //                 }
-        //             }
-
-        //             // Check if handshake is complete
-        //             if !conn.is_handshaking() {
-        //                 debug!("Handshake complete");
-        //                 handshake_done = true;
-        //                 break;
-        //             }
-        //         }
-        //     }
-        // }
-        // conn.set_buffer_limit(Some(1024 * MAX_CHUNK_SIZE as usize));
         conn.set_buffer_limit(Some(1024 * 1024 * 4));
 
 

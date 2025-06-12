@@ -109,7 +109,7 @@ impl BasicHandler for PutHandler {
                         measurement_state
                             .upload_results_for_graph
                             .push((self.bytes_sent, time_ns));
-                        measurement_state.phase = TestPhase::End;
+                        measurement_state.phase = TestPhase::PutCompleted;
                         stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                     }
                     self.read_buffer.clear();

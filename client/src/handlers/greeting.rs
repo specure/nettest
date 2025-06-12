@@ -2,11 +2,11 @@ use std::io::{self, Write};
 
 use crate::handlers::BasicHandler;
 use crate::state::{MeasurementState, TestPhase};
-use crate::utils::{
-    read_until, write_all, write_all_nb, DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE,
-    RMBT_UPGRADE_REQUEST,
-};
 use crate::stream::Stream;
+use crate::utils::{
+    read_until, write_all, write_all_nb, ACCEPT_GETCHUNKS_STRING, DEFAULT_READ_BUFFER_SIZE,
+    DEFAULT_WRITE_BUFFER_SIZE, RMBT_UPGRADE_REQUEST,
+};
 use anyhow::Result;
 use bytes::BytesMut;
 use log::debug;
@@ -37,18 +37,45 @@ impl BasicHandler for GreetingHandler {
     ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::GreetingReceiveGreeting => {
-                debug!("[on_read] Receiving greeting {}", String::from_utf8_lossy(&self.read_buffer));
-                if read_until(stream, &mut self.read_buffer, "ACCEPT TOKEN QUIT\n")? {
-                    measurement_state.phase = TestPhase::GreetingSendToken;
-                    stream.reregister(&poll, self.token, Interest::WRITABLE)?;
-                    self.read_buffer.clear();
+                debug!(
+                    "[on_read] Receiving greeting {}",
+                    String::from_utf8_lossy(&self.read_buffer)
+                );
+                let mut a = read_until(stream, &mut self.read_buffer, "ACCEPT TOKEN QUIT\n")?;
+                while !a {
+                    a = read_until(stream, &mut self.read_buffer, "ACCEPT TOKEN QUIT\n")?;
+                    if a {
+                        break;
+                    }
                 }
-                // else {
-                //     self.on_read(stream, poll, measurement_state)?;
-                // }
+                measurement_state.phase = TestPhase::GreetingSendToken;
+                stream.reregister(&poll, self.token, Interest::WRITABLE)?;
+                self.read_buffer.clear();
             }
             _ => {}
         }
+        match measurement_state.phase {
+            TestPhase::GreetingReceiveResponse => {
+                debug!(
+                    "[on_read] Receiving response {}",
+                    String::from_utf8_lossy(&self.read_buffer)
+                );
+                let mut a = read_until(stream, &mut self.read_buffer, ACCEPT_GETCHUNKS_STRING)?;
+                while !a {
+                    a = read_until(stream, &mut self.read_buffer, ACCEPT_GETCHUNKS_STRING)?;
+                    if a {
+                        break;
+                    }
+                }
+                measurement_state.phase = TestPhase::GreetingCompleted;
+                stream.reregister(&poll, self.token, Interest::READABLE)?;
+                //remove ok\n from buffer
+                self.read_buffer.clear();
+                return Ok(());
+            }
+            _ => {}
+        }
+
         Ok(())
     }
 
@@ -81,7 +108,7 @@ impl BasicHandler for GreetingHandler {
                 if write_all_nb(&mut self.write_buffer, stream)? {
                     debug!("[on_write] Writing token command");
                     stream.reregister(&poll, self.token, Interest::READABLE)?;
-                    measurement_state.phase = TestPhase::GetChunksReceiveAccept;
+                    measurement_state.phase = TestPhase::GreetingReceiveResponse;
                     return Ok(());
                 }
                 stream.reregister(&poll, self.token, Interest::WRITABLE)?;

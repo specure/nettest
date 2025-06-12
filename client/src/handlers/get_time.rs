@@ -120,7 +120,7 @@ impl BasicHandler for GetTimeHandler {
                         measurement_state.download_bytes = Some(self.bytes_received);
                         measurement_state.download_speed =
                             Some(self.calculate_download_speed(time_ns));
-                        measurement_state.phase = TestPhase::PutNoResultSendCommand;
+                        measurement_state.phase = TestPhase::GetTimeCompleted;
                         stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                     }
                     self.read_buffer.clear();

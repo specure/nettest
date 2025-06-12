@@ -1,7 +1,7 @@
 use crate::handlers::BasicHandler;
 use crate::state::{MeasurementState, TestPhase};
-use crate::{read_until, write_all_nb};
 use crate::stream::Stream;
+use crate::{read_until, write_all_nb};
 use anyhow::Result;
 use bytes::{Buf, BytesMut};
 use log::debug;
@@ -120,7 +120,7 @@ impl BasicHandler for PingHandler {
                                         self.time_result = Some(median);
                                         measurement_state.ping_median = Some(median);
                                     }
-                                    measurement_state.phase = TestPhase::GetTimeSendCommand;
+                                    measurement_state.phase = TestPhase::PingCompleted;
                                     stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                                     self.read_buffer.clear();
                                 }

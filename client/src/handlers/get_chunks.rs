@@ -44,17 +44,17 @@ impl GetChunksHandler {
     fn increase_chunk_size(&mut self) {
         if self.total_chunks < MAX_CHUNKS_BEFORE_SIZE_INCREASE {
             self.total_chunks *= 2;
-            debug!("Increased total chunks to {}", self.total_chunks);
+            trace!("Increased total chunks to {}", self.total_chunks);
         } else {
             self.chunk_size = (self.chunk_size * 2).min(MAX_CHUNK_SIZE);
-            debug!("Increased chunk size to {}", self.chunk_size);
+            trace!("Increased chunk size to {}", self.chunk_size);
         }
     }
 
     fn reset_chunk_counters(&mut self) {
         self.chunks_received.store(0, Ordering::SeqCst);
         self.unprocessed_bytes.store(0, Ordering::SeqCst);
-        debug!("Reset chunk counters");
+        trace!("Reset chunk counters");
     }
 
     fn parse_time_response(&self, buffer_str: &str) -> Option<u64> {
@@ -77,20 +77,9 @@ impl BasicHandler for GetChunksHandler {
         measurement_state: &mut MeasurementState,
     ) -> Result<()> {
         match measurement_state.phase {
-            TestPhase::GetChunksReceiveAccept => {
-                debug!("Reading accept");
-                if read_until(stream, &mut self.read_buffer, ACCEPT_GETCHUNKS_STRING)? {
-                    debug!("Accept received");
-                    measurement_state.phase = TestPhase::GetChunksSendChunksCommand;
-                    stream.reregister(&poll, self.token, Interest::WRITABLE)?;
-                    self.read_buffer.clear();
-                    return Ok(());
-                }
-                stream.reregister(&poll, self.token, Interest::READABLE)?;
-            }
             TestPhase::GetChunksReceiveChunk => {
                 let mut buf: Vec<u8> = vec![0u8; self.chunk_size as usize];
-                debug!("Reading chunk of size {}", self.chunk_size);
+                trace!("Reading chunk of size {}", self.chunk_size);
                 loop {
                     match stream.read(&mut buf) {
                         Ok(n) if n > 0 => {
@@ -107,7 +96,7 @@ impl BasicHandler for GetChunksHandler {
                             if current_chunks + complete_chunks >= self.total_chunks {
                                 let is_last_chunk = buf[n - 1] == 0xFF;
                                 if is_last_chunk {
-                                    debug!(
+                                    trace!(
                                         "Received last chunk {}",
                                         current_chunks + complete_chunks
                                     );
@@ -122,7 +111,7 @@ impl BasicHandler for GetChunksHandler {
                             return Ok(());
                         }
                         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                            debug!("WouldBlock GetChunksReceiveChunk");
+                            trace!("WouldBlock GetChunksReceiveChunk");
                             return Ok(());
                         }
                         Err(e) => return Err(e.into()),
@@ -130,7 +119,6 @@ impl BasicHandler for GetChunksHandler {
                 }
             }
             TestPhase::GetChunksReceiveTime => {
-                debug!("Reading time");
                 if read_until(stream, &mut self.time_buffer, ACCEPT_GETCHUNKS_STRING)? {
                     let buffer_str = String::from_utf8_lossy(&self.time_buffer);
                     if let Some(time_ns) = self.parse_time_response(&buffer_str) {
@@ -142,7 +130,7 @@ impl BasicHandler for GetChunksHandler {
                             stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                         } else {
                             measurement_state.chunk_size = self.chunk_size;
-                            measurement_state.phase = TestPhase::PingSendPing;
+                            measurement_state.phase = TestPhase::GetChunksCompleted;
                             stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                         }
                     }
@@ -175,7 +163,7 @@ impl BasicHandler for GetChunksHandler {
                 }
             }
             TestPhase::GetChunksSendOk => {
-                debug!("GetChunksSendOk");
+                trace!("GetChunksSendOk");
                 if self.write_buffer.is_empty() {
                     self.write_buffer.extend_from_slice(
                         String::from_utf8_lossy(OK_COMMAND).to_string().as_bytes(),

@@ -1,5 +1,5 @@
 /// Default buffer size for read operations
-pub const DEFAULT_READ_BUFFER_SIZE: usize = 1024;
+pub const DEFAULT_READ_BUFFER_SIZE: usize = 1024 * 1024;
 
 /// Default buffer size for write operations
 pub const DEFAULT_WRITE_BUFFER_SIZE: usize = 1024;

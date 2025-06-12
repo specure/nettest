@@ -116,7 +116,7 @@ impl BasicHandler for PutNoResultHandler {
                             measurement_state.upload_bytes = Some(self.bytes_sent);
                         }
                     }
-                    measurement_state.phase = TestPhase::PutSendCommand;
+                    measurement_state.phase = TestPhase::PutNoResultCompleted;
                     stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                     self.read_buffer.clear();
                 }
