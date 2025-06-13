@@ -58,7 +58,7 @@ async fn async_main() -> anyhow::Result<()> {
     info!("Thread count: {}", thread_count);
     info!("Connecting to server...");
 
-    let addr = "10.35.2.151:8082".parse::<SocketAddr>()?;
+    let addr = "127.0.0.1:8082".parse::<SocketAddr>()?;
 
     info!("Connected to server at {}", addr);
 

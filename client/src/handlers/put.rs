@@ -31,7 +31,7 @@ pub struct PutHandler {
     responses: Vec<(u64, u64)>, // (time_ns, bytes)
     read_times: Vec<Duration>,
     write_times: Vec<Duration>,
-    is_last: bool,
+    is_last_chunk: bool,
     send_data: bool,
 }
 
@@ -63,7 +63,7 @@ impl PutHandler {
             read_times: Vec::new(),
             write_times: Vec::new(),
             read_buffer_temp_accumulated: vec![0u8; 1024 * 1024],
-            is_last: false,
+            is_last_chunk: false,
             send_data: false,
         })
     }
@@ -143,21 +143,21 @@ impl BasicHandler for PutHandler {
                             debug!("Read  PutSendChunks {} bytes from stream", n);
                             self.read_buffer_temp
                                 .extend_from_slice(&temp_accumulated[..n]);
-                            if (String::from_utf8_lossy(&self.read_buffer_temp)
-                                .contains(ACCEPT_GETCHUNKS_STRING))
-                            {
-                                debug!("Accept GETCHUNKS_STRING 112312313412341234123412342342341234123412 {:?}", self.token);
-                                //remove 2 last lines till \n from read_buffer_temp
-                                self.calculate_upload_speed();
-                                measurement_state.read_buffer_temp = self.read_buffer_temp.clone();
-                                self.read_buffer_temp.clear();
-                                measurement_state.phase = TestPhase::PutCompleted;
-                                return Ok(());
+                            let accept_string_bytes = ACCEPT_GETCHUNKS_STRING.as_bytes();
+                            if self.read_buffer_temp.len() >= accept_string_bytes.len() {
+                                let last_bytes = &self.read_buffer_temp[self.read_buffer_temp.len() - accept_string_bytes.len()..];
+                                if last_bytes == accept_string_bytes {
+                                    debug!("Found ACCEPT_GETCHUNKS_STRING at the end of buffer");
+                                    self.calculate_upload_speed();
+                                    measurement_state.read_buffer_temp = self.read_buffer_temp.clone();
+                                    self.read_buffer_temp.clear();
+                                    measurement_state.phase = TestPhase::PutCompleted;
+                                    return Ok(());
+                                }
                             }
                         }
                         Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                             debug!("Read  PutSendChunks WouldBlock bytes from stream");
-
                             return self.on_write(stream, poll, measurement_state);
                         }
                         Err(e) => {
@@ -202,16 +202,21 @@ impl BasicHandler for PutHandler {
 
                 if let Some(start_time) = self.test_start_time {
                     let elapsed = start_time.elapsed();
-                    self.is_last = elapsed.as_nanos() >= TEST_DURATION_NS as u128;
+                    let time_is_up = elapsed.as_nanos() >= TEST_DURATION_NS as u128;
 
-                    if (!self.is_last || !self.write_buffer.is_empty()) {
+                    if time_is_up  && self.is_last_chunk && self.write_buffer.is_empty() {
+                        return Ok(());
+                    }
+
+                    // if (!time_is_up || !self.write_buffer.is_empty()) {
                         if self.write_buffer.is_empty() {
-                            // let buffer = if self.is_last {
-                            //     &self.data_termination_buffer
-                            // } else {
-                            //     &self.data_buffer
-                            // };
-                            self.write_buffer.extend_from_slice( &self.data_buffer);
+                            let buffer = if time_is_up {
+                                self.is_last_chunk = true;
+                                &self.data_termination_buffer
+                            } else {
+                                &self.data_buffer
+                            };
+                            self.write_buffer.extend_from_slice( buffer);
                         }
                         loop {
                             // debug!("Write buffer: {}", self.write_buffer.len());
@@ -224,7 +229,6 @@ impl BasicHandler for PutHandler {
                                     self.write_buffer.advance(n);
                                     if self.write_buffer.is_empty() {
                                         trace!("Write buffer is empty");
-
                                         stream.reregister(
                                             &poll,
                                             self.token,
@@ -234,12 +238,6 @@ impl BasicHandler for PutHandler {
                                     }
                                 }
                                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                                    // debug!("WouldBlock PutSendChunks");
-                                    // stream.reregister(
-                                    //     &poll,
-                                    //     self.token,
-                                    //     Interest::READABLE | Interest::WRITABLE,
-                                    // )?;
                                     return Ok(());
                                 }
                                 Err(e) => {
@@ -247,45 +245,45 @@ impl BasicHandler for PutHandler {
                                 }
                             }
                         }
-                    } else {
-                        debug!("Write send_data: {}", self.send_data);
-                        if !self.send_data {
-                            if self.write_buffer.is_empty() {
-                                self.write_buffer
-                                    .extend_from_slice(&self.data_termination_buffer);
-                            }
-                            loop {
-                                debug!("Write loop: {} token {:?}", self.write_buffer.len(), self.token);
-                                debug!("Write buffer last byte: {:?}", self.write_buffer.last());
-                                match stream.write(&mut self.write_buffer) {
-                                    Ok(n) => {
-                                        self.write_buffer.advance(n);
-                                        debug!("Write buffer after advance: {} token {:?}", self.write_buffer.len(), self.token);
-                                        if self.write_buffer.is_empty() { 
-                                            debug!("Write buffer is EMTPY EMTPYE MTPYEMTPYEMTP YEMTPYEMTP YEMTPYEMTPYEM EMTPYEMTPYTPY token {:?}", self.token);
-                                            self.send_data = true;
-                                            stream.reregister(
-                                                &poll,
-                                                self.token,
-                                                Interest::READABLE,
-                                            )?;
-                                            return Ok(());
-                                        }
-                                    }
-                                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                                        return Ok(());
-                                    }
-                                    Err(e) => {
-                                        debug!("Error writing to stream: {}", e);
-                                        return Err(e.into());
-                                    }
-                                }
-                            }
-                        } else {
-                            debug!("Write send_data: {}", self.send_data);
-                            stream.reregister(&poll, self.token, Interest::READABLE)?;
-                        }
-                    }
+                    // } else {
+                    //     debug!("Write send_data: {}", self.send_data);
+                    //     if !self.send_data {
+                    //         if self.write_buffer.is_empty() {
+                    //             self.write_buffer
+                    //                 .extend_from_slice(&self.data_termination_buffer);
+                    //         }
+                    //         loop {
+                    //             debug!("Write loop: {} token {:?}", self.write_buffer.len(), self.token);
+                    //             debug!("Write buffer last byte: {:?}", self.write_buffer.last());
+                    //             match stream.write(&mut self.write_buffer) {
+                    //                 Ok(n) => {
+                    //                     self.write_buffer.advance(n);
+                    //                     debug!("Write buffer after advance: {} token {:?}", self.write_buffer.len(), self.token);
+                    //                     if self.write_buffer.is_empty() { 
+                    //                         debug!("Write buffer is EMTPY EMTPYE MTPYEMTPYEMTP YEMTPYEMTP YEMTPYEMTPYEM EMTPYEMTPYTPY token {:?}", self.token);
+                    //                         self.send_data = true;
+                    //                         stream.reregister(
+                    //                             &poll,
+                    //                             self.token,
+                    //                             Interest::READABLE,
+                    //                         )?;
+                    //                         return Ok(());
+                    //                     }
+                    //                 }
+                    //                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    //                     return Ok(());
+                    //                 }
+                    //                 Err(e) => {
+                    //                     debug!("Error writing to stream: {}", e);
+                    //                     return Err(e.into());
+                    //                 }
+                    //             }
+                    //         }
+                    //     } else {
+                    //         debug!("Write send_data: {}", self.send_data);
+                    //         stream.reregister(&poll, self.token, Interest::READABLE)?;
+                    //     }
+                    // }
                 }
             }
             _ => {}
