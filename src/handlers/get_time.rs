@@ -80,6 +80,7 @@ pub async fn handle_get_time(
     // Send data until time expires
     while start_time.elapsed().as_secs() < duration {
         // Get next chunk from the array, cycling through all chunks
+        // debug!("Sending chunk {}", chunk_index);
         let chunk = &chunks[chunk_index];
         stream.write_all(chunk).await?;
         total_bytes += chunk_size;
@@ -90,6 +91,7 @@ pub async fn handle_get_time(
             chunk_index = 0;
         }
     }
+    debug!("Sending last chunk");
     stream.write_all(&term_buf).await?;
     stream.flush().await?;
     let time_ns = start_time.elapsed().as_nanos();

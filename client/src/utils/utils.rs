@@ -98,6 +98,7 @@ pub fn write_all_nb_loop(buf: &mut BytesMut, stream: &mut Stream) -> io::Result<
         match stream.write(&buf) {
             Ok(0) => {
                 // Это может указывать на разрыв соединения
+                debug!("write zero");
                 return Err(io::Error::new(io::ErrorKind::WriteZero, "write zero"));
             }
             Ok(n) => {

@@ -29,27 +29,29 @@ impl ConnectionHandler {
     }
 
     pub async fn handle(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        info!("Handling connection");
+        debug!("Handling connection");
         if let Err(e) = self.send_greeting().await {
             error!("Failed to send greeting: {}", e);
             return Err(e);
         }
-        info!("Greeting sent");
+        debug!("Greeting sent");
 
 
         if let Err(e) = self.handle_token().await {
             error!("Token validation failed: {}", e);
             return Err(e);
         }
-        info!("Token validated");
+        debug!("Token validated");
 
         let chunk_size_msg = format!("CHUNKSIZE {} {} {}\n", CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE); //todo compare version
         self.stream.write_all(chunk_size_msg.as_bytes()).await?;
+        debug!("Chunk size message sent");
 
 
         // Main command loop
         loop {
             self.stream.write_all(ACCEPT_COMMANDS.as_bytes()).await?;
+            debug!("Accept commands message sent");
 
             let mut buffer = [0u8; 1024];
 

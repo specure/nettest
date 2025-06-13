@@ -44,13 +44,9 @@ pub async fn handle_put_no_result(
     put_no_result::handle_put_no_result(stream, command).await
 }
 
-
-
 pub async fn handle_quit(stream: &mut Stream) -> Result<(), Box<dyn Error + Send + Sync>> {
     // Send BYE to client
     stream.write_all(RESP_BYE.as_bytes()).await?;
-
-    info!("Client requested QUIT, connection will be closed");
 
     Ok(())
 }

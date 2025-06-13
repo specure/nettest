@@ -9,6 +9,7 @@ use std::io::{self, BufReader, Read, Write};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::path::Path;
+use std::time::Instant;
 
 use crate::utils::MAX_CHUNK_SIZE;
 
@@ -55,7 +56,7 @@ impl RustlsStream {
         
         let mut conn = ClientConnection::new(Arc::new(config), server_name)?;
 
-        conn.set_buffer_limit(Some(1024 * 1024 * 4));
+        // conn.set_buffer_limit(Some(1024 * 1024 * 10));
 
 
         
@@ -64,30 +65,32 @@ impl RustlsStream {
 
     pub fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         // trace!("Reading from RustlsStream");
+
         
         // Read TLS data
         match self.conn.read_tls(&mut self.stream) {
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                trace!("TLS read would block");
+                debug!("TLS read would block");
                 return Err(io::Error::new(io::ErrorKind::WouldBlock, "TLS read would block"));
             }
             Err(e) => {
-                trace!("TLS read error: {:?}", e);
+                debug!("TLS read error: {:?}", e);
                 return Err(e);
             }
             Ok(0) => {
-                trace!("TLS connection closed");
+                debug!("TLS connection closed");
                 return Ok(0);
             }
             Ok(n) => {
-                trace!("Read {} bytes from TLS stream", n);
+                debug!("Read {} bytes from TLS stream", n);
             }
         }
 
         // Process any new TLS messages
+        // debug!("Processing new packets");
         let io_state = match self.conn.process_new_packets() {
             Ok(state) => {
-                trace!("Processed new packets {:?}", state.plaintext_bytes_to_read());
+                // debug!("Processed new packets {:?}", state.plaintext_bytes_to_read());
                 state
             },
             Err(e) => {
@@ -97,13 +100,14 @@ impl RustlsStream {
         };
 
         // If we need to write handshake data, do it
-        // if !self.handshake_done {
+        if !self.handshake_done {
         while self.conn.wants_write() {
-            trace!("Writing handshake data");
+    self.handshake_done = true;
+            debug!("Writing handshake data");
             self.conn.write_tls(&mut self.stream)?;
         }
         self.handshake_done = true;
-    // }
+    }
 
         // Read any new plaintext
         if io_state.plaintext_bytes_to_read() > 0 {
@@ -114,9 +118,14 @@ impl RustlsStream {
 
         // If we need to read more data, try again
         if self.conn.wants_read() {
-            trace!("Need to read more data");
+            debug!("Need to read more data");
             return self.read(buf);
         }
+
+            // Принудительно отправляем данные для очистки буфера
+            if self.conn.wants_write() {
+                self.conn.write_tls(&mut self.stream)?;
+            }
 
         // Check if peer has closed
         if io_state.peer_has_closed() {
@@ -128,42 +137,71 @@ impl RustlsStream {
     }
 
     pub fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let write_start = Instant::now();
         let mut total_written = 0;
-        trace!("Writing {} bytes to RustlsStream", buf.len());
         
+        // Проверяем, есть ли данные в буфере для отправки
+        while self.conn.wants_write() {
+
+            match self.conn.write_tls(&mut self.stream) {
+                Ok(_) => {
+                    let write_duration = write_start.elapsed();
+                    debug!("Flushed TLS buffer in {:?}", write_duration);
+                }
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    debug!("TLS buffer flush would block");
+                    return Err(io::Error::new(io::ErrorKind::WouldBlock, "TLS write would block"));
+                }
+                Err(e) => {
+                    debug!("TLS buffer flush error: {:?}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        // Теперь пробуем записать новые данные
         while total_written < buf.len() {
             match self.conn.writer().write(&buf[total_written..]) {
                 Ok(n) => {
                     total_written += n;
-                    // Try to send data to network
+                    let write_duration = write_start.elapsed();
+                    debug!("Wrote {} bytes to TLS buffer in {:?}", n, write_duration);
+                    
+                    // Пытаемся отправить данные в сеть
                     while self.conn.wants_write() {
-                        
                         match self.conn.write_tls(&mut self.stream) {
-                            Ok(_) => continue,
+                            Ok(_) => {
+                                let flush_duration = write_start.elapsed();
+                                debug!("Flushed {} bytes to network in {:?}", n, flush_duration);
+                                continue;
+                            }
                             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                                trace!("Write would block {}", total_written);
+                                debug!("Network write would block after {} bytes", total_written);
                                 return Err(io::Error::new(io::ErrorKind::WouldBlock, "TLS write would block"));
                             }
                             Err(e) => {
-                                trace!("Write error: {:?}", e);
+                                debug!("Network write error: {:?}", e);
                                 return Err(e);
                             }
                         }
                     }
                 }
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    trace!("Writer would block");
+                    debug!("TLS buffer write would block");
                     return Err(io::Error::new(io::ErrorKind::WouldBlock, "TLS write would block"));
                 }
                 Err(e) => {
-                    trace!("Writer error: {:?}", e);
+                    debug!("TLS buffer write error: {:?}", e);
                     return Err(e);
                 }
             }
         }
 
-        trace!("Wrote {} bytes total", total_written);
         Ok(total_written)
+    }
+
+    pub fn flush(&mut self) -> io::Result<()> {
+        self.stream.flush()
     }
 
     pub fn register(&mut self, poll: &Poll, token: Token, interests: Interest) -> io::Result<()> {
@@ -178,6 +216,21 @@ impl RustlsStream {
        
         info!("TLS handshake completed successfully");
         Ok(())
+    }
+
+    pub fn close(&mut self) -> io::Result<()> {
+        debug!("Closing TLS connection");
+        
+        // Отправляем close_notify
+        if self.conn.wants_write() {
+            match self.conn.write_tls(&mut self.stream) {
+                Ok(_) => debug!("Sent TLS close_notify"),
+                Err(e) => debug!("Error sending TLS close_notify: {:?}", e),
+            }
+        }
+
+        // Закрываем TCP соединение
+        self.stream.shutdown(std::net::Shutdown::Both)
     }
 }
 

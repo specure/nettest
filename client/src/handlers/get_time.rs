@@ -1,6 +1,6 @@
 use crate::handlers::BasicHandler;
 use crate::state::{MeasurementState, TestPhase};
-use crate::stream::{OpenSslStream, Stream};
+use crate::stream::{ Stream};
 use crate::utils::ACCEPT_GETCHUNKS_STRING;
 use crate::{read_until, write_all_nb};
 

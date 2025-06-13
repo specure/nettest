@@ -56,7 +56,7 @@ impl PutNoResultHandler {
         format!("PUTNORESULT {}\n", self.chunk_size)
     }
 
-    fn calculate_upload_speed(&mut self, time_ns: u64) -> f64 {
+    pub fn calculate_upload_speed(&mut self, time_ns: u64) -> f64 {
         let bytes = self.bytes_sent;
         // Convert nanoseconds to seconds, ensuring we don't lose precision
         let time_seconds = if time_ns > u64::MAX / 1_000_000_000 {

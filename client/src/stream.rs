@@ -1,106 +1,20 @@
-use crate::rustls::RustlsStream;
-use anyhow::Result;
-use log::{debug, trace};
+use anyhow::{Ok, Result};
+use log::{debug, error, info};
 use mio::{net::TcpStream, Interest, Poll, Token};
-use openssl::ssl::{Ssl, SslContext, SslMethod, SslMode, SslOptions, SslStream};
 use std::io::{self, Read, Write};
 use std::net::SocketAddr;
 use std::path::Path;
+
+use crate::openssl::OpenSslStream;
+use crate::openssl_sys::OpenSslSysStream;
+use crate::rustls::RustlsStream;
 
 #[derive(Debug)]
 pub enum Stream {
     Tcp(TcpStream),
     Rustls(RustlsStream),
     OpenSsl(OpenSslStream),
-}
-
-#[derive(Debug)]
-pub struct OpenSslStream {
-    pub stream: SslStream<TcpStream>,
-}
-
-impl OpenSslStream {
-    pub fn new(stream: TcpStream, hostname: &str) -> Result<Self> {
-        debug!("Creating SSL context");
-        let mut ctx = SslContext::builder(SslMethod::tls_client())?;
-        debug!("Setting verify mode to NONE");
-
-        ctx.set_verify(openssl::ssl::SslVerifyMode::NONE);
-        ctx.set_mode(SslMode::RELEASE_BUFFERS);
-        ctx.set_options(SslOptions::NO_TICKET);
-        ctx.set_options(SslOptions::NO_COMPRESSION);
-        ctx.set_ciphersuites("TLS_AES_128_GCM_SHA256")?;
-
-        let mut ssl = Ssl::new(&ctx.build())?;
-        ssl.set_hostname(hostname)?;
-        debug!("Creating SSL stream");
-        let mut stream = SslStream::new(ssl, stream)?;
-        debug!("SSL stream created");
-
-       
-
-        // Устанавливаем неблокирующий режим
-        stream.get_mut().set_nodelay(true)?;
-
-        // Создаем Poll для ожидания событий
-        let mut poll = Poll::new()?;
-        let mut events = mio::Events::with_capacity(128);
-
-        // Регистрируем сокет для чтения и записи
-        poll.registry().register(
-            stream.get_mut(),
-            Token(0),
-            Interest::READABLE | Interest::WRITABLE,
-        )?;
-
-        // Ждем, пока TCP соединение будет установлено
-        loop {
-            poll.poll(&mut events, None)?;
-            let mut connection_ready = false;
-            
-            for event in events.iter() {
-                if event.is_writable() {
-                    // Проверяем, что соединение действительно установлено
-                    if let Err(e) = stream.get_ref().peer_addr() {
-                        if e.kind() == io::ErrorKind::NotConnected {
-                            debug!("TCP connection not ready yet, waiting...");
-                            continue;
-                        }
-                    }
-                    connection_ready = true;
-                    break;
-                }
-            }
-            
-            if connection_ready {
-                break;
-            }
-        }
-
-        // Теперь можно начинать TLS handshake
-        loop {
-            match stream.connect() {
-                Ok(_) => {
-                    debug!("Handshake completed");
-                    break;
-                }
-                Err(e) => {
-                    // Проверяем на вложенную ошибку WouldBlock
-                    if let Some(io_error) = e.io_error() {
-                        if io_error.kind() == io::ErrorKind::WouldBlock {
-                            debug!("Socket not ready, waiting...");
-                            poll.poll(&mut events, None)?;
-                            continue;
-                        }
-                    }
-                    debug!("Error during handshake: {:?}", e);
-                    return Err(e.into());
-                }
-            }
-        }
-
-        Ok(Self { stream })
-    }
+    OpenSslSys(OpenSslSysStream),
 }
 
 impl Stream {
@@ -110,44 +24,42 @@ impl Stream {
         Ok(Self::Tcp(stream))
     }
 
+    pub fn close(&mut self) -> Result<()> {
+        match self {
+            Stream::Tcp(stream) => Ok(()),
+            Stream::Rustls(stream) => Ok(()),
+            Stream::OpenSsl(stream) => stream.close(),
+            Stream::OpenSslSys(stream) => Ok(()),
+        }
+    }
+
+    pub fn new_openssl(addr: SocketAddr) -> Result<Self> {
+        let stream1 = TcpStream::connect(addr)?;
+        stream1.set_nodelay(true)?;
+        let stream = OpenSslStream::new(stream1, "localhost")?;
+        Ok(Self::OpenSsl(stream))
+    }
+
     pub fn new_rustls(
         addr: SocketAddr,
         cert_path: Option<&Path>,
         key_path: Option<&Path>,
     ) -> Result<Self> {
-        let stream = TcpStream::connect(addr)?;
-        stream.set_nodelay(true)?;
         let stream = RustlsStream::new(addr, cert_path, key_path)?;
         Ok(Self::Rustls(stream))
     }
 
-    pub fn new_openssl(addr: SocketAddr) -> Result<Self> {
-        let stream = TcpStream::connect(addr)?;
-        stream.set_nodelay(true)?;
-        let stream = OpenSslStream::new(stream, "specure.com")?;
-        Ok(Self::OpenSsl(stream))
+    pub fn new_openssl_sys(addr: SocketAddr) -> Result<Self> {
+        let stream = OpenSslSysStream::new(addr)?;
+        Ok(Self::OpenSslSys(stream))
     }
 
     pub fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             Stream::Tcp(stream) => stream.read(buf),
             Stream::Rustls(stream) => stream.read(buf),
-            Stream::OpenSsl(stream) => match stream.stream.ssl_read(buf) {
-                Ok(n) => Ok(n),
-                Err(e) => {
-                    // Проверяем на вложенную ошибку WouldBlock
-                    if let Some(io_error) = e.io_error() {
-                        if io_error.kind() == io::ErrorKind::WouldBlock {
-                            Err(io::Error::new(io::ErrorKind::WouldBlock, "SSL write would block"))
-                        } else {
-                            Err(io::Error::new(io::ErrorKind::Other, e.to_string()))
-                        }
-                    } else {
-                        // Если это не ошибка ввода-вывода, преобразуем её в io::Error
-                        Err(io::Error::new(io::ErrorKind::Other, e.to_string()))
-                    }
-                }
-            },
+            Stream::OpenSsl(stream) => stream.read(buf),
+            Stream::OpenSslSys(stream) => stream.read(buf),
         }
     }
 
@@ -155,24 +67,8 @@ impl Stream {
         match self {
             Stream::Tcp(stream) => stream.write(buf),
             Stream::Rustls(stream) => stream.write(buf),
-            Stream::OpenSsl(stream) => {
-                match stream.stream.ssl_write(buf) {
-                    Ok(n) => Ok(n),
-                    Err(e) => {
-                        // Проверяем на вложенную ошибку WouldBlock
-                        if let Some(io_error) = e.io_error() {
-                            if io_error.kind() == io::ErrorKind::WouldBlock {
-                                Err(io::Error::new(io::ErrorKind::WouldBlock, "SSL write would block"))
-                            } else {
-                                Err(io::Error::new(io::ErrorKind::Other, e.to_string()))
-                            }
-                        } else {
-                            // Если это не ошибка ввода-вывода, преобразуем её в io::Error
-                            Err(io::Error::new(io::ErrorKind::Other, e.to_string()))
-                        }
-                    }
-                }
-            }
+            Stream::OpenSsl(stream) => stream.write(buf),
+            Stream::OpenSslSys(stream) => stream.write(buf),
         }
     }
 
@@ -182,15 +78,25 @@ impl Stream {
                 poll.registry().register(stream, token, interest)?;
             }
             Stream::Rustls(stream) => {
-                poll.registry()
-                    .register(&mut stream.stream, token, interest)?;
+                stream.register(poll, token, interest)?;
             }
             Stream::OpenSsl(stream) => {
-                let tcp_stream = stream.stream.get_mut();
-                poll.registry().register(tcp_stream, token, interest)?;
+                stream.register(poll, token, interest)?;
+            }
+            Stream::OpenSslSys(stream) => {
+                stream.register(poll, token, interest)?;
             }
         }
         Ok(())
+    }
+
+    pub fn flush(&mut self) -> io::Result<()> {
+        match self {
+            Stream::Tcp(stream) => stream.flush(),
+            Stream::Rustls(stream) => stream.flush(),
+            Stream::OpenSsl(stream) => stream.flush(),
+            Stream::OpenSslSys(stream) => stream.flush(),
+        }
     }
 
     pub fn reregister(&mut self, poll: &Poll, token: Token, interest: Interest) -> Result<()> {
@@ -199,12 +105,13 @@ impl Stream {
                 poll.registry().reregister(stream, token, interest)?;
             }
             Stream::Rustls(stream) => {
-                poll.registry()
-                    .reregister(&mut stream.stream, token, interest)?;
+                stream.reregister(poll, token, interest)?;
             }
             Stream::OpenSsl(stream) => {
-                let tcp_stream = stream.stream.get_mut();
-                poll.registry().reregister(tcp_stream, token, interest)?;
+                stream.reregister(poll, token, interest)?;
+            }
+            Stream::OpenSslSys(stream) => {
+                stream.reregister(poll, token, interest)?;
             }
         }
         Ok(())

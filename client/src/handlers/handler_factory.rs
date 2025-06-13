@@ -64,6 +64,7 @@ impl HandlerFactory {
             TestPhase::PutSendChunks => Some(&mut self.put_handler),
             TestPhase::PutReceiveTime => Some(&mut self.put_handler),
             TestPhase::PutReceiveBytesTime => Some(&mut self.put_handler),
+            TestPhase::PutQuit => Some(&mut self.put_handler),
             TestPhase::PutCompleted => None,
         }
     }

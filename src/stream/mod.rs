@@ -107,6 +107,8 @@ impl Stream {
         match self {
             Stream::Plain(stream) => {
                 info!("Writing to plain stream");
+                // info!("Writing to plain stream: {:?}", String::from_utf8_lossy(buf));
+
                 stream.write(buf).await
             },
             Stream::Tls(stream) => stream.write(buf).await,
@@ -144,11 +146,13 @@ impl Stream {
     pub async fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
         match self {
             Stream::Plain(stream) => {
-                info!("Writing to plain stream {} last byte: {}", buf.len(), buf[buf.len() - 1]);
+                // info!("Writing to plain stream {} last byte: {}", buf.len(), buf[buf.len() - 1]);
+                // info!("Writing to plain stream: {:?}", String::from_utf8_lossy(buf));
+                // sleep(Duration::from_millis(20)).await;
                 stream.write_all(buf).await
             },
             Stream::Tls(stream) => {
-                info!("Writing to TLS stream");
+                // info!("Writing to TLS stream");
                 stream.write_all(buf).await
             },
             Stream::WebSocket(stream) => {

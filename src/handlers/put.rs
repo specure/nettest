@@ -48,24 +48,26 @@ pub async fn handle_put(
                 }
             }
         }
+        debug!("Read {} bytes", bytes_read);
 
         // Check if we got a complete chunk
         if bytes_read == chunk_size {
+
+            debug!("Read {} bytes 2", bytes_read);
             total_bytes += bytes_read;
             
             // Check the last byte of the chunk for terminator
             let terminator = buffer[chunk_size - 1];
-            
             // Send intermediate TIME response if needed
             let current_time_ns = start_time.elapsed().as_nanos() as i64;
-            if last_time_ns == -1 || (current_time_ns - last_time_ns > 1_000_000) {
-                last_time_ns = current_time_ns;
+            // if last_time_ns == -1  {
+                debug!("Sending intermediate TIME response");
                 let time_response = format!("{} {} BYTES {}\n", RESP_TIME, current_time_ns, total_bytes);
                 if let Err(e) = stream.write_all(time_response.as_bytes()).await {
                     error!("Failed to send intermediate TIME response: {}", e);
                     break;
                 }
-            }
+            // }
 
             // Check terminator
             if terminator == 0xFF {
