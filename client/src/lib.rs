@@ -5,6 +5,7 @@ pub mod stream;
 pub mod state;
 pub mod handlers;
 pub mod utils;
+pub mod globals;
 
 pub use stream::Stream;
 pub use state::{TestState, MeasurementState};

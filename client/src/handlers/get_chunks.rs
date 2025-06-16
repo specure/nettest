@@ -21,7 +21,6 @@ pub struct GetChunksHandler {
     chunks_received: AtomicU32,
     test_start_time: Option<Instant>,
     unprocessed_bytes: AtomicU32,
-    read_buffer: BytesMut,
     time_buffer: BytesMut,
     write_buffer: BytesMut,
 }
@@ -35,7 +34,6 @@ impl GetChunksHandler {
             chunks_received: AtomicU32::new(0),
             test_start_time: None,
             unprocessed_bytes: AtomicU32::new(0),
-            read_buffer: BytesMut::with_capacity(DEFAULT_READ_BUFFER_SIZE),
             time_buffer: BytesMut::with_capacity(TIME_BUFFER_SIZE),
             write_buffer: BytesMut::with_capacity(DEFAULT_READ_BUFFER_SIZE),
         })

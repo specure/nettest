@@ -1,6 +1,6 @@
 use crate::handlers::BasicHandler;
 use crate::state::{MeasurementState, TestPhase};
-use crate::stream::{ Stream};
+use crate::stream::Stream;
 use crate::utils::ACCEPT_GETCHUNKS_STRING;
 use crate::{read_until, write_all_nb};
 
@@ -80,33 +80,33 @@ impl BasicHandler for GetTimeHandler {
         // trace!("Reading chunk GetTimeHandler of size {}", self.chunk_size);
         match measurement_state.phase {
             TestPhase::GetTimeReceiveChunk => loop {
-                        match stream.read(&mut self.chunk_buffer) {
-                            Ok(n) if n > 0 => {
-                                self.bytes_received += n as u64;
+                match stream.read(&mut self.chunk_buffer) {
+                    Ok(n) if n > 0 => {
+                        self.bytes_received += n as u64;
 
-                                if self.chunk_buffer[n - 1] == 0xFF
-                                    && (self.bytes_received & (self.chunk_size as u64 - 1)) == 0
-                                {
-                                    measurement_state.phase = TestPhase::GetTimeSendOk;
-                                    stream.reregister(&poll, self.token, Interest::WRITABLE)?;
-                                    return Ok(());
-                                }
-                            }
-                            Ok(0) => {
-                                return Err(io::Error::new(
-                                    io::ErrorKind::ConnectionAborted,
-                                    "Connection closed",
-                                )
-                                .into());
-                            }
-                            Ok(_) => {
-                                return Ok(());
-                            }
-                            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                                return Ok(());
-                            }
-                            Err(e) => return Err(e.into()),
+                        if self.chunk_buffer[n - 1] == 0xFF
+                            && (self.bytes_received & (self.chunk_size as u64 - 1)) == 0
+                        {
+                            measurement_state.phase = TestPhase::GetTimeSendOk;
+                            stream.reregister(&poll, self.token, Interest::WRITABLE)?;
+                            return Ok(());
                         }
+                    }
+                    Ok(0) => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::ConnectionAborted,
+                            "Connection closed",
+                        )
+                        .into());
+                    }
+                    Ok(_) => {
+                        return Ok(());
+                    }
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        return Ok(());
+                    }
+                    Err(e) => return Err(e.into()),
+                }
             },
             TestPhase::GetTimeReceiveTime => {
                 if read_until(stream, &mut self.read_buffer, ACCEPT_GETCHUNKS_STRING)? {

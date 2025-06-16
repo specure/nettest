@@ -6,6 +6,9 @@ use std::collections::HashMap;
 use anyhow::Result;
 use std::env;
 use measurement_client::Stream;
+use std::sync::{Arc, Barrier};
+use tokio::sync::Mutex;
+use fastrand;
 
 mod handlers;
 mod state;
@@ -15,6 +18,7 @@ pub mod openssl_sys;
 pub mod openssl;
 pub mod stream;
 pub mod utils;
+pub mod globals;
 
 pub use handlers::{
     get_chunks::GetChunksHandler, greeting::GreetingHandler, put::PutHandler,
@@ -24,6 +28,9 @@ pub use utils::{
     read_until, write_all, write_all_nb, DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE,
     RMBT_UPGRADE_REQUEST,
 };
+
+const MIN_CHUNK_SIZE: u64 = 4096; // 4KB
+const MAX_CHUNK_SIZE: u64 = 4194304; // 4MB
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -37,7 +44,7 @@ async fn async_main() -> anyhow::Result<()> {
     // Парсим аргументы командной строки
     let args: Vec<String> = env::args().collect();
     let use_tls = args.iter().any(|arg| arg == "-tls");
-    
+
     // Получаем количество потоков из аргументов
     let thread_count = args.iter()
         .enumerate()
@@ -62,32 +69,66 @@ async fn async_main() -> anyhow::Result<()> {
 
     info!("Connected to server at {}", addr);
 
-    let mut handles = Vec::new();
-    let mut poll = Poll::new()?;
-    // let events = Events::with_capacity(2048);
-    for k in 0..thread_count {
-        let addr = addr.clone();
-        info!("Starting thread {}", k);
+    let barrier = Arc::new(Barrier::new(thread_count)); // 3 потока
+    let mut handles = vec![];
+
+    for i in 0..thread_count {
+        let barrier = barrier.clone();
         handles.push(thread::spawn(move || {
-            let mut state = TestState::new(addr, use_tls, k, None, None).unwrap();
-            state.run_measurement().unwrap()
+            println!("Поток {} готовится к первому этапу", i);
+            let mut state = TestState::new(addr, use_tls, i, None, None).unwrap();
+            state.process_greeting().unwrap();
+
+            barrier.wait(); // Первая синхронизация
+            println!("Поток {} завершил первый этап", i);
+
+            state.run_put_no_result().unwrap();
+            barrier.wait(); // Вторая синхронизация
+            state.run_put().unwrap();
+            
+            barrier.wait(); // Третья синхронизация
         }));
     }
-    let states: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
 
-    let mut common_buffer = Vec::new();
-
-    let state_refs: Vec<_> = states.iter().collect();
-    for state in &states {
-        common_buffer.extend_from_slice(&state.read_buffer_temp);
+    for handle in handles {
+        handle.join().unwrap();
     }
 
-    calculate_upload_speed(&state_refs);
+
+
+
+
+
+
+
+
+
+
+
+
+    // let events = Events::with_capacity(2048);
+    // for k in 0..thread_count {
+    //     let addr = addr.clone();
+    //     info!("Starting thread {}", k);
+    //     handles.push(thread::spawn(move || {
+    //         let mut state = TestState::new(addr, use_tls, k, None, None).unwrap();
+    //         state.process_greeting().unwrap();
+    //     }));
+    // }
+    // let states: Vec<TestState> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+    // let mut common_buffer = Vec::new();
+
+    // let state_refs: Vec<&MeasurementState> = states.iter().map(|s| s.measurement_state()).collect();
+
+    // calculate_upload_speed(&state_refs);
 
     info!("Test completed");
 
     Ok(())
 }
+
+
 
 fn calculate_upload_speed(states: &[&MeasurementState]) {
     let mut results: HashMap<u32, Vec<(u64, u64)>> = HashMap::new();

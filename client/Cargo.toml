@@ -21,3 +21,4 @@ fastrand = "2.0"
 rustls-pemfile = "2.0.0"
 openssl-sys = { version = "0.9"}
 openssl = {version = "0.10"}
+lazy_static = "1.4"
