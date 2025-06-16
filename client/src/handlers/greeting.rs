@@ -9,7 +9,7 @@ use crate::utils::{
 };
 use anyhow::Result;
 use bytes::BytesMut;
-use log::debug;
+use log::{debug, trace};
 use mio::{net::TcpStream, Interest, Poll, Token};
 
 pub struct GreetingHandler {
@@ -37,7 +37,7 @@ impl BasicHandler for GreetingHandler {
     ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::GreetingReceiveGreeting => {
-                debug!(
+                trace!(
                     "[on_read] Receiving greeting {}",
                     String::from_utf8_lossy(&self.read_buffer)
                 );
@@ -56,7 +56,7 @@ impl BasicHandler for GreetingHandler {
         }
         match measurement_state.phase {
             TestPhase::GreetingReceiveResponse => {
-                debug!(
+                trace!(
                     "[on_read] Receiving response {}",
                     String::from_utf8_lossy(&self.read_buffer)
                 );

@@ -13,6 +13,7 @@ use mio::{net::TcpStream, Interest, Poll, Token};
 use std::io::{self, Read};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
+use std::collections::VecDeque;
 
 pub struct GetChunksHandler {
     token: Token,
@@ -30,7 +31,7 @@ impl GetChunksHandler {
         Ok(Self {
             token,
             chunk_size: MIN_CHUNK_SIZE,
-            total_chunks: 1, // Start with 1 chunk as per specification
+            total_chunks: 1,
             chunks_received: AtomicU32::new(0),
             test_start_time: None,
             unprocessed_bytes: AtomicU32::new(0),
@@ -38,6 +39,7 @@ impl GetChunksHandler {
             write_buffer: BytesMut::with_capacity(DEFAULT_READ_BUFFER_SIZE),
         })
     }
+
 
     fn increase_chunk_size(&mut self) {
         if self.total_chunks < MAX_CHUNKS_BEFORE_SIZE_INCREASE {
@@ -117,24 +119,39 @@ impl BasicHandler for GetChunksHandler {
                 }
             }
             TestPhase::GetChunksReceiveTime => {
-                if read_until(stream, &mut self.time_buffer, ACCEPT_GETCHUNKS_STRING)? {
-                    let buffer_str = String::from_utf8_lossy(&self.time_buffer);
-                    if let Some(time_ns) = self.parse_time_response(&buffer_str) {
-                        debug!("Time: {} ns", time_ns);
-                        if time_ns < PRE_DOWNLOAD_DURATION_NS && self.chunk_size < MAX_CHUNK_SIZE {
-                            self.increase_chunk_size();
-                            self.reset_chunk_counters();
-                            measurement_state.phase = TestPhase::GetChunksSendChunksCommand;
-                            stream.reregister(&poll, self.token, Interest::WRITABLE)?;
-                        } else {
-                            measurement_state.chunk_size = self.chunk_size;
-                            measurement_state.phase = TestPhase::GetChunksCompleted;
-                            stream.reregister(&poll, self.token, Interest::WRITABLE)?;
+                loop {
+                    let mut buf = [0u8; 1024];
+                    match stream.read(&mut buf) {
+                        Ok(0) => break, // EOF
+                        Ok(n) => {
+                            self.time_buffer.extend_from_slice(&buf[..n]);
+                            let buffer_str = String::from_utf8_lossy(&self.time_buffer);
+                            
+                            if buffer_str.contains(ACCEPT_GETCHUNKS_STRING) {
+                                if let Some(time_ns) = self.parse_time_response(&buffer_str) {
+                                    trace!("Time: {} ns", time_ns);
+                                    if time_ns < PRE_DOWNLOAD_DURATION_NS && self.chunk_size < MAX_CHUNK_SIZE {
+                                        self.increase_chunk_size();
+                                        self.reset_chunk_counters();
+                                        measurement_state.phase = TestPhase::GetChunksSendChunksCommand;
+                                        stream.reregister(&poll, self.token, Interest::WRITABLE)?;
+                                    } else {
+                                        measurement_state.chunk_size = self.chunk_size as usize;
+                                        measurement_state.phase = TestPhase::GetChunksCompleted;
+                                        // stream.reregister(&poll, self.token, Interest::WRITABLE)?;
+                                    }
+                                }
+                                self.time_buffer.clear();
+                            }
+                        }
+                        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            return Err(e.into());
                         }
                     }
-                    self.time_buffer.clear();
                 }
-                return self.on_read(stream, poll, measurement_state);
             }
             _ => {}
         }

@@ -104,12 +104,12 @@ impl PutHandler {
             // Рассчитываем скорость
             let speed_bps = total_bytes * 8.0 / (*t_star as f64 / 1_000_000_000.0);
             let speed_gbps = speed_bps / 1_000_000_000.0;
-            info!(
+            trace!(
                 "Uplink speed (interpolated): {:.2} Gbit/s ({:.2} bps)",
                 speed_gbps, speed_bps
             );
         } else {
-            info!("Не удалось рассчитать скорость");
+            trace!("Не удалось рассчитать скорость");
         }
     }
 
@@ -135,19 +135,16 @@ impl BasicHandler for PutHandler {
                 }
             }
             TestPhase::PutSendChunks => {
-                debug!("PutSendChunks !!!!!!!!!!!!!! {:?}", self.token);
                 let mut temp_accumulated: Vec<u8> = vec![0u8; 1024 * 1024 * 10];
                 loop {
                     match stream.read(&mut temp_accumulated) {
                         Ok(n) => {
-                            debug!("Read  PutSendChunks {} bytes from stream", n);
                             self.read_buffer_temp
                                 .extend_from_slice(&temp_accumulated[..n]);
                             let accept_string_bytes = ACCEPT_GETCHUNKS_STRING.as_bytes();
                             if self.read_buffer_temp.len() >= accept_string_bytes.len() {
                                 let last_bytes = &self.read_buffer_temp[self.read_buffer_temp.len() - accept_string_bytes.len()..];
                                 if last_bytes == accept_string_bytes {
-                                    debug!("Found ACCEPT_GETCHUNKS_STRING at the end of buffer");
                                     self.calculate_upload_speed();
                                     measurement_state.read_buffer_temp = self.read_buffer_temp.clone();
                                     self.read_buffer_temp.clear();
@@ -157,11 +154,11 @@ impl BasicHandler for PutHandler {
                             }
                         }
                         Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                            debug!("Read  PutSendChunks WouldBlock bytes from stream");
+                            trace!("Read  PutSendChunks WouldBlock bytes from stream");
                             return self.on_write(stream, poll, measurement_state);
                         }
                         Err(e) => {
-                            debug!("Error reading from stream: {}", e);
+                            trace!("Error reading from stream: {}", e);
                             return Err(e.into());
                         }
                     }

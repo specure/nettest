@@ -69,66 +69,116 @@ async fn async_main() -> anyhow::Result<()> {
 
     info!("Connected to server at {}", addr);
 
-    let barrier = Arc::new(Barrier::new(thread_count)); // 3 потока
-    let mut handles = vec![];
+    let barrier = Arc::new(Barrier::new(thread_count));
+    let mut thread_handles = vec![];
 
     for i in 0..thread_count {
         let barrier = barrier.clone();
-        handles.push(thread::spawn(move || {
-            println!("Поток {} готовится к первому этапу", i);
+        thread_handles.push(thread::spawn(move || {
             let mut state = TestState::new(addr, use_tls, i, None, None).unwrap();
             state.process_greeting().unwrap();
-
-            barrier.wait(); // Первая синхронизация
-            println!("Поток {} завершил первый этап", i);
-
+            barrier.wait();
+            if i == 0 {
+                state.run_ping().unwrap();
+            }
+            barrier.wait(); 
+            state.run_get_chunks().unwrap();
+            barrier.wait();
+            state.run_get_time().unwrap();
+            barrier.wait(); 
             state.run_put_no_result().unwrap();
-            barrier.wait(); // Вторая синхронизация
+            barrier.wait(); 
             state.run_put().unwrap();
-            
-            barrier.wait(); // Третья синхронизация
+            barrier.wait(); 
+            let result = MeasurementState {
+                upload_results_for_graph: state.measurement_state().upload_results_for_graph.clone(),
+                upload_bytes: state.measurement_state().upload_bytes,
+                upload_time: state.measurement_state().upload_time,
+                upload_speed: state.measurement_state().upload_speed,
+                download_time: state.measurement_state().download_time,
+                download_bytes: state.measurement_state().download_bytes,
+                download_speed: state.measurement_state().download_speed,
+                chunk_size: state.measurement_state().chunk_size,
+                ping_median: state.measurement_state().ping_median,
+                read_buffer_temp: state.measurement_state().read_buffer_temp.clone(),
+                measurements: state.measurement_state().measurements.clone(),
+                phase: state.measurement_state().phase.clone(),
+                buffer: state.measurement_state().buffer.clone(),
+            };
+            result
         }));
     }
 
-    for handle in handles {
-        handle.join().unwrap();
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-
-    // let events = Events::with_capacity(2048);
-    // for k in 0..thread_count {
-    //     let addr = addr.clone();
-    //     info!("Starting thread {}", k);
-    //     handles.push(thread::spawn(move || {
-    //         let mut state = TestState::new(addr, use_tls, k, None, None).unwrap();
-    //         state.process_greeting().unwrap();
-    //     }));
-    // }
-    // let states: Vec<TestState> = handles.into_iter().map(|h| h.join().unwrap()).collect();
-
-    // let mut common_buffer = Vec::new();
-
-    // let state_refs: Vec<&MeasurementState> = states.iter().map(|s| s.measurement_state()).collect();
-
-    // calculate_upload_speed(&state_refs);
+    let states: Vec<MeasurementState> = thread_handles.into_iter().map(|h| h.join().unwrap()).collect();
+    let state_refs: Vec<&MeasurementState> = states.iter().collect();
+    calculate_download_speed(&state_refs);
+    calculate_upload_speed(&state_refs);
 
     info!("Test completed");
 
     Ok(())
 }
 
+fn calculate_download_speed(states: &[&MeasurementState]) {
+    // Собираем все измерения из всех потоков
+    let mut thread_measurements: Vec<Vec<(u64, u64)>> = Vec::new();
+    
+    for state in states {
+        thread_measurements.push(state.measurements.clone().into_iter().map(|m| (m.0, m.1)).collect());
+    }
 
+    if thread_measurements.is_empty() {
+        return;
+    }
+
+    // Находим t* - минимальное время последнего измерения среди всех потоков
+    let t_star = thread_measurements
+        .iter()
+        .filter_map(|measurements| measurements.last().map(|(time, _)| *time))
+        .min()
+        .unwrap_or(0);
+
+    let mut total_bytes = 0.0;
+
+    // Для каждого потока
+    for measurements in thread_measurements {
+        if measurements.is_empty() {
+            continue;
+        }
+
+        // Находим последнее измерение до t*
+        let mut last_valid_idx = 0;
+        for (i, (time, _)) in measurements.iter().enumerate() {
+            if *time <= t_star {
+                last_valid_idx = i;
+            } else {
+                break;
+            }
+        }
+
+        // Если есть следующее измерение после t*, интерполируем
+        if last_valid_idx + 1 < measurements.len() {
+            let (t1, b1) = measurements[last_valid_idx];
+            let (t2, b2) = measurements[last_valid_idx + 1];
+            
+            // Интерполяция: b = b1 + (t* - t1) * (b2 - b1) / (t2 - t1)
+            let ratio = (t_star - t1) as f64 / (t2 - t1) as f64;
+            let interpolated_bytes = b1 as f64 + ratio * (b2 - b1) as f64;
+            total_bytes += interpolated_bytes;
+        } else {
+            // Если нет следующего измерения, используем последнее известное
+            total_bytes += measurements[last_valid_idx].1 as f64;
+        }
+    }
+
+    // Вычисляем скорость R = (1/t*) * Σ(b_k)
+    let download_speed = total_bytes / (t_star as f64 / 1_000_000_000.0);
+    let speed_bps = download_speed * 8.0; // конвертируем байты в биты
+    let speed_gbps = speed_bps / 1_000_000_000.0;
+    let speed_mbps = speed_bps / 1_000_000.0;
+    println!("Download speed: {:.2} bytes/s, {:.2} Gbit/s, {:.2} Mbit/s", 
+        download_speed, speed_gbps, speed_mbps);
+}
 
 fn calculate_upload_speed(states: &[&MeasurementState]) {
     let mut results: HashMap<u32, Vec<(u64, u64)>> = HashMap::new();

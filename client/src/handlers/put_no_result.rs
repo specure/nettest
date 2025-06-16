@@ -76,7 +76,7 @@ impl BasicHandler for PutNoResultHandler {
                 if read_until(stream, &mut self.read_buffer, ACCEPT_GETCHUNKS_STRING)? {
                     let time_str = String::from_utf8_lossy(&self.read_buffer);
                     
-                    debug!("Received time: {:?}", time_str);
+                    trace!("Received trace: {:?}", time_str);
                     if let Some(time_ns) = time_str
                         .split_whitespace()
                         .nth(1)
@@ -104,11 +104,11 @@ impl BasicHandler for PutNoResultHandler {
     fn on_write(&mut self, stream: &mut Stream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
         match measurement_state.phase {
             TestPhase::PutNoResultSendCommand => {
-                debug!("Sending command: {:?}", self.get_put_no_result_command());
+                trace!("Sending command: {:?}", self.get_put_no_result_command());
                 self.write_buffer
                     .extend_from_slice(self.get_put_no_result_command().as_bytes());
                 if write_all_nb(&mut self.write_buffer, stream)? {
-                    debug!("Sent command: {:?}", self.get_put_no_result_command());
+                    trace!("Sent command: {:?}", self.get_put_no_result_command());
                     measurement_state.phase = TestPhase::PutNoResultReceiveOk;
                     stream.reregister(&poll, self.token, Interest::READABLE)?;
                     self.write_buffer.clear();

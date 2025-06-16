@@ -1,8 +1,8 @@
 use anyhow::Result;
 use bytes::BytesMut;
-use log::{error, info, trace};
+use log::{debug, error, info, trace};
 use mio::{Events, Interest, Poll, Token};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::{net::SocketAddr, path::Path, time::Duration};
 
 use crate::handlers::handler_factory::HandlerFactory;
@@ -69,9 +69,10 @@ pub struct MeasurementState {
     pub download_time: Option<u64>,
     pub download_bytes: Option<u64>,
     pub download_speed: Option<f64>,
-    pub chunk_size: u32,
+    pub chunk_size: usize,
     pub ping_median: Option<u64>,
     pub read_buffer_temp: Vec<u8>,
+    pub measurements: VecDeque<(u64, u64)>, // Хранит (t_k^(j), b_k^(j)) для каждого чанка
 }
 
 impl TestState {
@@ -109,6 +110,7 @@ impl TestState {
             chunk_size: 0,
             ping_median: None,
             read_buffer_temp: vec![0u8; 1024 * 1024 * 10],
+            measurements: VecDeque::new(),
         };
 
         let mut handler_factory: HandlerFactory = HandlerFactory::new(token)?;
@@ -138,7 +140,7 @@ impl TestState {
             TestPhase::GreetingCompleted,
         )?;
 
-        info!("Greeting completed");
+        debug!("Greeting completed");
 
 
 
@@ -146,73 +148,30 @@ impl TestState {
     }
 
     pub fn run_put_no_result(&mut self) -> Result<()> {
-        // self.poll
-        //     .registry()
-        //     .reregister(&mut self.stream, self.token, Interest::WRITABLE)?;
-        // self.stream.reregister(
-        //     &mut self.poll,
-        //     self.token,
-        //     Interest::WRITABLE | Interest::READABLE,
-        // )?;
-
-        // let mut handler_factory = HandlerFactory::new(self.token)?;
-
-        // let mut measurement_state = MeasurementState {
-        //     buffer: BytesMut::with_capacity(DEFAULT_READ_BUFFER_SIZE),
-        //     phase: TestPhase::GreetingSendConnectionType,
-        //     upload_results_for_graph: Vec::new(),
-        //     upload_bytes: None,
-        //     upload_time: None,
-        //     upload_speed: None,
-        //     download_time: None,
-        //     download_bytes: None,
-        //     download_speed: None,
-        //     chunk_size: 0,
-        //     ping_median: None,
-        //     read_buffer_temp: vec![0u8; 1024 * 1024 * 10],
-        // };
-
-        // measurement_state = self.process_phase(
-        //     measurement_state,
-        //     &mut handler_factory,
-        //     TestPhase::GreetingCompleted,
-        // )?;
-
-        // info!("Get chunks completed");
-
-        // measurement_state.phase = TestPhase::PingSendPing;
-
-        // self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
-
-        // measurement_state = self.process_phase(measurement_state, &mut handler_factory, TestPhase::PingCompleted)?;
-
-        // info!("Ping completed");
-
-        // measurement_state.phase = TestPhase::GetTimeSendCommand;
-
-        // measurement_state = self.process_phase(measurement_state, &mut handler_factory, TestPhase::GetTimeCompleted)?;
-
-        // info!("Get time completed");
-
         self.measurement_state.phase = TestPhase::PutNoResultSendCommand;
-
         self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
-
         self.process_phase(TestPhase::PutNoResultCompleted)?;
+        Ok(())
+    }
 
-        info!("Put no result completed");
+    pub fn run_ping(&mut self) -> Result<()> {
+        self.measurement_state.phase = TestPhase::PingSendPing;
+        self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
+        self.process_phase(TestPhase::PingCompleted)?;
+        Ok(())
+    }
 
-        // measurement_state.phase = TestPhase::PutSendCommand;
+    pub fn run_get_chunks(&mut self) -> Result<()> {
+        self.measurement_state.phase = TestPhase::GetChunksSendChunksCommand;
+        self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
+        self.process_phase(TestPhase::GetChunksCompleted)?;
+        Ok(())
+    }
 
-        // self.stream
-        //     .reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
-
-        // measurement_state = self.process_phase(
-        //     measurement_state,
-        //     &mut handler_factory,
-        //     TestPhase::PutCompleted,
-        // )?;
-
+    pub fn run_get_time(&mut self) -> Result<()> {
+        self.measurement_state.phase = TestPhase::GetTimeSendCommand;
+        self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
+        self.process_phase(TestPhase::GetTimeCompleted)?;
         Ok(())
     }
 
