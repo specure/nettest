@@ -7,7 +7,7 @@ static mut RANDOM_BUFFER: Option<Arc<Vec<u8>>> = None;
 pub fn init_random_buffer() {
     let mut buf = vec![0u8; RANDOM_SIZE];
     fastrand::fill(&mut buf);
-    log::info!("Random buffer created!");
+    log::debug!("Random buffer created!");
     unsafe {
         RANDOM_BUFFER = Some(Arc::new(buf));
     }

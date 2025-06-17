@@ -119,6 +119,7 @@ impl BasicHandler for GetChunksHandler {
                 }
             }
             TestPhase::GetChunksReceiveTime => {
+                trace!("GetChunksReceiveTime");
                 loop {
                     let mut buf = [0u8; 1024];
                     match stream.read(&mut buf) {
@@ -166,6 +167,7 @@ impl BasicHandler for GetChunksHandler {
     ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::GetChunksSendChunksCommand => {
+                trace!("GetChunksSendChunksCommand");
                 let command = format!("GETCHUNKS {} {}\n", self.total_chunks, self.chunk_size);
                 self.write_buffer.extend_from_slice(command.as_bytes());
                 if write_all_nb(&mut self.write_buffer, stream)? {

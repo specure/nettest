@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         }
     };
 
-    info!("starting...");
+    debug!("starting...");
     if config.debug {
         debug!("debug logging on");
     }
@@ -31,7 +31,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let buf = random_buffer::get_random_buffer();
     debug!("First 10 bytes: {:?}", &buf[..10]);
     debug!("Last 10 bytes: {:?}", &buf[buf.len() - 10..]);
-    info!("Random buffer initialized!");
 
     let (server, _shutdown_tx) = match Server::new(config) {
         Ok(server) => server,

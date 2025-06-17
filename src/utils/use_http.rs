@@ -15,15 +15,21 @@ const RMBT_UPGRADE: &str = "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgr
 pub async fn define_stream(
     tcp_stream: TcpStream,
     tls_acceptor: Option<Arc<TlsAcceptor>>,
+    is_ssl: bool,
 ) -> Result<Stream, Box<dyn Error + Send + Sync>> {
     info!("Handling HTTP request");
 
     let mut stream: Stream;
 
-    if let Some(acceptor) = tls_acceptor {
-        debug!("Upgrading to TLS connection");
-        stream = Tls(acceptor.accept(tcp_stream).await?);
-        debug!("TLS connection established");
+    if is_ssl {
+        if let Some(acceptor) = tls_acceptor {
+            debug!("Upgrading to TLS connection");
+            stream = Tls(acceptor.accept(tcp_stream).await?);
+            debug!("TLS connection established");
+        } else {
+            error!("No TLS acceptor");
+            return Err("No TLS acceptor".into());
+        }
     } else {
         debug!("Using plain TCP connection");
         stream = Plain(tcp_stream);

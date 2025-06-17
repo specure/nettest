@@ -236,28 +236,25 @@ impl RustlsStream {
 
 fn load_certs(cert_path: &Path) -> Result<Vec<CertificateDer<'static>>, Error> {
     let cert_path = cert_path.to_str().unwrap();
-    info!("Loading certificates from {}", cert_path);
+    debug!("Loading certificates from {}", cert_path);
     let certfile = fs::read(cert_path)?;
-    info!("Read {} bytes from certificate file", certfile.len());
+    debug!("Read {} bytes from certificate file", certfile.len());
     let mut reader = BufReader::new(certfile.as_slice());
     let certs = rustls_pemfile::certs(&mut reader).collect::<Result<Vec<_>, _>>()?;
-    info!("Successfully parsed {} certificates", certs.len());
-    for (i, cert) in certs.iter().enumerate() {
-        info!("Certificate {}: {:?}", i, cert);
-    }
+    debug!("Successfully parsed {} certificates", certs.len());
     Ok(certs)
 }
 
 fn load_private_key(key_path: &Path) -> Result<PrivateKeyDer<'static>, Error> {
     let key_path = key_path.to_str().unwrap();
-    info!("Loading private key from {}", key_path);
+    debug!("Loading private key from {}", key_path);
     let keyfile = fs::read(key_path)?;
-    info!("Read {} bytes from key file", keyfile.len());
+    debug!("Read {} bytes from key file", keyfile.len());
     let mut reader = BufReader::new(keyfile.as_slice());
 
     // Try to read any private key format
     if let Some(key) = rustls_pemfile::private_key(&mut reader)? {
-        info!("Successfully loaded private key: {:?}", key);
+        debug!("Successfully loaded private key: {:?}", key);
         Ok(key)
     } else {
         error!("No private keys found in key file");

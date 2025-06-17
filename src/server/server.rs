@@ -143,7 +143,7 @@ async fn handle_connection(
 
     let stream = stream;
 
-    let stream = define_stream(stream, tls_acceptor).await?;
+    let stream = define_stream(stream, tls_acceptor, is_ssl).await?;
 
     info!("Connection established  {}", stream.to_string());
 

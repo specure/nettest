@@ -1,16 +1,16 @@
 use crate::globals::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE};
 use crate::handlers::BasicHandler;
 use crate::state::{MeasurementState, TestPhase};
+use crate::stream::Stream;
 use crate::utils::{ACCEPT_GETCHUNKS_STRING, MAX_CHUNKS_BEFORE_SIZE_INCREASE};
 use crate::{read_until, write_all_nb};
-use crate::stream::Stream;
 use anyhow::Result;
-use bytes::{BytesMut};
+use bytes::BytesMut;
 use fastrand;
 use log::{debug, info, trace};
 use mio::{net::TcpStream, Interest, Poll, Token};
-use std::io::{self, Write, ErrorKind};
-use std::time::{Instant};
+use std::io::{self, ErrorKind, Write};
+use std::time::Instant;
 
 const TEST_DURATION_NS: u64 = 2_000_000_000; // 2 seconds
 const MIN_CHUNK_SIZE: u64 = 4096; // 4KB
@@ -58,42 +58,80 @@ impl PutNoResultHandler {
             trace!("Increased chunk size to {}", self.chunk_size);
         }
     }
-
 }
 
 impl BasicHandler for PutNoResultHandler {
-    fn on_read(&mut self, stream: &mut Stream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+    fn on_read(
+        &mut self,
+        stream: &mut Stream,
+        poll: &Poll,
+        measurement_state: &mut MeasurementState,
+    ) -> Result<()> {
         match measurement_state.phase {
-            TestPhase::PutNoResultReceiveOk => {
-                if read_until(stream, &mut self.read_buffer, "OK\n")? {
-                    measurement_state.phase = TestPhase::PutNoResultSendChunks;
-                    stream.reregister(&poll, self.token, Interest::WRITABLE)?;
-                    self.read_buffer.clear();
-                    return Ok(());
-                }
-            }
-            TestPhase::PutNoResultReceiveTime => {
-                if read_until(stream, &mut self.read_buffer, ACCEPT_GETCHUNKS_STRING)? {
-                    let time_str = String::from_utf8_lossy(&self.read_buffer);
-                    
-                    trace!("Received trace: {:?}", time_str);
-                    if let Some(time_ns) = time_str
-                        .split_whitespace()
-                        .nth(1)
-                        .and_then(|s| s.parse::<u64>().ok())
-                    {
-                        self.read_buffer.clear();
-                        if time_ns < TEST_DURATION_NS && self.chunk_size < MAX_CHUNK_SIZE {
-                            self.increase_chunk_size();
-                            self.chunks_sent = 0;
-                            measurement_state.phase = TestPhase::PutNoResultSendCommand;
+            TestPhase::PutNoResultReceiveOk => loop {
+                let mut a = vec![0u8; 1024];
+                match stream.read(&mut a) {
+                    Ok(n) => {
+                        self.read_buffer.extend_from_slice(&a[..n]);
+
+                        let line = String::from_utf8_lossy(&self.read_buffer);
+                        trace!("Read PutNoResultReceiveOk {} ]", line);
+
+                        if line.contains("OK\n") {
+                            self.write_buffer.clear();
+                            measurement_state.phase = TestPhase::PutNoResultSendChunks;
                             stream.reregister(&poll, self.token, Interest::WRITABLE)?;
-                        } else {
-                            measurement_state.phase = TestPhase::PutNoResultCompleted;
-                            stream.reregister(&poll, self.token, Interest::WRITABLE)?;
+                            self.read_buffer.clear();
+                            return Ok(());
                         }
                     }
-                    self.read_buffer.clear();
+                    Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        return Err(e.into());
+                    }
+                }
+            },
+            TestPhase::PutNoResultReceiveTime => {
+                loop {
+                    let mut a = vec![0u8; 1024];
+                    match stream.read(&mut a) {
+                        Ok(n) => {
+                            self.read_buffer.extend_from_slice(&a[..n]);
+                            let time_str = String::from_utf8_lossy(&self.read_buffer);
+                            if time_str.contains(ACCEPT_GETCHUNKS_STRING) {
+                                trace!("Received trace: {:?}", time_str);
+                                if let Some(time_ns) = time_str
+                                    .split_whitespace()
+                                    .nth(1)
+                                    .and_then(|s| s.parse::<u64>().ok())
+                                {
+                                    self.read_buffer.clear();
+                                    if time_ns < TEST_DURATION_NS
+                                        && self.chunk_size < MAX_CHUNK_SIZE
+                                    {
+                                        trace!("Increasing chunk size");
+                                        self.increase_chunk_size();
+                                        self.chunks_sent = 0;
+                                        measurement_state.phase = TestPhase::PutNoResultSendCommand;
+                                        stream.reregister(&poll, self.token, Interest::WRITABLE)?;
+                                    } else {
+                                        trace!("Completed");
+                                        measurement_state.phase = TestPhase::PutNoResultCompleted;
+                                        stream.reregister(&poll, self.token, Interest::WRITABLE)?;
+                                    }
+                                }
+                                self.read_buffer.clear();
+                            }
+                        }
+                        Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            return Err(e.into());
+                        }
+                    }
                 }
             }
             _ => {}
@@ -101,7 +139,12 @@ impl BasicHandler for PutNoResultHandler {
         Ok(())
     }
 
-    fn on_write(&mut self, stream: &mut Stream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+    fn on_write(
+        &mut self,
+        stream: &mut Stream,
+        poll: &Poll,
+        measurement_state: &mut MeasurementState,
+    ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::PutNoResultSendCommand => {
                 trace!("Sending command: {:?}", self.get_put_no_result_command());
@@ -110,6 +153,7 @@ impl BasicHandler for PutNoResultHandler {
                 if write_all_nb(&mut self.write_buffer, stream)? {
                     trace!("Sent command: {:?}", self.get_put_no_result_command());
                     measurement_state.phase = TestPhase::PutNoResultReceiveOk;
+                    self.read_buffer.clear();
                     stream.reregister(&poll, self.token, Interest::READABLE)?;
                     self.write_buffer.clear();
                     return Ok(());
@@ -119,42 +163,47 @@ impl BasicHandler for PutNoResultHandler {
                 if self.test_start_time.is_none() {
                     self.test_start_time = Some(Instant::now());
                 }
+                loop {
+                    let is_last_chunk = self.chunks_sent == self.total_chunks - 1;
+                    let chunk = if is_last_chunk {
+                        CHUNK_TERMINATION_STORAGE.get(&self.chunk_size)
+                    } else {
+                        CHUNK_STORAGE.get(&self.chunk_size)
+                    };
 
-                let is_last_chunk = self.chunks_sent == self.total_chunks - 1;
-                let chunk = if is_last_chunk {
-                    CHUNK_TERMINATION_STORAGE.get(&self.chunk_size)
-                } else {
-                    CHUNK_STORAGE.get(&self.chunk_size)
-                };
+                    if let Some(chunk) = chunk {
+                        let remaining = &chunk[self.current_chunk_offset..];
+                        match stream.write(remaining) {
+                            Ok(written) => {
+                                self.current_chunk_offset += written;
+                                self.bytes_sent += written as u64;
 
-                if let Some(chunk) = chunk {
-                    let remaining = &chunk[self.current_chunk_offset..];
-                    match stream.write(remaining) {
-                        Ok(written) => {
-                            self.current_chunk_offset += written;
-                            self.bytes_sent += written as u64;
+                                if self.current_chunk_offset == chunk.len() {
+                                    // Чанк полностью записан
+                                    self.chunks_sent += 1;
+                                    self.current_chunk_offset = 0;
 
-                            if self.current_chunk_offset == chunk.len() {
-                                // Чанк полностью записан
-                                self.chunks_sent += 1;
-                                self.current_chunk_offset = 0;
-
-                                if is_last_chunk {
-                                    measurement_state.phase = TestPhase::PutNoResultReceiveTime;
-                                    stream.reregister(&poll, self.token, Interest::READABLE)?;
+                                    if is_last_chunk {
+                                        measurement_state.phase = TestPhase::PutNoResultReceiveTime;
+                                        stream.reregister(&poll, self.token, Interest::READABLE)?;
+                                        return Ok(());
+                                    }
                                 }
                             }
+                            Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                                // Сохраняем прогресс и ждем следующего write event
+                                return Ok(());
+                            }
+                            Err(e) => {
+                                return Err(e.into());
+                            }
                         }
-                        Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                            // Сохраняем прогресс и ждем следующего write event
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            return Err(e.into());
-                        }
+                    } else {
+                        return Err(anyhow::anyhow!(
+                            "No chunk data found for size {}",
+                            self.chunk_size
+                        ));
                     }
-                } else {
-                    return Err(anyhow::anyhow!("No chunk data found for size {}", self.chunk_size));
                 }
             }
             _ => {}

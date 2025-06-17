@@ -41,6 +41,13 @@ pub enum TestPhase {
     PutNoResultReceiveTime,
     PutNoResultCompleted,
 
+
+    PerfNoResultSendCommand,
+    PerfNoResultReceiveOk,
+    PerfNoResultSendChunks,
+    PerfNoResultReceiveTime,
+    PerfNoResultCompleted,
+
     PutSendCommand,
     PutReceiveOk,
     PutSendChunks,
@@ -151,6 +158,13 @@ impl TestState {
         self.measurement_state.phase = TestPhase::PutNoResultSendCommand;
         self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
         self.process_phase(TestPhase::PutNoResultCompleted)?;
+        Ok(())
+    }
+
+    pub fn run_perf_test(&mut self) -> Result<()> {
+        self.measurement_state.phase = TestPhase::PerfNoResultSendCommand;
+        self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
+        self.process_phase(TestPhase::PerfNoResultCompleted)?;
         Ok(())
     }
 

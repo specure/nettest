@@ -1,6 +1,6 @@
 use crate::handlers::{
-    BasicHandler, GetChunksHandler, GetTimeHandler, GreetingHandler, PingHandler, PutHandler,
-    PutNoResultHandler,
+    BasicHandler, GetChunksHandler, GetTimeHandler, GreetingHandler, PingHandler, PutHandler, 
+    PutNoResultHandler, PerfHandler,
 };
 use crate::state::TestPhase;
 use anyhow::Result;
@@ -13,6 +13,7 @@ pub struct HandlerFactory {
     put_no_result_handler: PutNoResultHandler,
     put_handler: PutHandler,
     get_time_handler: GetTimeHandler,
+    perf_handler: PerfHandler,
 }
 
 impl HandlerFactory {
@@ -24,6 +25,7 @@ impl HandlerFactory {
             put_no_result_handler: PutNoResultHandler::new(token)?,
             put_handler: PutHandler::new(token)?,
             get_time_handler: GetTimeHandler::new(token)?,
+            perf_handler: PerfHandler::new(token)?,
         })
     }
 
@@ -54,12 +56,19 @@ impl HandlerFactory {
             TestPhase::PingReceiveTime => Some(&mut self.ping_handler),
             TestPhase::PingCompleted => None,
 
+            TestPhase::PerfNoResultSendCommand => Some(&mut self.perf_handler),
+            TestPhase::PerfNoResultReceiveOk => Some(&mut self.perf_handler),
+            TestPhase::PerfNoResultSendChunks => Some(&mut self.perf_handler),
+            TestPhase::PerfNoResultReceiveTime => Some(&mut self.perf_handler),
+            TestPhase::PerfNoResultCompleted => None,
+
             TestPhase::PutNoResultSendCommand => Some(&mut self.put_no_result_handler),
             TestPhase::PutNoResultReceiveOk => Some(&mut self.put_no_result_handler),
             TestPhase::PutNoResultSendChunks => Some(&mut self.put_no_result_handler),
             TestPhase::PutNoResultReceiveTime => Some(&mut self.put_no_result_handler),
             TestPhase::PutNoResultCompleted => None,
             TestPhase::PutSendCommand => Some(&mut self.put_handler),
+
             TestPhase::PutReceiveOk => Some(&mut self.put_handler),
             TestPhase::PutSendChunks => Some(&mut self.put_handler),
             TestPhase::PutReceiveTime => Some(&mut self.put_handler),

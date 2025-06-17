@@ -1,6 +1,6 @@
 use crate::logger;
 use crate::utils::{daemon, secret_keys, user};
-use log::{error, info, LevelFilter};
+use log::{debug, error, info, LevelFilter};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs;
@@ -38,14 +38,35 @@ impl RmbtServerConfig {
     pub fn from_args() -> Result<Self, Box<dyn Error + Send + Sync>> {
         let args: Vec<String> = std::env::args().collect();
 
+        // if args.len() == 1 {
+        //     let addr = "127.0.0.1:5005".parse().unwrap();
+        //     let config = RmbtServerConfig {
+        //         listen_addresses: vec![addr],
+        //         ssl_listen_addresses: Vec::new(),
+        //         user_privileges: false,
+        //         cert_path: None,
+        //         key_path: None,
+        //         num_threads: 200, // Default value from C version
+        //         user: None,
+        //         daemon: false,
+        //         debug: false,
+        //         websocket: false,
+        //         version: None,
+        //         secret_keys: Vec::new(),
+        //         secret_key_labels: Vec::new(),
+        //     };
+        //     logger::init_logger(LevelFilter::Info)?;
+        //     return Ok(config);
+        // }
         // Show help if no arguments or help flag is present
-        if args.len() == 1
-            || args.contains(&"-h".to_string())
+        if  args.contains(&"-h".to_string())
             || args.contains(&"--help".to_string())
         {
             print_help();
             return Err("Help printed".into());
         }
+
+      
 
         Self::from_args_vec(std::env::args().collect())
     }
@@ -178,25 +199,23 @@ impl RmbtServerConfig {
         }
 
         // Validate TLS configuration
-        if !config.ssl_listen_addresses.is_empty() {
-            if config.cert_path.is_none() {
-                return Err("Need path to certificate (-c) for TLS connections".into());
+        // if !config.ssl_listen_addresses.is_empty() {
+            if config.cert_path.is_some() && config.key_path.is_some() {
+               config.ssl_listen_addresses.push( "127.0.0.1:8080".parse().unwrap());
             }
-            if config.key_path.is_none() {
-                return Err("Need path to key (-k) for TLS connections".into());
-            }
-        }
+            config.listen_addresses.push( "127.0.0.1:5005".parse().unwrap());
+        // }
 
         // Validate required options for non-TLS connections
-        if config.ssl_listen_addresses.is_empty()
-            && (config.cert_path.is_none() || config.key_path.is_none())
-        {
-            return Err("Error: -c and -k options are required".into());
-        }
+        // if config.ssl_listen_addresses.is_empty()
+        //     && (config.cert_path.is_none() || config.key_path.is_none())
+        // {
+        //     return Err("Error: -c and -k options are required".into());
+        // }
 
-        if config.listen_addresses.is_empty() && config.ssl_listen_addresses.is_empty() {
-            return Err("Error: at least one -l or -L option is required".into());
-        }
+        // if config.listen_addresses.is_empty() && config.ssl_listen_addresses.is_empty() {
+        //     return Err("Error: at least one -l or -L option is required".into());
+        // }
 
         if config.daemon {
             // Run as daemon
@@ -207,49 +226,46 @@ impl RmbtServerConfig {
     }
 
     pub fn load_identity(&self) -> Result<TlsAcceptor, Box<dyn Error + Send + Sync>> {
-        info!("Starting TLS configuration loading");
+        debug!("Starting TLS configuration loading");
         let certs = self.load_certs()?;
-        info!("Successfully loaded {} certificates", certs.len());
+        debug!("Successfully loaded {} certificates", certs.len());
         let key = self.load_private_key()?;
-        info!("Successfully loaded private key");
+        debug!("Successfully loaded private key");
 
-        info!("Building TLS configuration");
+        debug!("Building TLS configuration");
         let config = ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(certs, key)
             .expect("bad certificates/private key");
 
-        info!("TLS configuration built successfully");
+            debug!("TLS configuration built successfully");
         Ok(TlsAcceptor::from(Arc::new(config)))
     }
 
     fn load_certs(&self) -> Result<Vec<CertificateDer<'static>>, Box<dyn Error + Send + Sync>> {
         let cert_path = self.cert_path.as_ref().unwrap();
-        info!("Loading certificates from {}", cert_path);
+        debug!("Loading certificates from {}", cert_path);
         let certfile = fs::read(cert_path)?;
-        info!("Read {} bytes from certificate file", certfile.len());
+        debug!("Read {} bytes from certificate file", certfile.len());
         let mut reader = BufReader::new(certfile.as_slice());
         let certs = rustls_pemfile::certs(&mut reader).collect::<Result<Vec<_>, _>>()?;
-        info!("Successfully parsed {} certificates", certs.len());
-        for (i, cert) in certs.iter().enumerate() {
-            info!("Certificate {}: {:?}", i, cert);
-        }
+        debug!("Successfully parsed {} certificates", certs.len());
         Ok(certs)
     }
 
     fn load_private_key(&self) -> Result<PrivateKeyDer<'static>, Box<dyn Error + Send + Sync>> {
         let key_path = self.key_path.as_ref().unwrap();
-        info!("Loading private key from {}", key_path);
+        debug!("Loading private key from {}", key_path);
         let keyfile = fs::read(key_path)?;
-        info!("Read {} bytes from key file", keyfile.len());
+        debug!("Read {} bytes from key file", keyfile.len());
         let mut reader = BufReader::new(keyfile.as_slice());
 
         // Try to read any private key format
         if let Some(key) = rustls_pemfile::private_key(&mut reader)? {
-            info!("Successfully loaded private key: {:?}", key);
+            debug!("Successfully loaded private key: {:?}", key);
             Ok(key)
         } else {
-            error!("No private keys found in key file");
+            debug!("No private keys found in key file");
             Err("No private keys found in key file".into())
         }
     }

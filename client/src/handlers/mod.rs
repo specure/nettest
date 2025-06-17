@@ -6,6 +6,7 @@ pub mod put;
 pub mod put_no_result;
 pub mod handler_factory;
 pub mod get_time;
+pub mod perf;
 
 pub use basic_handler::BasicHandler;
 pub use greeting::GreetingHandler;
@@ -14,3 +15,4 @@ pub use ping::PingHandler;
 pub use put_no_result::PutNoResultHandler;
 pub use put::PutHandler;
 pub use get_time::GetTimeHandler;
+pub use perf::PerfHandler;

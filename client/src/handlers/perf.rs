@@ -1,19 +1,19 @@
 use crate::handlers::BasicHandler;
 use crate::state::{MeasurementState, TestPhase};
-use crate::{read_until, write_all_nb};
 use crate::stream::Stream;
+use crate::{read_until, write_all_nb};
 use anyhow::Result;
-use bytes::{BytesMut};
+use bytes::BytesMut;
 use fastrand;
 use log::{debug, info, trace};
 use mio::{net::TcpStream, Interest, Poll, Token};
 use std::io::{self, Write};
-use std::time::{Instant};
+use std::time::Instant;
 
 const TEST_DURATION_NS: u64 = 2_000_000_000; // 3 seconds
 const MAX_CHUNK_SIZE: u64 = 4194304; // 2MB
 
-pub struct PutNoResultHandler {
+pub struct PerfHandler {
     token: Token,
     chunk_size: u64,
     test_start_time: Option<Instant>,
@@ -25,7 +25,7 @@ pub struct PutNoResultHandler {
     upload_speed: Option<f64>,
 }
 
-impl PutNoResultHandler {
+impl PerfHandler {
     pub fn new(token: Token) -> Result<Self> {
         // Create and fill buffer with random data
         let mut data_buffer = vec![0u8; MAX_CHUNK_SIZE as usize];
@@ -85,19 +85,41 @@ impl PutNoResultHandler {
     }
 }
 
-impl BasicHandler for PutNoResultHandler {
-    fn on_read(&mut self, stream: &mut Stream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+impl BasicHandler for PerfHandler {
+    fn on_read(
+        &mut self,
+        stream: &mut Stream,
+        poll: &Poll,
+        measurement_state: &mut MeasurementState,
+    ) -> Result<()> {
         match measurement_state.phase {
-            TestPhase::PutNoResultReceiveOk => {
-                if read_until(stream, &mut self.read_buffer, "OK\n")? {
-                    measurement_state.phase = TestPhase::PutNoResultSendChunks;
-                    stream.reregister(&poll, self.token, Interest::WRITABLE)?;
-                    self.read_buffer.clear();
-                    return Ok(());
+            TestPhase::PerfNoResultReceiveOk => {
+                trace!("PerfNoResultReceiveOk");
+                loop {
+                    let mut a = vec![0u8; 1024];
+                    match stream.read(&mut a) {
+                        Ok(n) => {
+                            self.read_buffer.extend_from_slice(&a[..n]);
+                            let time_str = String::from_utf8_lossy(&self.read_buffer);
+
+                            if time_str.contains("OK\n") {
+                                measurement_state.phase = TestPhase::PerfNoResultSendChunks;
+                                stream.reregister(&poll, self.token, Interest::WRITABLE)?;
+                                self.read_buffer.clear();
+                            }
+                        }
+                        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            return Err(e.into());
+                        }
+                    }
                 }
             }
-            TestPhase::PutNoResultReceiveTime => {
-                if read_until(
+            TestPhase::PerfNoResultReceiveTime => {
+                trace!("PerfNoResultReceiveTime");
+                while !read_until(
                     stream,
                     &mut self.read_buffer,
                     "ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n",
@@ -116,7 +138,7 @@ impl BasicHandler for PutNoResultHandler {
                             measurement_state.upload_bytes = Some(self.bytes_sent);
                         }
                     }
-                    measurement_state.phase = TestPhase::PutNoResultCompleted;
+                    measurement_state.phase = TestPhase::PerfNoResultCompleted;
                     stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                     self.read_buffer.clear();
                 }
@@ -128,22 +150,29 @@ impl BasicHandler for PutNoResultHandler {
         Ok(())
     }
 
-    fn on_write(&mut self, stream: &mut Stream, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+    fn on_write(
+        &mut self,
+        stream: &mut Stream,
+        poll: &Poll,
+        measurement_state: &mut MeasurementState,
+    ) -> Result<()> {
         match measurement_state.phase {
-            TestPhase::PutNoResultSendCommand => {
+            TestPhase::PerfNoResultSendCommand => {
+                trace!("PerfNoResultSendCommand");
                 self.write_buffer
                     .extend_from_slice(self.get_put_no_result_command().as_bytes());
                 if write_all_nb(&mut self.write_buffer, stream)? {
-                    measurement_state.phase = TestPhase::PutNoResultReceiveOk;
+                    measurement_state.phase = TestPhase::PerfNoResultReceiveOk;
                     stream.reregister(&poll, self.token, Interest::READABLE)?;
                     return Ok(());
                 }
                 Ok(())
             }
-            TestPhase::PutNoResultSendChunks => {
+            TestPhase::PerfNoResultSendChunks => {
+                trace!("PerfNoResultSendChunks");
                 if self.test_start_time.is_none() {
                     self.test_start_time = Some(Instant::now());
-                } 
+                }
                 if let Some(start_time) = self.test_start_time {
                     let elapsed = start_time.elapsed();
                     let mut is_last = elapsed.as_nanos() >= TEST_DURATION_NS as u128;
@@ -158,7 +187,6 @@ impl BasicHandler for PutNoResultHandler {
                     let mut remaining = &buffer[current_pos as usize..];
                     while !is_last {
                         if remaining.is_empty() {
-                            // debug!("PutNoResultSendChunks processing chunk");
                             // Add new chunk
                             // trace!("Elapsed: {} ns", elapsed.as_nanos());
                             is_last = start_time.elapsed().as_nanos() >= TEST_DURATION_NS as u128;
@@ -200,7 +228,7 @@ impl BasicHandler for PutNoResultHandler {
                             }
                         }
                     }
-                    measurement_state.phase = TestPhase::PutNoResultReceiveTime;
+                    measurement_state.phase = TestPhase::PerfNoResultReceiveTime;
                     stream.reregister(&poll, self.token, Interest::READABLE)?;
                     return Ok(());
                 } else {

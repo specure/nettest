@@ -45,6 +45,8 @@ async fn async_main() -> anyhow::Result<()> {
     let args: Vec<String> = env::args().collect();
     let use_tls = args.iter().any(|arg| arg == "-tls");
 
+    let perf_test = args.iter().any(|arg| arg == "-perf");
+
     // Получаем количество потоков из аргументов
     let thread_count = args.iter()
         .enumerate()
@@ -65,24 +67,46 @@ async fn async_main() -> anyhow::Result<()> {
     info!("Thread count: {}", thread_count);
     info!("Connecting to server...");
 
-    let addr = "127.0.0.1:8082".parse::<SocketAddr>()?;
+    let default_server = String::from("127.0.0.1");
+    let server = args.get(1).unwrap_or(&default_server);
+
+
+    info!("Server: {}", server);
+
+    let addr = if !use_tls {
+        format!("{}:5005", server).parse::<SocketAddr>()?
+    } else {
+        format!("{}:8080", server).parse::<SocketAddr>()?
+    };
 
     info!("Connected to server at {}", addr);
 
+
+    if perf_test {
+        info!("Running performance test");
+        let mut state = TestState::new(addr, use_tls, 0, None, None).unwrap();
+            state.process_greeting().unwrap();
+            state.run_perf_test().unwrap();
+            return Ok(());
+    }
+    // let addr = "127.0.0.1:5005".parse::<SocketAddr>()?;
+
     let barrier = Arc::new(Barrier::new(thread_count));
     let mut thread_handles = vec![];
+
+
 
     for i in 0..thread_count {
         let barrier = barrier.clone();
         thread_handles.push(thread::spawn(move || {
             let mut state = TestState::new(addr, use_tls, i, None, None).unwrap();
             state.process_greeting().unwrap();
+            barrier.wait(); 
+            state.run_get_chunks().unwrap();
             barrier.wait();
             if i == 0 {
                 state.run_ping().unwrap();
             }
-            barrier.wait(); 
-            state.run_get_chunks().unwrap();
             barrier.wait();
             state.run_get_time().unwrap();
             barrier.wait(); 
@@ -119,36 +143,29 @@ async fn async_main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn calculate_download_speed(states: &[&MeasurementState]) {
-    // Собираем все измерения из всех потоков
-    let mut thread_measurements: Vec<Vec<(u64, u64)>> = Vec::new();
-    
-    for state in states {
-        thread_measurements.push(state.measurements.clone().into_iter().map(|m| (m.0, m.1)).collect());
+fn calculate_speed_from_measurements(measurements: Vec<Vec<(u64, u64)>>) -> (f64, f64, f64) {
+    if measurements.is_empty() {
+        return (0.0, 0.0, 0.0);
     }
 
-    if thread_measurements.is_empty() {
-        return;
-    }
-
-    // Находим t* - минимальное время последнего измерения среди всех потоков
-    let t_star = thread_measurements
+    // Находим t* - минимальное время последнего измерения
+    let t_star = measurements
         .iter()
-        .filter_map(|measurements| measurements.last().map(|(time, _)| *time))
+        .filter_map(|m| m.last().map(|(time, _)| *time))
         .min()
         .unwrap_or(0);
 
     let mut total_bytes = 0.0;
 
     // Для каждого потока
-    for measurements in thread_measurements {
-        if measurements.is_empty() {
+    for thread_measurements in measurements {
+        if thread_measurements.is_empty() {
             continue;
         }
 
         // Находим последнее измерение до t*
         let mut last_valid_idx = 0;
-        for (i, (time, _)) in measurements.iter().enumerate() {
+        for (i, (time, _)) in thread_measurements.iter().enumerate() {
             if *time <= t_star {
                 last_valid_idx = i;
             } else {
@@ -157,9 +174,9 @@ fn calculate_download_speed(states: &[&MeasurementState]) {
         }
 
         // Если есть следующее измерение после t*, интерполируем
-        if last_valid_idx + 1 < measurements.len() {
-            let (t1, b1) = measurements[last_valid_idx];
-            let (t2, b2) = measurements[last_valid_idx + 1];
+        if last_valid_idx + 1 < thread_measurements.len() {
+            let (t1, b1) = thread_measurements[last_valid_idx];
+            let (t2, b2) = thread_measurements[last_valid_idx + 1];
             
             // Интерполяция: b = b1 + (t* - t1) * (b2 - b1) / (t2 - t1)
             let ratio = (t_star - t1) as f64 / (t2 - t1) as f64;
@@ -167,31 +184,38 @@ fn calculate_download_speed(states: &[&MeasurementState]) {
             total_bytes += interpolated_bytes;
         } else {
             // Если нет следующего измерения, используем последнее известное
-            total_bytes += measurements[last_valid_idx].1 as f64;
+            total_bytes += thread_measurements[last_valid_idx].1 as f64;
         }
     }
 
     // Вычисляем скорость R = (1/t*) * Σ(b_k)
-    let download_speed = total_bytes / (t_star as f64 / 1_000_000_000.0);
-    let speed_bps = download_speed * 8.0; // конвертируем байты в биты
+    let speed_bps = (total_bytes * 8.0) / (t_star as f64 / 1_000_000_000.0);
     let speed_gbps = speed_bps / 1_000_000_000.0;
     let speed_mbps = speed_bps / 1_000_000.0;
+
+    (speed_bps, speed_gbps, speed_mbps)
+}
+
+fn calculate_download_speed(states: &[&MeasurementState]) {
+    let mut thread_measurements: Vec<Vec<(u64, u64)>> = Vec::new();
+    
+    for state in states {
+        thread_measurements.push(state.measurements.clone().into_iter().map(|m| (m.0, m.1)).collect());
+    }
+
+    let (speed_bps, speed_gbps, speed_mbps) = calculate_speed_from_measurements(thread_measurements);
     println!("Download speed: {:.2} bytes/s, {:.2} Gbit/s, {:.2} Mbit/s", 
-        download_speed, speed_gbps, speed_mbps);
+        speed_bps / 8.0, speed_gbps, speed_mbps);
 }
 
 fn calculate_upload_speed(states: &[&MeasurementState]) {
     let mut results: HashMap<u32, Vec<(u64, u64)>> = HashMap::new();
-
-    info!("Results: {:?}", results);
     
-    // Process data from each state's read_buffer_temp
     for (thread_id, state) in states.iter().enumerate() {
         for line in state.read_buffer_temp.split(|&b| b == b'\n') {
             if line.is_empty() { continue; }
             let s = String::from_utf8_lossy(line);
             let parts: Vec<&str> = s.split_whitespace().collect();
-            // Format: "TIME <time_ns> BYTES <bytes>"
             if parts.len() >= 4 && parts[0] == "TIME" && parts[2] == "BYTES" {
                 if let (Ok(time_ns), Ok(bytes)) = (
                     parts[1].parse::<u64>(),
@@ -203,49 +227,11 @@ fn calculate_upload_speed(states: &[&MeasurementState]) {
         }
     }
 
-    if results.is_empty() {
-        println!("Недостаточно данных для расчета 111 скорости");
-        return;
-    }
-
-    // t* — минимальное из последних t по всем потокам
-    let t_star = results
-        .values()
-        .filter_map(|v| v.last().map(|(t, _)| *t))
-        .min()
-        .unwrap();
-
-    let mut total_bytes = 0.0;
-    for (_thread_id, v) in &results {
-        // Найти два ближайших измерения: t_{l-1} < t* <= t_l
-        let mut b_k_star = None;
-        for i in 1..v.len() {
-            if v[i].0 >= t_star {
-                let (t_lm1, b_lm1) = v[i - 1];
-                let (t_l, b_l) = v[i];
-                let b_star = b_lm1 as f64
-                    + (t_star as f64 - t_lm1 as f64) / (t_l as f64 - t_lm1 as f64)
-                        * (b_l as f64 - b_lm1 as f64);
-                b_k_star = Some(b_star);
-                break;
-            }
-        }
-        // Если не нашли интервал — берём последнее значение до t*
-        if b_k_star.is_none() {
-            if let Some(&(t, b)) = v.iter().rev().find(|&&(t, _)| t <= t_star) {
-                b_k_star = Some(b as f64);
-            }
-        }
-        if let Some(b_star) = b_k_star {
-            total_bytes += b_star;
-        }
-    }
-
-    let speed_bps = total_bytes * 8.0 / (t_star as f64 / 1_000_000_000.0);
-    let speed_gbps = speed_bps / 1_000_000_000.0;
-    let mbps = speed_bps / 1_000_000.0;
-    println!(
-        "Uplink speed (interpolated, all threads): {:.2} Gbit/s ({:.2} bps, {:.2} MBit/s)",
-        speed_gbps, speed_bps, mbps
-    );
+    let thread_measurements: Vec<Vec<(u64, u64)>> = results.into_values().collect();
+    let (speed_bps, speed_gbps, speed_mbps) = calculate_speed_from_measurements(thread_measurements);
+    println!("Uplink speed (interpolated, all threads): {:.2} Gbit/s ({:.2} bps, {:.2} MBit/s)",
+        speed_gbps, speed_bps, speed_mbps);
 }
+
+
+
