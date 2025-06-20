@@ -21,18 +21,12 @@ pub struct PutHandler {
     token: Token,
     chunk_size: u64,
     test_start_time: Option<Instant>,
-    bytes_sent: u64,
     write_buffer: BytesMut,
     read_buffer: BytesMut,
     read_buffer_temp: Vec<u8>,
-    read_buffer_temp_accumulated: Vec<u8>,
     data_buffer: Vec<u8>,
     data_termination_buffer: Vec<u8>,
-    responses: Vec<(u64, u64)>, // (time_ns, bytes)
-    read_times: Vec<Duration>,
-    write_times: Vec<Duration>,
     is_last_chunk: bool,
-    send_data: bool,
 }
 
 impl PutHandler {
@@ -53,18 +47,12 @@ impl PutHandler {
             token,
             chunk_size: MAX_CHUNK_SIZE,
             test_start_time: None,
-            bytes_sent: 0,
             write_buffer: BytesMut::with_capacity(MAX_CHUNK_SIZE as usize),
             read_buffer: BytesMut::with_capacity(1024 * 1024 * 20),
-            read_buffer_temp: vec![0u8; 1024 * 1024 * 10],
+            read_buffer_temp: Vec::with_capacity(1024 * 1024 * 1),
             data_buffer,
             data_termination_buffer,
-            responses: Vec::new(),
-            read_times: Vec::new(),
-            write_times: Vec::new(),
-            read_buffer_temp_accumulated: vec![0u8; 1024 * 1024],
             is_last_chunk: false,
-            send_data: false,
         })
     }
 
@@ -106,7 +94,8 @@ impl PutHandler {
             let speed_gbps = speed_bps / 1_000_000_000.0;
             trace!(
                 "Uplink speed (interpolated): {:.2} Gbit/s ({:.2} bps)",
-                speed_gbps, speed_bps
+                speed_gbps,
+                speed_bps
             );
         } else {
             trace!("Не удалось рассчитать скорость");
@@ -135,21 +124,28 @@ impl BasicHandler for PutHandler {
                 }
             }
             TestPhase::PutSendChunks => {
-                let mut temp_accumulated: Vec<u8> = vec![0u8; 1024 * 1024 * 10];
+                let mut temp_accumulated: Vec<u8> = vec![0u8; 1024  * 10];
+
                 loop {
                     match stream.read(&mut temp_accumulated) {
                         Ok(n) => {
-                            self.read_buffer_temp
-                                .extend_from_slice(&temp_accumulated[..n]);
-                            let accept_string_bytes = ACCEPT_GETCHUNKS_STRING.as_bytes();
-                            if self.read_buffer_temp.len() >= accept_string_bytes.len() {
-                                let last_bytes = &self.read_buffer_temp[self.read_buffer_temp.len() - accept_string_bytes.len()..];
-                                if last_bytes == accept_string_bytes {
-                                    self.calculate_upload_speed();
-                                    measurement_state.read_buffer_temp = self.read_buffer_temp.clone();
-                                    self.read_buffer_temp.clear();
-                                    measurement_state.phase = TestPhase::PutCompleted;
-                                    return Ok(());
+                            if n > 0 {
+                                self.read_buffer_temp.extend_from_slice(
+                                    &temp_accumulated
+                                        [0..n],
+                                );
+                                let accept_string_bytes = ACCEPT_GETCHUNKS_STRING.as_bytes();
+                                if self.read_buffer_temp.len() >= accept_string_bytes.len() {
+                                    let last_bytes = &self.read_buffer_temp
+                                        [self.read_buffer_temp.len() - accept_string_bytes.len()..];
+                                    if last_bytes == accept_string_bytes {
+                                        self.calculate_upload_speed();
+                                        measurement_state.read_buffer_temp =
+                                            self.read_buffer_temp.clone();
+                                        self.read_buffer_temp.clear();
+                                        measurement_state.phase = TestPhase::PutCompleted;
+                                        return Ok(());
+                                    }
                                 }
                             }
                         }
@@ -177,7 +173,8 @@ impl BasicHandler for PutHandler {
     ) -> Result<()> {
         trace!(
             "PutHandler phase write  {:?} token {:?}",
-            measurement_state.phase, self.token
+            measurement_state.phase,
+            self.token
         );
         match measurement_state.phase {
             TestPhase::PutSendCommand => {
@@ -201,47 +198,47 @@ impl BasicHandler for PutHandler {
                     let elapsed = start_time.elapsed();
                     let time_is_up = elapsed.as_nanos() >= TEST_DURATION_NS as u128;
 
-                    if time_is_up  && self.is_last_chunk && self.write_buffer.is_empty() {
+                    if time_is_up && self.is_last_chunk && self.write_buffer.is_empty() {
                         return Ok(());
                     }
 
                     // if (!time_is_up || !self.write_buffer.is_empty()) {
-                        if self.write_buffer.is_empty() {
-                            let buffer = if time_is_up {
-                                self.is_last_chunk = true;
-                                &self.data_termination_buffer
-                            } else {
-                                &self.data_buffer
-                            };
-                            self.write_buffer.extend_from_slice( buffer);
-                        }
-                        loop {
-                            // debug!("Write buffer: {}", self.write_buffer.len());
-                            // let write_start = Instant::now();
-                            match stream.write(&mut self.write_buffer) {
-                                Ok(n) => {
-                                    // let write_duration = write_start.elapsed();
-                                    // self.write_times.push(write_duration);
-                                    // debug!("Wrote {} bytes in {:?}", n, write_duration);
-                                    self.write_buffer.advance(n);
-                                    if self.write_buffer.is_empty() {
-                                        trace!("Write buffer is empty");
-                                        stream.reregister(
-                                            &poll,
-                                            self.token,
-                                            Interest::READABLE | Interest::WRITABLE,
-                                        )?;
-                                        return Ok(());
-                                    }
-                                }
-                                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    if self.write_buffer.is_empty() {
+                        let buffer = if time_is_up {
+                            self.is_last_chunk = true;
+                            &self.data_termination_buffer
+                        } else {
+                            &self.data_buffer
+                        };
+                        self.write_buffer.extend_from_slice(buffer);
+                    }
+                    loop {
+                        // debug!("Write buffer: {}", self.write_buffer.len());
+                        // let write_start = Instant::now();
+                        match stream.write(&mut self.write_buffer) {
+                            Ok(n) => {
+                                // let write_duration = write_start.elapsed();
+                                // self.write_times.push(write_duration);
+                                // debug!("Wrote {} bytes in {:?}", n, write_duration);
+                                self.write_buffer.advance(n);
+                                if self.write_buffer.is_empty() {
+                                    trace!("Write buffer is empty");
+                                    stream.reregister(
+                                        &poll,
+                                        self.token,
+                                        Interest::READABLE | Interest::WRITABLE,
+                                    )?;
                                     return Ok(());
                                 }
-                                Err(e) => {
-                                    debug!("Error writing to stream: {}", e);
-                                }
+                            }
+                            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                                return Ok(());
+                            }
+                            Err(e) => {
+                                debug!("Error writing to stream: {}", e);
                             }
                         }
+                    }
                     // } else {
                     //     debug!("Write send_data: {}", self.send_data);
                     //     if !self.send_data {
@@ -256,7 +253,7 @@ impl BasicHandler for PutHandler {
                     //                 Ok(n) => {
                     //                     self.write_buffer.advance(n);
                     //                     debug!("Write buffer after advance: {} token {:?}", self.write_buffer.len(), self.token);
-                    //                     if self.write_buffer.is_empty() { 
+                    //                     if self.write_buffer.is_empty() {
                     //                         debug!("Write buffer is EMTPY EMTPYE MTPYEMTPYEMTP YEMTPYEMTP YEMTPYEMTPYEM EMTPYEMTPYTPY token {:?}", self.token);
                     //                         self.send_data = true;
                     //                         stream.reregister(

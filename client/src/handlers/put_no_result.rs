@@ -5,7 +5,7 @@ use crate::stream::Stream;
 use crate::utils::{ACCEPT_GETCHUNKS_STRING, MAX_CHUNKS_BEFORE_SIZE_INCREASE};
 use crate::{read_until, write_all_nb};
 use anyhow::Result;
-use bytes::BytesMut;
+use bytes::{Buf, BytesMut};
 use fastrand;
 use log::{debug, info, trace};
 use mio::{net::TcpStream, Interest, Poll, Token};
@@ -52,10 +52,10 @@ impl PutNoResultHandler {
     fn increase_chunk_size(&mut self) {
         if self.total_chunks < MAX_CHUNKS_BEFORE_SIZE_INCREASE {
             self.total_chunks *= 2;
-            trace!("Increased total chunks to {}", self.total_chunks);
+            trace!("Increased total chunks to {} token {:?}", self.total_chunks, self.token);
         } else {
             self.chunk_size = (self.chunk_size * 2).min(MAX_CHUNK_SIZE);
-            trace!("Increased chunk size to {}", self.chunk_size);
+            trace!("Increased chunk size to {} token {:?}", self.chunk_size, self.token);
         }
     }
 }
@@ -69,13 +69,17 @@ impl BasicHandler for PutNoResultHandler {
     ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::PutNoResultReceiveOk => loop {
+                if (self.test_start_time.is_none()) {
+                    self.test_start_time = Some(Instant::now());
+                }
+                
                 let mut a = vec![0u8; 1024];
                 match stream.read(&mut a) {
                     Ok(n) => {
                         self.read_buffer.extend_from_slice(&a[..n]);
 
                         let line = String::from_utf8_lossy(&self.read_buffer);
-                        trace!("Read PutNoResultReceiveOk {} ]", line);
+                        trace!("Read PutNoResultReceiveOk {} token {:?}", line, self.token);
 
                         if line.contains("OK\n") {
                             self.write_buffer.clear();
@@ -94,21 +98,27 @@ impl BasicHandler for PutNoResultHandler {
                 }
             },
             TestPhase::PutNoResultReceiveTime => {
+                trace!("PutNoResultReceiveTime token {:?}", self.token);
                 loop {
                     let mut a = vec![0u8; 1024];
                     match stream.read(&mut a) {
                         Ok(n) => {
                             self.read_buffer.extend_from_slice(&a[..n]);
                             let time_str = String::from_utf8_lossy(&self.read_buffer);
+                            trace!("Read PutNoResultReceiveTime token afer read {:?} {:?}", self.token, time_str);
+
+
                             if time_str.contains(ACCEPT_GETCHUNKS_STRING) {
-                                trace!("Received trace: {:?}", time_str);
+                                trace!("Received trace:  {:?} token {:?}", time_str, self.token);
+                                
                                 if let Some(time_ns) = time_str
                                     .split_whitespace()
                                     .nth(1)
                                     .and_then(|s| s.parse::<u64>().ok())
                                 {
                                     self.read_buffer.clear();
-                                    if time_ns < TEST_DURATION_NS
+                                    let time = self.test_start_time.unwrap().elapsed().as_nanos();
+                                    if time  < TEST_DURATION_NS as u128
                                         && self.chunk_size < MAX_CHUNK_SIZE
                                     {
                                         trace!("Increasing chunk size");
@@ -117,15 +127,17 @@ impl BasicHandler for PutNoResultHandler {
                                         measurement_state.phase = TestPhase::PutNoResultSendCommand;
                                         stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                                     } else {
-                                        trace!("Completed");
+                                        trace!("Completed token {:?}", self.token);
                                         measurement_state.phase = TestPhase::PutNoResultCompleted;
                                         stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                                     }
                                 }
-                                self.read_buffer.clear();
+                            } else {
+                                stream.reregister(&poll, self.token, Interest::READABLE)?;
                             }
                         }
                         Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                            trace!("WouldBlock token {:?}", self.token);
                             return Ok(());
                         }
                         Err(e) => {
@@ -147,16 +159,31 @@ impl BasicHandler for PutNoResultHandler {
     ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::PutNoResultSendCommand => {
-                trace!("Sending command: {:?}", self.get_put_no_result_command());
-                self.write_buffer
-                    .extend_from_slice(self.get_put_no_result_command().as_bytes());
-                if write_all_nb(&mut self.write_buffer, stream)? {
-                    trace!("Sent command: {:?}", self.get_put_no_result_command());
-                    measurement_state.phase = TestPhase::PutNoResultReceiveOk;
-                    self.read_buffer.clear();
-                    stream.reregister(&poll, self.token, Interest::READABLE)?;
-                    self.write_buffer.clear();
-                    return Ok(());
+                trace!("PutNoResultSendCommand token {:?}", self.token);
+                if self.write_buffer.is_empty() {
+                    self.write_buffer.extend_from_slice(self.get_put_no_result_command().as_bytes());
+                }
+                loop {
+                    trace!("Sending command: {:?} token {:?}", self.get_put_no_result_command(), self.token);
+
+                    match stream.write(&self.write_buffer) {
+                        Ok(written) => {
+                            self.write_buffer.advance(written);
+                            if self.write_buffer.is_empty() {
+                                measurement_state.phase = TestPhase::PutNoResultReceiveOk;
+                                self.read_buffer.clear();
+                                stream.reregister(&poll, self.token, Interest::READABLE)?;
+                                self.write_buffer.clear(); 
+                                return Ok(());
+                            }
+                        }
+                        Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            return Err(e.into());
+                        }
+                    }
                 }
             }
             TestPhase::PutNoResultSendChunks => {
@@ -164,8 +191,10 @@ impl BasicHandler for PutNoResultHandler {
                     self.test_start_time = Some(Instant::now());
                 }
                 loop {
+                    trace!("Sending chunks token {:?}", self.token);
                     let is_last_chunk = self.chunks_sent == self.total_chunks - 1;
                     let chunk = if is_last_chunk {
+                        trace!("Sending last chunk token {:?}", self.token);
                         CHUNK_TERMINATION_STORAGE.get(&self.chunk_size)
                     } else {
                         CHUNK_STORAGE.get(&self.chunk_size)
@@ -184,6 +213,8 @@ impl BasicHandler for PutNoResultHandler {
                                     self.current_chunk_offset = 0;
 
                                     if is_last_chunk {
+                                        trace!("Last chunk sent token {:?}", self.token);
+                                        
                                         measurement_state.phase = TestPhase::PutNoResultReceiveTime;
                                         stream.reregister(&poll, self.token, Interest::READABLE)?;
                                         return Ok(());
@@ -198,11 +229,6 @@ impl BasicHandler for PutNoResultHandler {
                                 return Err(e.into());
                             }
                         }
-                    } else {
-                        return Err(anyhow::anyhow!(
-                            "No chunk data found for size {}",
-                            self.chunk_size
-                        ));
                     }
                 }
             }

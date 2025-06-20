@@ -201,9 +201,9 @@ impl RmbtServerConfig {
         // Validate TLS configuration
         // if !config.ssl_listen_addresses.is_empty() {
             if config.cert_path.is_some() && config.key_path.is_some() {
-               config.ssl_listen_addresses.push( "127.0.0.1:8080".parse().unwrap());
+               config.ssl_listen_addresses.push( parse_listen_address("8080").unwrap());
             }
-            config.listen_addresses.push( "127.0.0.1:5005".parse().unwrap());
+            config.listen_addresses.push( parse_listen_address("5005").unwrap());
         // }
 
         // Validate required options for non-TLS connections

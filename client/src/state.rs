@@ -3,11 +3,14 @@ use bytes::BytesMut;
 use log::{debug, error, info, trace};
 use mio::{Events, Interest, Poll, Token};
 use std::collections::{HashMap, VecDeque};
+use std::time::Instant;
 use std::{net::SocketAddr, path::Path, time::Duration};
 
 use crate::handlers::handler_factory::HandlerFactory;
 use crate::stream::Stream;
 use crate::DEFAULT_READ_BUFFER_SIZE;
+
+const ONE_SECOND_NS: u128 = 1_000_000_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TestPhase {
@@ -40,7 +43,6 @@ pub enum TestPhase {
     PutNoResultSendChunks,
     PutNoResultReceiveTime,
     PutNoResultCompleted,
-
 
     PerfNoResultSendCommand,
     PerfNoResultReceiveOk,
@@ -78,8 +80,10 @@ pub struct MeasurementState {
     pub download_speed: Option<f64>,
     pub chunk_size: usize,
     pub ping_median: Option<u64>,
+    pub phase_start_time: Option<Instant>,
     pub read_buffer_temp: Vec<u8>,
-    pub measurements: VecDeque<(u64, u64)>, // Хранит (t_k^(j), b_k^(j)) для каждого чанка
+    pub measurements: VecDeque<(u64, u64)>, // Хранит (t_k^(j), b_k^(j)) для каждого чанка\
+    pub failed: bool,
 }
 
 impl TestState {
@@ -118,10 +122,11 @@ impl TestState {
             ping_median: None,
             read_buffer_temp: vec![0u8; 1024 * 1024 * 10],
             measurements: VecDeque::new(),
+            phase_start_time: None,
+            failed: false,
         };
 
         let mut handler_factory: HandlerFactory = HandlerFactory::new(token)?;
-
 
         Ok(Self {
             stream,
@@ -133,9 +138,6 @@ impl TestState {
         })
     }
 
-
-
-
     pub fn process_greeting(&mut self) -> Result<&mut TestState> {
         self.stream.reregister(
             &mut self.poll,
@@ -143,57 +145,58 @@ impl TestState {
             Interest::WRITABLE | Interest::READABLE,
         )?;
 
-        self.process_phase(
-            TestPhase::GreetingCompleted,
-        )?;
+        self.process_phase(TestPhase::GreetingCompleted, ONE_SECOND_NS * 1)?;
 
         debug!("Greeting completed");
-
-
 
         Ok(self)
     }
 
     pub fn run_put_no_result(&mut self) -> Result<()> {
         self.measurement_state.phase = TestPhase::PutNoResultSendCommand;
-        self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
-        self.process_phase(TestPhase::PutNoResultCompleted)?;
+        self.stream
+            .reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
+        self.process_phase(TestPhase::PutNoResultCompleted, ONE_SECOND_NS * 3)?;
         Ok(())
     }
 
     pub fn run_perf_test(&mut self) -> Result<()> {
         self.measurement_state.phase = TestPhase::PerfNoResultSendCommand;
-        self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
-        self.process_phase(TestPhase::PerfNoResultCompleted)?;
+        self.stream
+            .reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
+        self.process_phase(TestPhase::PerfNoResultCompleted, ONE_SECOND_NS * 10)?;
         Ok(())
     }
 
     pub fn run_ping(&mut self) -> Result<()> {
         self.measurement_state.phase = TestPhase::PingSendPing;
-        self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
-        self.process_phase(TestPhase::PingCompleted)?;
+        self.stream
+            .reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
+        self.process_phase(TestPhase::PingCompleted, ONE_SECOND_NS * 3)?;
         Ok(())
     }
 
     pub fn run_get_chunks(&mut self) -> Result<()> {
         self.measurement_state.phase = TestPhase::GetChunksSendChunksCommand;
-        self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
-        self.process_phase(TestPhase::GetChunksCompleted)?;
+        self.stream
+            .reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
+        self.process_phase(TestPhase::GetChunksCompleted, ONE_SECOND_NS * 3)?;
         Ok(())
     }
 
     pub fn run_get_time(&mut self) -> Result<()> {
         self.measurement_state.phase = TestPhase::GetTimeSendCommand;
-        self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
-        self.process_phase(TestPhase::GetTimeCompleted)?;
+        self.stream
+            .reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
+        self.process_phase(TestPhase::GetTimeCompleted, ONE_SECOND_NS * 10)?;
         Ok(())
     }
 
-
     pub fn run_put(&mut self) -> Result<()> {
         self.measurement_state.phase = TestPhase::PutSendCommand;
-        self.stream.reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
-        self.process_phase(TestPhase::PutCompleted)?;
+        self.stream
+            .reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
+        self.process_phase(TestPhase::PutCompleted, ONE_SECOND_NS * 10)?;
         Ok(())
     }
 
@@ -202,20 +205,66 @@ impl TestState {
         // mut measurement_state: MeasurementState,
         // handler_factory: &mut HandlerFactory,
         phase: TestPhase,
+        test_duration_ns: u128,
     ) -> Result<()> {
+
+        if self.measurement_state.failed {
+            return Ok(());
+        }
+
+        
+        self.measurement_state.phase_start_time = Some(Instant::now());
+
         while self.measurement_state.phase != phase {
+   
             self.poll
-                .poll(&mut self.events, Some(Duration::from_secs(10)))?;
+                .poll(&mut self.events, Some(Duration::from_secs(3)))?;
+
+                trace!("Poll iteration token {:?}", self.token);
+
+                if (self.events.is_empty()) {
+                    let time = self.measurement_state.phase_start_time.unwrap().elapsed().as_nanos();
+                    let now = Instant::now().elapsed().as_nanos();
+                    if now - time > test_duration_ns {
+                        self.measurement_state.failed = true;
+                        break;
+                    }
+                }
 
             // Process events in the current poll iteration
             for event in &self.events {
+                // Handle read events after write to process any responses
+                if event.is_readable() {
+                    trace!("Readable event token {:?}", self.token);
+                    if let Some(handler) = self
+                        .handler_factory
+                        .get_handler(&self.measurement_state.phase)
+                    {
+                        if let Err(e) = handler.on_read(
+                            &mut self.stream,
+                            &self.poll,
+                            &mut self.measurement_state,
+                        ) {
+                            error!(
+                                "Error in on_read for phase {:?}: {}",
+                                self.measurement_state.phase, e
+                            );
+                            return Err(e);
+                        }
+                    }
+                }
                 // Handle write events first to ensure data is sent
                 if event.is_writable() {
-                    trace!("Writable event");
-                    if let Some(handler) = self.handler_factory.get_handler(&self.measurement_state.phase) {
-                        if let Err(e) =
-                            handler.on_write(&mut self.stream, &self.poll, &mut self.measurement_state)
-                        {
+                    trace!("Writable event token {:?}", self.token);
+                    if let Some(handler) = self
+                        .handler_factory
+                        .get_handler(&self.measurement_state.phase)
+                    {
+                        if let Err(e) = handler.on_write(
+                            &mut self.stream,
+                            &self.poll,
+                            &mut self.measurement_state,
+                        ) {
                             error!(
                                 "Error in on_write for phase {:?}: {}",
                                 self.measurement_state.phase, e
@@ -225,23 +274,12 @@ impl TestState {
                     }
                 }
 
-                // Handle read events after write to process any responses
-                if event.is_readable() {
-                    trace!("Readable event");
-                    if let Some(handler) = self.handler_factory.get_handler(&self.measurement_state.phase) {
-                        if let Err(e) =
-                            handler.on_read(&mut self.stream, &self.poll, &mut self.measurement_state)
-                        {
-                            error!(
-                                "Error in on_read for phase {:?}: {}",
-                                self.measurement_state.phase, e
-                            );
-                            return Err(e);
-                        }
-                    }
-                }
+                
             }
-        }
+        } 
+        
+
+        
 
         Ok(())
     }

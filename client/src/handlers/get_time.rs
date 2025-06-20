@@ -36,7 +36,7 @@ impl GetTimeHandler {
             read_buffer: BytesMut::with_capacity(MAX_CHUNK_SIZE as usize),
             write_buffer: BytesMut::with_capacity(1024),
             responses: Vec::new(),
-            chunk_buffer: vec![0u8; MAX_CHUNK_SIZE as usize],
+            chunk_buffer: Vec::with_capacity(MAX_CHUNK_SIZE as usize),
             start_time: Instant::now(),
         })
     }
@@ -93,6 +93,7 @@ impl BasicHandler for GetTimeHandler {
                         .nth(1)
                         .and_then(|s| s.parse::<u64>().ok())
                     {
+                        info!("Time: {} ns",  String::from_utf8_lossy(&self.read_buffer));
                         let speed = self.bytes_received as f64 / time_ns as f64;
                         debug!("Speed: {}", speed);
                         measurement_state.phase = TestPhase::GetTimeCompleted;

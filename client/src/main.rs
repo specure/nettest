@@ -1,24 +1,25 @@
-use log::info;
-use mio::{Events, Poll};
-use std::{net::SocketAddr, path::Path};
-use std::thread;
-use std::collections::HashMap;
 use anyhow::Result;
-use std::env;
-use measurement_client::Stream;
-use std::sync::{Arc, Barrier};
-use tokio::sync::Mutex;
 use fastrand;
+use log::{debug, info};
+use measurement_client::Stream;
+use mio::{Events, Poll};
+use prettytable::format::{FormatBuilder, LinePosition, LineSeparator};
+use prettytable::{cell, row, Table};
+use std::collections::HashMap;
+use std::env;
+use std::net::SocketAddr;
+use std::sync::{Arc, Barrier};
+use std::thread;
 
 mod handlers;
 mod state;
-use state::{TestState, MeasurementState};
-pub mod rustls;
-pub mod openssl_sys;
+use state::{MeasurementState, TestState};
+pub mod globals;
 pub mod openssl;
+pub mod openssl_sys;
+pub mod rustls;
 pub mod stream;
 pub mod utils;
-pub mod globals;
 
 pub use handlers::{
     get_chunks::GetChunksHandler, greeting::GreetingHandler, put::PutHandler,
@@ -32,46 +33,47 @@ pub use utils::{
 const MIN_CHUNK_SIZE: u64 = 4096; // 4KB
 const MAX_CHUNK_SIZE: u64 = 4194304; // 4MB
 
+const GREEN: &str = "\x1b[32m";
+const RESET: &str = "\x1b[0m";
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    env_logger::init();
     async_main().await
 }
 
 async fn async_main() -> anyhow::Result<()> {
     info!("Starting measurement client...");
-    
+    print_test_header();
+
     // Парсим аргументы командной строки
     let args: Vec<String> = env::args().collect();
     let use_tls = args.iter().any(|arg| arg == "-tls");
-
     let perf_test = args.iter().any(|arg| arg == "-perf");
 
+    let log = args.iter().any(|arg| arg == "-log");
+    if log {
+        env_logger::init();
+    }
+
+    let def_t = if perf_test { 1 } else { 5 };
+
     // Получаем количество потоков из аргументов
-    let thread_count = args.iter()
+    let thread_count = args
+        .iter()
         .enumerate()
         .find_map(|(i, arg)| {
             if arg == "-t" {
-                // Формат: -t 1
                 args.get(i + 1).and_then(|next| next.parse::<usize>().ok())
             } else if arg.starts_with("-t") {
-                // Формат: -t1
                 arg[2..].parse::<usize>().ok()
             } else {
                 None
             }
         })
-        .unwrap_or(3); // По умолчанию 3 потока
-    
-    info!("TLS enabled: {}", use_tls);
-    info!("Thread count: {}", thread_count);
-    info!("Connecting to server...");
+        .unwrap_or(def_t);
 
     let default_server = String::from("127.0.0.1");
     let server = args.get(1).unwrap_or(&default_server);
-
-
-    info!("Server: {}", server);
 
     let addr = if !use_tls {
         format!("{}:5005", server).parse::<SocketAddr>()?
@@ -79,43 +81,89 @@ async fn async_main() -> anyhow::Result<()> {
         format!("{}:8080", server).parse::<SocketAddr>()?
     };
 
-    info!("Connected to server at {}", addr);
-
+    debug!("Addr : {}", addr);
 
     if perf_test {
-        info!("Running performance test");
-        let mut state = TestState::new(addr, use_tls, 0, None, None).unwrap();
-            state.process_greeting().unwrap();
-            state.run_perf_test().unwrap();
-            return Ok(());
+        let mut thread_handles = vec![];
+
+        for i in 0..thread_count {
+            thread_handles.push(thread::spawn(move || {
+                let mut state = TestState::new(addr, use_tls, i, None, None).unwrap();
+                state.process_greeting().unwrap();
+                state.run_perf_test().unwrap();
+                let speed = state.measurement_state().upload_speed.unwrap() * 8.0
+                    / (1024.0 * 1024.0 * 1024.0);
+                let mbps = state.measurement_state().upload_speed.unwrap() / (1024.0 * 1024.0);
+
+                if thread_count > 1 {
+                print_test_result(
+                    format!("Performance Test {:?} Thread", i+1).as_str(),
+                    "Completed (Gbit/s)",
+                    Some((0.0, speed, mbps)),
+                );
+            }
+                speed
+            }));
+
+        }
+        let res: Vec<f64> = thread_handles
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .collect();
+
+        let speed = res.iter().sum::<f64>();
+        let mbps = speed / 8.0 * 1024.0;
+
+        print_test_result(
+            "Performance Test (Sum)",
+            "Completed (Gbit/s)",
+            Some((0.0, speed, mbps)),
+        );
+        return Ok(());
     }
-    // let addr = "127.0.0.1:5005".parse::<SocketAddr>()?;
 
     let barrier = Arc::new(Barrier::new(thread_count));
     let mut thread_handles = vec![];
-
-
 
     for i in 0..thread_count {
         let barrier = barrier.clone();
         thread_handles.push(thread::spawn(move || {
             let mut state = TestState::new(addr, use_tls, i, None, None).unwrap();
             state.process_greeting().unwrap();
-            barrier.wait(); 
+            barrier.wait();
             state.run_get_chunks().unwrap();
+            if i == 0 {
+                print_result(
+                    "Pre Download",
+                    "Chunk Size (bytes)",
+                    Some(state.measurement_state().chunk_size),
+                );
+            }
             barrier.wait();
             if i == 0 {
                 state.run_ping().unwrap();
+                let median = state.measurement_state().ping_median.unwrap();
+                print_result("Ping Median", "Completed (ns)", Some(median as usize));
             }
             barrier.wait();
             state.run_get_time().unwrap();
-            barrier.wait(); 
+            barrier.wait();
             state.run_put_no_result().unwrap();
-            barrier.wait(); 
+            if i == 0 {
+                print_result(
+                    "Pre Upload",
+                    "Chunk Size (bytes)",
+                    Some(state.measurement_state().chunk_size),
+                );
+            }
+            barrier.wait();
             state.run_put().unwrap();
-            barrier.wait(); 
+            barrier.wait();
             let result = MeasurementState {
-                upload_results_for_graph: state.measurement_state().upload_results_for_graph.clone(),
+                upload_results_for_graph: state
+                    .measurement_state()
+                    .upload_results_for_graph
+                    .clone(),
                 upload_bytes: state.measurement_state().upload_bytes,
                 upload_time: state.measurement_state().upload_time,
                 upload_speed: state.measurement_state().upload_speed,
@@ -128,17 +176,25 @@ async fn async_main() -> anyhow::Result<()> {
                 measurements: state.measurement_state().measurements.clone(),
                 phase: state.measurement_state().phase.clone(),
                 buffer: state.measurement_state().buffer.clone(),
+                phase_start_time: state.measurement_state().phase_start_time,
+                failed: state.measurement_state().failed,
             };
             result
         }));
     }
 
-    let states: Vec<MeasurementState> = thread_handles.into_iter().map(|h| h.join().unwrap()).collect();
+    let states: Vec<MeasurementState> = thread_handles
+        .into_iter()
+        .map(|h| h.join().unwrap())
+        .collect();
     let state_refs: Vec<&MeasurementState> = states.iter().collect();
-    calculate_download_speed(&state_refs);
-    calculate_upload_speed(&state_refs);
 
-    info!("Test completed");
+    let download_speed = calculate_download_speed(&state_refs);
+
+    print_test_result("Download Test", "Completed", Some(download_speed));
+
+    let upload_speed = calculate_upload_speed(&state_refs);
+    print_test_result("Upload Test", "Completed", Some(upload_speed));
 
     Ok(())
 }
@@ -172,12 +228,11 @@ fn calculate_speed_from_measurements(measurements: Vec<Vec<(u64, u64)>>) -> (f64
                 break;
             }
         }
-
         // Если есть следующее измерение после t*, интерполируем
         if last_valid_idx + 1 < thread_measurements.len() {
             let (t1, b1) = thread_measurements[last_valid_idx];
             let (t2, b2) = thread_measurements[last_valid_idx + 1];
-            
+
             // Интерполяция: b = b1 + (t* - t1) * (b2 - b1) / (t2 - t1)
             let ratio = (t_star - t1) as f64 / (t2 - t1) as f64;
             let interpolated_bytes = b1 as f64 + ratio * (b2 - b1) as f64;
@@ -196,42 +251,131 @@ fn calculate_speed_from_measurements(measurements: Vec<Vec<(u64, u64)>>) -> (f64
     (speed_bps, speed_gbps, speed_mbps)
 }
 
-fn calculate_download_speed(states: &[&MeasurementState]) {
+fn calculate_download_speed(states: &[&MeasurementState]) -> (f64, f64, f64) {
     let mut thread_measurements: Vec<Vec<(u64, u64)>> = Vec::new();
-    
     for state in states {
-        thread_measurements.push(state.measurements.clone().into_iter().map(|m| (m.0, m.1)).collect());
+        if state.failed {
+            continue;
+        }
+        thread_measurements.push(
+            state
+                .measurements
+                .clone()
+                .into_iter()
+                .map(|m| (m.0, m.1))
+                .collect(),
+        );
     }
 
-    let (speed_bps, speed_gbps, speed_mbps) = calculate_speed_from_measurements(thread_measurements);
-    println!("Download speed: {:.2} bytes/s, {:.2} Gbit/s, {:.2} Mbit/s", 
-        speed_bps / 8.0, speed_gbps, speed_mbps);
+    calculate_speed_from_measurements(thread_measurements)
 }
 
-fn calculate_upload_speed(states: &[&MeasurementState]) {
+fn calculate_upload_speed(states: &[&MeasurementState]) -> (f64, f64, f64) {
     let mut results: HashMap<u32, Vec<(u64, u64)>> = HashMap::new();
-    
+
     for (thread_id, state) in states.iter().enumerate() {
+        if state.failed {
+            continue;
+        }
         for line in state.read_buffer_temp.split(|&b| b == b'\n') {
-            if line.is_empty() { continue; }
+            debug!("Line: {:?}", String::from_utf8_lossy(line));
+            if line.is_empty() {
+                continue;
+            }
             let s = String::from_utf8_lossy(line);
             let parts: Vec<&str> = s.split_whitespace().collect();
             if parts.len() >= 4 && parts[0] == "TIME" && parts[2] == "BYTES" {
-                if let (Ok(time_ns), Ok(bytes)) = (
-                    parts[1].parse::<u64>(),
-                    parts[3].parse::<u64>(),
-                ) {
-                    results.entry(thread_id as u32).or_default().push((time_ns, bytes));
+                if let (Ok(time_ns), Ok(bytes)) = (parts[1].parse::<u64>(), parts[3].parse::<u64>())
+                {
+                    results
+                        .entry(thread_id as u32)
+                        .or_default()
+                        .push((time_ns, bytes));
                 }
             }
         }
     }
 
     let thread_measurements: Vec<Vec<(u64, u64)>> = results.into_values().collect();
-    let (speed_bps, speed_gbps, speed_mbps) = calculate_speed_from_measurements(thread_measurements);
-    println!("Uplink speed (interpolated, all threads): {:.2} Gbit/s ({:.2} bps, {:.2} MBit/s)",
-        speed_gbps, speed_bps, speed_mbps);
+    calculate_speed_from_measurements(thread_measurements)
 }
 
+fn print_test_header() {
+    // Print centered green title
+    let title = "Nettest Broadband Test";
+    let table_width = 74; // 30 + 40 + 4 (padding and borders)
+    let padding = (table_width - title.len()) / 2;
+    println!(
+        "\n{}{}{}{}{}",
+        " ".repeat(padding),
+        GREEN,
+        title,
+        RESET,
+        " ".repeat(padding)
+    );
+    println!();
 
+    let mut table = Table::new();
+    let format = FormatBuilder::new()
+        .column_separator('│')
+        .borders('│')
+        .separators(
+            &[LinePosition::Top, LinePosition::Bottom],
+            LineSeparator::new('─', '┼', '┌', '┐'),
+        )
+        .padding(1, 1)
+        .build();
+    table.set_format(format);
 
+    table.add_row(row![
+        format!("{:<30}", "Test Phase"),
+        format!("{:<40}", "Result")
+    ]);
+    println!("{}", table);
+}
+
+fn print_test_result(phase: &str, status: &str, speed: Option<(f64, f64, f64)>) {
+    let mut table = Table::new();
+    let format = FormatBuilder::new()
+        .column_separator('│')
+        .borders('│')
+        .separators(
+            &[LinePosition::Bottom],
+            LineSeparator::new('─', '┼', '├', '┤'),
+        )
+        .padding(1, 1)
+        .build();
+    table.set_format(format);
+
+    let result = if let Some((_, gbps, mbps)) = speed {
+        format!("{} - {:.2} Gbit/s ({:.2} Mbit/s)", status, gbps, mbps)
+    } else {
+        status.to_string()
+    };
+
+    table.add_row(row![format!("{:<30}", phase), format!("{:<40}", result)]);
+    println!("{}", table);
+}
+
+fn print_result(phase: &str, status: &str, speed: Option<(usize)>) {
+    let mut table = Table::new();
+    let format = FormatBuilder::new()
+        .column_separator('│')
+        .borders('│')
+        .separators(
+            &[LinePosition::Bottom],
+            LineSeparator::new('─', '┼', '├', '┤'),
+        )
+        .padding(1, 1)
+        .build();
+    table.set_format(format);
+
+    let result = if let Some((mbps)) = speed {
+        format!("{} - {:.2} ", status, mbps)
+    } else {
+        status.to_string()
+    };
+
+    table.add_row(row![format!("{:<30}", phase), format!("{:<40}", result)]);
+    println!("{}", table);
+}

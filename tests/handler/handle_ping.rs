@@ -135,7 +135,7 @@ fn test_handle_ping_rmbt() {
             sorted_times[sorted_times.len() / 2]
         };
         
-        info!("Test completed: {} pings, median server time: {} ns", 
+        trace!("Test completed: {} pings, median server time: {} ns", 
                total_pings, median_time);
     });
 }
