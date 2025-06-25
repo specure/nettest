@@ -53,7 +53,7 @@ impl BasicHandler for GetTimeHandler {
         poll: &Poll,
         measurement_state: &mut MeasurementState,
     ) -> Result<()> {
-        // trace!("Reading chunk GetTimeHandler of size {}", self.chunk_size);
+        trace!("Reading chunk GetTimeHandler of size {}", self.chunk_size);
         match measurement_state.phase {
             TestPhase::GetTimeReceiveChunk => loop {
                     match stream.read(&mut self.chunk_buffer) {

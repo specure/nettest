@@ -104,6 +104,7 @@ impl TestState {
 
         let mut stream = if use_tls && use_websocket {
             Stream::new_websocket_tls(addr)?
+            
         } else if use_tls {
             // Stream::new_openssl_sys(addr)?
             // Stream::new_openssl(addr)?
@@ -156,7 +157,8 @@ impl TestState {
             Interest::WRITABLE | Interest::READABLE,
         )?;
 
-        self.process_phase(TestPhase::GreetingCompleted, ONE_SECOND_NS * 1)?;
+        debug!("Greeting process_greeting");
+        self.process_phase(TestPhase::GreetingCompleted, ONE_SECOND_NS * 2)?;
 
         debug!("Greeting completed");
 
@@ -188,10 +190,12 @@ impl TestState {
     }
 
     pub fn run_get_chunks(&mut self) -> Result<()> {
+        debug!("Run get chunks");
         self.measurement_state.phase = TestPhase::GetChunksSendChunksCommand;
         self.stream
             .reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
         self.process_phase(TestPhase::GetChunksCompleted, ONE_SECOND_NS * 3)?;
+        debug!("Run get chunks completed");
         Ok(())
     }
 

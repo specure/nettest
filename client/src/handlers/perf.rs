@@ -120,31 +120,35 @@ impl BasicHandler for PerfHandler {
                 }
             }
             TestPhase::PerfNoResultReceiveTime => {
-                debug!("PerfNoResultReceiveTime");
-                while !read_until(
-                    stream,
-                    &mut self.read_buffer,
-                    "ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n",
-                )? {
-                    let line: std::borrow::Cow<'_, str> =
-                        String::from_utf8_lossy(&self.read_buffer);
-                    debug!("REsponse: {}", line);
-
-                    if let Some(time_line) = line.lines().find(|l| l.starts_with("TIME")) {
-                        if let Some(time_ns) = time_line
-                            .split_whitespace()
-                            .nth(1)
-                            .and_then(|s| s.parse::<u64>().ok())
-                        {
-                            let speed_bps = self.calculate_upload_speed(time_ns);
-                            measurement_state.upload_speed = Some(speed_bps);
-                            measurement_state.upload_time = Some(time_ns);
-                            measurement_state.upload_bytes = Some(self.bytes_sent);
+                debug!("PerfNoResultReceiveTime token {:?}", self.token);
+                loop {
+                    let mut a = vec![0u8; 1024*1024];
+                    match stream.read(&mut a) {
+                        Ok(n) => {
+                            self.read_buffer.extend_from_slice(&a[..n]);
+                            let line = String::from_utf8_lossy(&self.read_buffer);
+                            debug!("Response: {}", line);
+                            
+                            // Ищем строку, которая начинается с TIME и заканчивается \n
+                            if let Some(time_line) = line.lines().find(|l| l.trim().starts_with("TIME")) {
+                                debug!("Time line: {} token {:?}", time_line, self.token);
+                                let time_ns = time_line.split_whitespace().nth(1).and_then(|s| s.parse::<u64>().ok()).unwrap();
+                                let speed_bps = self.calculate_upload_speed(time_ns);
+                                measurement_state.upload_speed = Some(speed_bps);
+                                measurement_state.upload_time = Some(time_ns);
+                                measurement_state.upload_bytes = Some(self.bytes_sent);
+                                measurement_state.phase = TestPhase::PerfNoResultCompleted;
+                                stream.reregister(&poll, self.token, Interest::WRITABLE)?;
+                                self.read_buffer.clear();
+                            }
+                        }
+                        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            return Err(e.into());
                         }
                     }
-                    measurement_state.phase = TestPhase::PerfNoResultCompleted;
-                    stream.reregister(&poll, self.token, Interest::WRITABLE)?;
-                    self.read_buffer.clear();
                 }
             }
             _ => {
@@ -199,6 +203,7 @@ impl BasicHandler for PerfHandler {
                                         debug!("Go to PerfNoResultSendLastChunk");
                                         measurement_state.phase =
                                             TestPhase::PerfNoResultSendLastChunk;
+                                        stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                                         return Ok(());
                                     } else {
                                         remaining = &buffer;
@@ -232,14 +237,17 @@ impl BasicHandler for PerfHandler {
                             self.bytes_sent += written as u64;
                             remaining = &remaining[written..];
                             if remaining.is_empty() {
-                                debug!("PerfNoResultSendLastChunk success");
+                                debug!("PerfNoResultSendLastChunk success token {:?}", self.token);
                                 measurement_state.phase = TestPhase::PerfNoResultReceiveTime;
-                                stream.reregister(&poll, self.token, Interest::READABLE | Interest::WRITABLE)?;
+                                stream.reregister(
+                                    &poll,
+                                    self.token,
+                                    Interest::READABLE | Interest::WRITABLE,
+                                )?;
                                 return Ok(());
                             }
                         }
                         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-
                             debug!("PerfNoResultSendLastChunk WouldBlock");
                             return Ok(());
                         }
@@ -262,11 +270,11 @@ impl BasicHandler for PerfHandler {
                 Ok(())
             }
             _ => {
-                trace!(
-                    "PerfNoResultSendChunks phase: {:?}",
+                debug!(
+                    "Perf on write phase: {:?}",
                     measurement_state.phase
                 );
-                return Ok(());
+                return self.on_read(stream, poll, measurement_state);
             }
         }
     }

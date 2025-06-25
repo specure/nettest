@@ -164,7 +164,7 @@ impl WebSocketTlsClient {
 
         debug!("WebSocket handshake request: {}", request);
         poll.registry()
-            .register(stream.get_mut(), Token(0), Interest::READABLE)?;
+            .reregister(stream.get_mut(), Token(0), Interest::READABLE)?;
 
         // Read handshake response
         let mut response = Vec::new();
@@ -206,6 +206,8 @@ impl WebSocketTlsClient {
                             );
                             break;
                         } else {
+                            poll.registry()
+                            .reregister(stream.get_mut(), Token(0), Interest::READABLE)?;
                             debug!(
                                 "WebSocket handshake response: {}",
                                 String::from_utf8_lossy(&response)

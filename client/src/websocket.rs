@@ -56,6 +56,8 @@ impl WebSocketClient {
         poll.registry()
             .register(&mut stream, Token(0), Interest::WRITABLE)?;
 
+        debug!("WebSocket handshake request: {}", request);
+
         // Send handshake request
         loop {
             poll.poll(&mut events, None)?;
@@ -86,15 +88,17 @@ impl WebSocketClient {
 
         debug!("WebSocket handshake request: {}", request);
         poll.registry()
-            .register(&mut stream, Token(0), Interest::READABLE)?;
+            .reregister(&mut stream, Token(0), Interest::READABLE)?;
 
         // Read handshake response
         let mut response = Vec::new();
         let mut buffer = [0u8; 1024];
 
+
         loop {
             poll.poll(&mut events, None)?;
             let mut connection_ready = false;
+
 
             for event in events.iter() {
                 if event.is_readable() {
@@ -109,6 +113,7 @@ impl WebSocketClient {
                             debug!("Connection closed during handshake");
                             return Err(anyhow::anyhow!("Connection closed during handshake"));
                         }
+                        debug!("WebSocket handshake response loop 3");
                         response.extend_from_slice(&buffer[..n]);
 
                         let line = String::from_utf8_lossy(&buffer);

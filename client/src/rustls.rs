@@ -3,13 +3,13 @@ use core::error;
 use log::{debug, error, info, trace};
 use mio::{net::TcpStream, Events, Interest, Poll, Token};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName};
+use rustls::CipherSuite::TLS13_AES_128_GCM_SHA256;
 use rustls::{ClientConfig, ClientConnection, RootCertStore};
 use std::fs;
 use std::io::{self, BufReader, Read, Write};
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
-use rustls::CipherSuite::TLS13_AES_128_GCM_SHA256;
 
 use crate::utils::MAX_CHUNK_SIZE;
 
@@ -75,7 +75,11 @@ impl RustlsStream {
         // Read TLS data
         match self.conn.read_tls(&mut self.stream) {
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                debug!("TLS read would block");
+                // trace!("TLS read would block");
+                // Принудительно отправляем данные для очистки буфера
+                if self.conn.wants_write() {
+                    self.conn.write_tls(&mut self.stream)?;
+                }
                 return Err(io::Error::new(
                     io::ErrorKind::WouldBlock,
                     "TLS read would block",
@@ -90,7 +94,7 @@ impl RustlsStream {
                 return Ok(0);
             }
             Ok(n) => {
-                debug!("Read {} bytes from TLS stream", n);
+                trace!("Read {} bytes from TLS stream", n);
             }
         }
 
@@ -111,7 +115,7 @@ impl RustlsStream {
         if !self.handshake_done {
             while self.conn.wants_write() {
                 self.handshake_done = true;
-                debug!("Writing handshake data");
+                trace!("Writing handshake data");
                 self.conn.write_tls(&mut self.stream)?;
             }
             self.handshake_done = true;
@@ -126,7 +130,7 @@ impl RustlsStream {
 
         // If we need to read more data, try again
         if self.conn.wants_read() {
-            debug!("Need to read more data");
+            trace!("Need to read more data");
             return self.read(buf);
         }
 
@@ -152,7 +156,7 @@ impl RustlsStream {
             match self.conn.write_tls(&mut self.stream) {
                 Ok(_) => {}
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    debug!("TLS buffer flush would block");
+                    trace!("TLS buffer flush would block");
                     return Err(io::Error::new(
                         io::ErrorKind::WouldBlock,
                         "TLS write would block",
@@ -178,7 +182,7 @@ impl RustlsStream {
                                 continue;
                             }
                             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                                debug!("Network write would block after {} bytes", total_written);
+                                trace!("Network write would block after {} bytes", total_written);
                                 break;
                             }
                             Err(e) => {
@@ -305,7 +309,6 @@ mod danger {
         ) -> Result<HandshakeSignatureValid, rustls::Error> {
             Ok(HandshakeSignatureValid::assertion())
         }
-
 
         fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
             vec![

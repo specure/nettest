@@ -151,8 +151,10 @@ async fn async_main() -> anyhow::Result<()> {
             }
             barrier.wait();
             state.run_get_time().unwrap();
-            // barrier.wait();
-            // state.run_perf_test().unwrap();
+            
+            barrier.wait();
+            state.run_perf_test().unwrap();
+            debug!("Thread {} completed", i);
             // println!("Upload speed: {}", state.measurement_state().upload_speed.unwrap());
             barrier.wait();
             let result = MeasurementState {

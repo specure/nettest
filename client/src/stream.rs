@@ -141,7 +141,7 @@ impl Stream {
                 stream.reregister(poll, token, interest)?;
             }
             Stream::WebSocket(stream) => {
-                stream.register(poll, token, interest)?;
+                stream.reregister(poll, token, interest)?;
             }
             Stream::Rustls(stream) => {
                 stream.reregister(poll, token, interest)?;
