@@ -19,6 +19,7 @@ pub mod openssl;
 pub mod websocket;
 pub mod openssl_sys;
 pub mod rustls;
+pub mod websocket_tls_openssl;
 pub mod stream;
 pub mod utils;
 
@@ -150,8 +151,8 @@ async fn async_main() -> anyhow::Result<()> {
             }
             barrier.wait();
             state.run_get_time().unwrap();
-            barrier.wait();
-            state.run_perf_test().unwrap();
+            // barrier.wait();
+            // state.run_perf_test().unwrap();
             // println!("Upload speed: {}", state.measurement_state().upload_speed.unwrap());
             barrier.wait();
             let result = MeasurementState {

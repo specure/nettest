@@ -1,5 +1,6 @@
 use crate::config::constants::{RESP_BYE};
 use crate::stream::Stream;
+use crate::MeasurementResult;
 use std::error::Error;
 
 mod greeting;
@@ -14,8 +15,9 @@ pub async fn handle_greeting(stream: &mut Stream, is_websocket: bool) -> Result<
 
 pub async fn handle_get_time(
     stream: &mut Stream,
+    result: &mut MeasurementResult,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    get_time::handle_get_time(stream).await
+    get_time::handle_get_time(stream, result).await
 }
 
 // pub async fn handle_get_chunks(
@@ -27,8 +29,9 @@ pub async fn handle_get_time(
 
 pub async fn handle_put_no_result(
     stream: &mut Stream,
+    result: &mut MeasurementResult,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    put_no_result::handle_put_no_result(stream).await
+    put_no_result::handle_put_no_result(stream, result).await
 }
 
 

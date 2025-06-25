@@ -94,6 +94,15 @@ impl BasicHandler for GreetingHandler {
                 }
 
                 match stream {
+                    Stream::WebSocketTls(stream) => {
+                        debug!(
+                            "[on_write] WebSocketTls greeting sent",
+                        );
+
+                        measurement_state.phase = TestPhase::GreetingSendToken;
+                        stream.reregister(&poll, self.token, Interest::WRITABLE)?;
+                        self.read_buffer.clear();
+                    }
                     Stream::WebSocket(stream) => {
                         debug!(
                             "[on_write] WebSocket greeting sent",

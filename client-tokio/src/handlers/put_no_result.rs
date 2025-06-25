@@ -1,4 +1,4 @@
-use crate::{config::constants::{CHUNK_SIZE, MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RESP_ERR}, utils::random_buffer::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE}};
+use crate::{config::constants::{CHUNK_SIZE, MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RESP_ERR}, utils::random_buffer::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE}, MeasurementResult};
 use bytes::Bytes;
 use std::error::Error;
 use std::time::Instant;
@@ -10,6 +10,7 @@ const TEST_DURATION: u64 = 10;
 
 pub async fn handle_put_no_result(
     stream: &mut Stream,
+    result: &mut MeasurementResult,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let chunk_size = MAX_CHUNK_SIZE as u64;
 
@@ -94,6 +95,9 @@ pub async fn handle_put_no_result(
     let speed = total_bytes as f64 / time  as f64 * 1000000000.0;
 
     info!("Speed Gbit/s: {}", speed * 8.0 / 1024.0 / 1024.0 / 1024.0);
+
+    result.upload_bytes = total_bytes as u64;
+    result.upload_time = time as u64;
 
     
 

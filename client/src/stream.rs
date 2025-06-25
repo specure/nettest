@@ -8,6 +8,7 @@ use std::path::Path;
 use crate::openssl::OpenSslStream;
 use crate::rustls::RustlsStream;
 use crate::websocket::WebSocketClient;
+use crate::websocket_tls_openssl::WebSocketTlsClient;
 use crate::RMBT_UPGRADE_REQUEST;
 
 #[derive(Debug)]
@@ -16,6 +17,7 @@ pub enum Stream {
     WebSocket(WebSocketClient),
     OpenSsl(OpenSslStream),
     Rustls(RustlsStream),
+    WebSocketTls(WebSocketTlsClient),
 }
 
 impl Stream {
@@ -31,6 +33,7 @@ impl Stream {
             Stream::OpenSsl(_) => "OpenSsl",
             Stream::WebSocket(_) => "WebSocket",
             Stream::Rustls(_) => "Rustls",
+            Stream::WebSocketTls(_) => "WebSocketTls",
         }
     }
 
@@ -50,6 +53,7 @@ impl Stream {
             Stream::OpenSsl(stream) => stream.close(),
             Stream::WebSocket(stream) => stream.close(),
             Stream::Rustls(stream) => Ok(()),
+            Stream::WebSocketTls(stream) => stream.close(),
         }
     }
 
@@ -59,6 +63,7 @@ impl Stream {
             Stream::OpenSsl(stream) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
             Stream::WebSocket(stream) => stream.get_greeting(),
             Stream::Rustls(stream) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
+            Stream::WebSocketTls(stream) => stream.get_greeting(),
         }
     }
 
@@ -69,12 +74,20 @@ impl Stream {
         Ok(Self::OpenSsl(stream))
     }
 
+    pub fn new_websocket_tls(addr: SocketAddr) -> Result<Self> {
+        let stream1 = TcpStream::connect(addr)?;
+        stream1.set_nodelay(true)?;
+        let stream = WebSocketTlsClient::new(addr,stream1, "localhost")?;
+        Ok(Self::WebSocketTls(stream))
+    }
+
     pub fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             Stream::Tcp(stream) => stream.read(buf),
             Stream::OpenSsl(stream) => stream.read(buf),
             Stream::WebSocket(stream) => stream.read(buf),
             Stream::Rustls(stream) => stream.read(buf),
+            Stream::WebSocketTls(stream) => stream.read(buf),
         }
     }
 
@@ -84,6 +97,7 @@ impl Stream {
             Stream::OpenSsl(stream) => stream.write(buf),
             Stream::WebSocket(stream) => stream.write(buf),
             Stream::Rustls(stream) => stream.write(buf),
+            Stream::WebSocketTls(stream) => stream.write(buf),
         }
     }
 
@@ -101,6 +115,9 @@ impl Stream {
             Stream::Rustls(stream) => {
                 stream.register(poll, token, interest)?;
             }
+            Stream::WebSocketTls(stream) => {
+                stream.register(poll, token, interest)?;
+            }
         }
         Ok(())
     }
@@ -111,6 +128,7 @@ impl Stream {
             Stream::OpenSsl(stream) => stream.flush(),
             Stream::WebSocket(stream) => stream.flush(),
             Stream::Rustls(stream) => stream.flush(),
+            Stream::WebSocketTls(stream) => stream.flush(),
         }
     }
 
@@ -126,6 +144,9 @@ impl Stream {
                 stream.register(poll, token, interest)?;
             }
             Stream::Rustls(stream) => {
+                stream.reregister(poll, token, interest)?;
+            }
+            Stream::WebSocketTls(stream) => {
                 stream.reregister(poll, token, interest)?;
             }
         }

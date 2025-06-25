@@ -2,6 +2,7 @@ pub mod rustls;
 pub mod openssl_sys;
 pub mod openssl;
 pub mod websocket;
+pub mod websocket_tls_openssl;
 pub mod stream;
 pub mod state;
 pub mod handlers;

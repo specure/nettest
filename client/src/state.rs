@@ -102,10 +102,12 @@ impl TestState {
         let events = Events::with_capacity(2048);
         let token = Token(tok);
 
-        let mut stream = if use_tls {
+        let mut stream = if use_tls && use_websocket {
+            Stream::new_websocket_tls(addr)?
+        } else if use_tls {
             // Stream::new_openssl_sys(addr)?
-            Stream::new_openssl(addr)?
-            // Stream::new_rustls(addr, cert_path, key_path)?
+            // Stream::new_openssl(addr)?
+            Stream::new_rustls(addr, cert_path, key_path)?
         } else {
             if use_websocket {
                 Stream::new_websocket(addr)?
@@ -217,29 +219,31 @@ impl TestState {
         phase: TestPhase,
         test_duration_ns: u128,
     ) -> Result<()> {
-
         if self.measurement_state.failed {
             return Ok(());
         }
 
-        
         self.measurement_state.phase_start_time = Some(Instant::now());
 
         while self.measurement_state.phase != phase {
-   
             self.poll
                 .poll(&mut self.events, Some(Duration::from_secs(3)))?;
 
-                trace!("Poll iteration token {:?}", self.token);
+            trace!("Poll iteration token {:?}", self.token);
 
-                if (self.events.is_empty()) {
-                    let time = self.measurement_state.phase_start_time.unwrap().elapsed().as_nanos();
-                    let now = Instant::now().elapsed().as_nanos();
-                    if now - time > test_duration_ns {
-                        self.measurement_state.failed = true;
-                        break;
-                    }
+            if (self.events.is_empty()) {
+                let time = self
+                    .measurement_state
+                    .phase_start_time
+                    .unwrap()
+                    .elapsed()
+                    .as_nanos();
+                let now = Instant::now().elapsed().as_nanos();
+                if now - time > test_duration_ns {
+                    self.measurement_state.failed = true;
+                    break;
                 }
+            }
 
             // Process events in the current poll iteration
             for event in &self.events {
@@ -283,13 +287,8 @@ impl TestState {
                         }
                     }
                 }
-
-                
             }
-        } 
-        
-
-        
+        }
 
         Ok(())
     }

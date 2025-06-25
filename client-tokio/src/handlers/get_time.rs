@@ -3,12 +3,14 @@ use log::{debug, info};
 use tokio::time::sleep;
 use crate::config::constants::{CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE, RESP_OK, RESP_ERR, RESP_TIME};
 use crate::stream::Stream;
+use crate::MeasurementResult;
 
 const TEST_DURATION_NS: u64 = 10_000_000_000;
 
 
 pub async fn handle_get_time(
     stream: &mut Stream,
+    result: &mut MeasurementResult,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let command = format!(
         "GETTIME {} {}\n",
@@ -73,10 +75,15 @@ pub async fn handle_get_time(
         elapsed_ns,
         found_terminator
     );
+    result.download_bytes = total_bytes as u64;
+    result.download_time = elapsed_ns;
 
     let speed = total_bytes as f64 / elapsed_ns as f64 * 1000000000.0;
 
     info!("Speed Gbit/s: {}", speed * 8.0 / 1024.0 / 1024.0 / 1024.0);
+
+    //send ok
+    stream.write_all(b"OK\n").await?;
 
     // // Send TIME response even if we didn't find a terminator
     // let time_response = format!("{} {}\n", RESP_TIME, elapsed_ns);

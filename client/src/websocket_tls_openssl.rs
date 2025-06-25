@@ -1,38 +1,116 @@
 use anyhow::Result;
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use log::{debug, error, info};
+use log::{debug, info};
 use mio::{net::TcpStream, Interest, Poll, Token};
 use sha1::{Digest, Sha1};
-use std::io::{self, Bytes, Read, Write};
-use std::net::SocketAddr;
-use tungstenite::protocol::frame::coding::{Data, OpCode};
-use tungstenite::protocol::frame::Frame;
+use openssl::ssl::{Ssl, SslContext, SslMethod, SslMode, SslOptions, SslStream};
 use tungstenite::protocol::WebSocketConfig;
-use tungstenite::{protocol::WebSocket, Message};
-
-use crate::globals::MAX_CHUNK_SIZE;
-
+use tungstenite::Message;
+use tungstenite::WebSocket;
+use std::io::{self, Read, Write};
+use std::net::SocketAddr;
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 #[derive(Debug)]
-pub struct WebSocketClient {
-    ws: WebSocket<TcpStream>,
+pub struct WebSocketTlsClient {
+    ws: WebSocket<SslStream<TcpStream>>,
     handshake_rrequest: Vec<u8>,
     flushed: bool,
 }
 
-impl WebSocketClient {
+impl WebSocketTlsClient {
     pub fn get_greeting(&mut self) -> Vec<u8> {
         self.handshake_rrequest.clone()
     }
 
-    pub fn new(addr: SocketAddr) -> Result<Self> {
+    pub fn new(addr: SocketAddr,stream: TcpStream, hostname: &str) -> Result<Self> {
+       
+
         debug!("Connecting to WebSocket server at {}", addr);
-        let mut stream = TcpStream::connect(addr)?;
-        stream.set_nodelay(true)?;
+        debug!("Creating SSL context");
+        let mut ctx = SslContext::builder(SslMethod::tls_client())?;
+        debug!("Setting verify mode to NONE");
+
+        ctx.set_verify(openssl::ssl::SslVerifyMode::NONE);
+        ctx.set_mode(SslMode::RELEASE_BUFFERS);
+        ctx.set_options(SslOptions::NO_COMPRESSION);
+        ctx.set_ciphersuites("TLS_AES_128_GCM_SHA256")?;
+
+        // Устанавливаем версии протокола
+        ctx.set_max_proto_version(Some(openssl::ssl::SslVersion::TLS1_3))?;
+        ctx.set_min_proto_version(Some(openssl::ssl::SslVersion::TLS1_2))?;
+
+        let mut ssl = Ssl::new(&ctx.build())?;
+        ssl.set_hostname(hostname)?;
+
+        debug!("Creating SSL stream");
+        let mut stream = SslStream::new(ssl, stream)?;
+        debug!("SSL stream created");
+
+        // Устанавливаем неблокирующий режим
+        let tcp_stream = stream.get_mut();
+        tcp_stream.set_nodelay(true)?;
+
+        // Создаем Poll для ожидания событий
+        let mut poll = Poll::new()?;
+        let mut events = mio::Events::with_capacity(128);
+
+        // Регистрируем сокет для чтения и записи
+        poll.registry().register(
+            stream.get_mut(),
+            Token(0),
+            Interest::READABLE | Interest::WRITABLE,
+        )?;
+
+        // Ждем, пока TCP соединение будет установлено
+        loop {
+            poll.poll(&mut events, None)?;
+            let mut connection_ready = false;
+
+            for event in events.iter() {
+                if event.is_writable() {
+                    // Проверяем, что соединение действительно установлено
+                    if let Err(e) = stream.get_ref().peer_addr() {
+                        if e.kind() == io::ErrorKind::NotConnected {
+                            debug!("TCP connection not ready yet, waiting...");
+                            continue;
+                        }
+                    }
+                    connection_ready = true;
+                    break;
+                }
+            }
+
+            if connection_ready {
+                break;
+            }
+        }
+
+        // Теперь можно начинать TLS handshake
+        loop {
+            match stream.connect() {
+                Ok(_) => {
+                    debug!("Handshake completed");
+                    break;
+                }
+                Err(e) => {
+                    // Проверяем на вложенную ошибку WouldBlock
+                    if let Some(io_error) = e.io_error() {
+                        if io_error.kind() == io::ErrorKind::WouldBlock {
+                            debug!("Socket not ready, waiting...");
+                            poll.poll(&mut events, None)?;
+                            continue;
+                        }
+                    }
+                    debug!("Error during handshake: {:?}", e);
+                    return Err(e.into());
+                }
+            }
+        }
 
         // Generate WebSocket key
         let key = BASE64.encode(b"dGhlIHNhbXBsZSBub25jZQ==");
+
 
         debug!("WebSocket key: {}", key);
 
@@ -54,7 +132,7 @@ impl WebSocketClient {
 
         // Регистрируем сокет для чтения и записи
         poll.registry()
-            .register(&mut stream, Token(0), Interest::WRITABLE)?;
+            .register(stream.get_mut(), Token(0), Interest::WRITABLE)?;
 
         // Send handshake request
         loop {
@@ -86,24 +164,27 @@ impl WebSocketClient {
 
         debug!("WebSocket handshake request: {}", request);
         poll.registry()
-            .register(&mut stream, Token(0), Interest::READABLE)?;
+            .register(stream.get_mut(), Token(0), Interest::READABLE)?;
 
         // Read handshake response
         let mut response = Vec::new();
         let mut buffer = [0u8; 1024];
+            poll.poll(&mut events, None)?;
 
         loop {
             poll.poll(&mut events, None)?;
-            let mut connection_ready = false;
 
-            for event in events.iter() {
-                if event.is_readable() {
-                    connection_ready = true;
-                }
-            }
+            let connection_ready = true;
+
+            // for event in events.iter() {
+            //     if event.is_readable() {
+            //         connection_ready = true;
+            //     }
+            // }
 
             if connection_ready {
                 match stream.read(&mut buffer) {
+                
                     Ok(n) => {
                         if n == 0 {
                             debug!("Connection closed during handshake");
@@ -118,7 +199,7 @@ impl WebSocketClient {
                             String::from_utf8_lossy(&buffer)
                         );
 
-                        if line.contains("ACCEPT TOKEN QUIT\n") {
+                        if line.contains("RMBT") {
                             debug!(
                                 "WebSocket handshake response FOUND: {}",
                                 String::from_utf8_lossy(&response)
@@ -195,12 +276,9 @@ impl WebSocketClient {
             .map_err(|e| anyhow::anyhow!("WebSocket close error: {}", e))
     }
 
-    pub fn get_ref(&self) -> &TcpStream {
-        self.ws.get_ref()
-    }
 
     pub fn get_mut(&mut self) -> &mut TcpStream {
-        self.ws.get_mut()
+        self.ws.get_mut().get_mut()
     }
 
     pub fn register(&mut self, poll: &Poll, token: Token, interest: Interest) -> Result<()> {
@@ -216,7 +294,7 @@ impl WebSocketClient {
     }
 }
 
-impl Read for WebSocketClient {
+impl Read for WebSocketTlsClient {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self.ws.read() {
             Ok(Message::Binary(data)) => {
@@ -252,35 +330,32 @@ impl Read for WebSocketClient {
     }
 }
 
-impl Write for WebSocketClient {
+impl Write for WebSocketTlsClient {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if self.flushed {
             debug!("WebSocket write");
             let message = Message::Binary(buf.to_vec().into());
 
             match self.ws.write(message) {
-                Ok(_) =>  {
+                Ok(_) => {
                     self.flushed = false;
-                    return self.write(buf)
-                },
-                Err(e) => {
-                    match e {
-                        tungstenite::Error::Io(io_err)
-                            if io_err.kind() == std::io::ErrorKind::WouldBlock =>
-                        {
-                            debug!("WouldBlock WRITE!!!! {}", io_err.to_string());
-                            self.flushed = false;
-                            Err(io::Error::new(io::ErrorKind::WouldBlock, "WouldBlock"))
-                        }
-                        _ =>  {
-                            debug!("WebSocket write error: {}", e);
-                            return Err(io::Error::new(io::ErrorKind::Other, e));
-                        },
-                    }
+                    return self.write(buf);
                 }
+                Err(e) => match e {
+                    tungstenite::Error::Io(io_err)
+                        if io_err.kind() == std::io::ErrorKind::WouldBlock =>
+                    {
+                        debug!("WouldBlock WRITE!!!! {}", io_err.to_string());
+                        self.flushed = false;
+                        Err(io::Error::new(io::ErrorKind::WouldBlock, "WouldBlock"))
+                    }
+                    _ => {
+                        debug!("WebSocket write error: {}", e);
+                        return Err(io::Error::new(io::ErrorKind::Other, e));
+                    }
+                },
             }
-        }
-        else {
+        } else {
             debug!("WebSocket flush");
             match self.ws.flush() {
                 Ok(_) => {
@@ -288,15 +363,15 @@ impl Write for WebSocketClient {
 
                     return Ok(buf.len());
                 }
-                Err(e) =>  {
+                Err(e) => {
                     match e {
                         tungstenite::Error::Io(io_err)
                             if io_err.kind() == std::io::ErrorKind::WouldBlock =>
                         {
                             // debug!("WouldBlock flush {}", io_err.to_string());
-                           return  Err(io::Error::new(io::ErrorKind::WouldBlock, "WouldBlock"))
+                            return Err(io::Error::new(io::ErrorKind::WouldBlock, "WouldBlock"));
                         }
-                        _ =>  {
+                        _ => {
                             debug!("WebSocket flush error: {}", e);
                             return Err(io::Error::new(io::ErrorKind::Other, e));
                         }
@@ -310,7 +385,7 @@ impl Write for WebSocketClient {
     //     let message = Message::Binary(buf.to_vec().into());
     //     match self.ws.send(message) {
     //         Ok(_) => {
-            
+
     //             // self.flushed = false;
     //             return Ok(buf.len());
     //         }
