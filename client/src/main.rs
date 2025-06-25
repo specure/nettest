@@ -186,7 +186,9 @@ async fn async_main() -> anyhow::Result<()> {
         .into_iter()
         .map(|h| h.join().unwrap())
         .collect();
-    let state_refs: Vec<&MeasurementState> = states.iter().collect();
+    let state_refs: Vec<&MeasurementState> = states.iter()
+    .filter(|s| !s.failed)
+    .collect() ;
 
     let download_speed = calculate_download_speed(&state_refs);
 
