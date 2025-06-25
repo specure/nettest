@@ -47,6 +47,8 @@ pub enum TestPhase {
     PerfNoResultSendCommand,
     PerfNoResultReceiveOk,
     PerfNoResultSendChunks,
+    PerfNoResultSendLastChunk,
+
     PerfNoResultReceiveTime,
     PerfNoResultCompleted,
 
@@ -83,6 +85,7 @@ pub struct MeasurementState {
     pub phase_start_time: Option<Instant>,
     pub read_buffer_temp: Vec<u8>,
     pub measurements: VecDeque<(u64, u64)>, // Хранит (t_k^(j), b_k^(j)) для каждого чанка\
+    pub upload_measurements: VecDeque<(u64, u64)>, // Хранит (t_k^(j), b_k^(j)) для каждого чанка\
     pub failed: bool,
 }
 
@@ -90,6 +93,7 @@ impl TestState {
     pub fn new(
         addr: SocketAddr,
         use_tls: bool,
+        use_websocket: bool,
         tok: usize,
         cert_path: Option<&Path>,
         key_path: Option<&Path>,
@@ -103,7 +107,11 @@ impl TestState {
             Stream::new_openssl(addr)?
             // Stream::new_rustls(addr, cert_path, key_path)?
         } else {
-            Stream::new_tcp(addr)?
+            if use_websocket {
+                Stream::new_websocket(addr)?
+            } else {
+                Stream::new_tcp(addr)?
+            }
         };
 
         stream.register(&mut poll, token, Interest::READABLE | Interest::WRITABLE)?;
@@ -122,6 +130,7 @@ impl TestState {
             ping_median: None,
             read_buffer_temp: vec![0u8; 1024 * 1024 * 10],
             measurements: VecDeque::new(),
+            upload_measurements: VecDeque::new(),
             phase_start_time: None,
             failed: false,
         };
@@ -156,7 +165,7 @@ impl TestState {
         self.measurement_state.phase = TestPhase::PutNoResultSendCommand;
         self.stream
             .reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
-        self.process_phase(TestPhase::PutNoResultCompleted, ONE_SECOND_NS * 3)?;
+        self.process_phase(TestPhase::PutNoResultCompleted, ONE_SECOND_NS * 8)?;
         Ok(())
     }
 
@@ -164,7 +173,7 @@ impl TestState {
         self.measurement_state.phase = TestPhase::PerfNoResultSendCommand;
         self.stream
             .reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
-        self.process_phase(TestPhase::PerfNoResultCompleted, ONE_SECOND_NS * 10)?;
+        self.process_phase(TestPhase::PerfNoResultCompleted, ONE_SECOND_NS * 12)?;
         Ok(())
     }
 
@@ -193,6 +202,7 @@ impl TestState {
     }
 
     pub fn run_put(&mut self) -> Result<()> {
+        debug!("Run put");
         self.measurement_state.phase = TestPhase::PutSendCommand;
         self.stream
             .reregister(&mut self.poll, self.token, Interest::WRITABLE)?;

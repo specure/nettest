@@ -95,6 +95,10 @@ impl BasicHandler for GetTimeHandler {
                     {
                         info!("Time: {} ns",  String::from_utf8_lossy(&self.read_buffer));
                         let speed = self.bytes_received as f64 / time_ns as f64;
+                        measurement_state.download_speed = Some(speed);
+                        measurement_state.download_time = Some(time_ns);
+                        measurement_state.download_bytes = Some(self.bytes_received);
+                        
                         debug!("Speed: {}", speed);
                         measurement_state.phase = TestPhase::GetTimeCompleted;
                         stream.reregister(&poll, self.token, Interest::WRITABLE)?;

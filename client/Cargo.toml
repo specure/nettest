@@ -23,3 +23,7 @@ openssl-sys = { version = "0.9"}
 openssl = {version = "0.10"}
 lazy_static = "1.4"
 prettytable-rs = "0.10.0"
+tungstenite = { version = "0.27.0" }
+sha1 = "0.10"
+base64 = "0.21"
+

@@ -16,6 +16,7 @@ mod state;
 use state::{MeasurementState, TestState};
 pub mod globals;
 pub mod openssl;
+pub mod websocket;
 pub mod openssl_sys;
 pub mod rustls;
 pub mod stream;
@@ -48,6 +49,7 @@ async fn async_main() -> anyhow::Result<()> {
     // Парсим аргументы командной строки
     let args: Vec<String> = env::args().collect();
     let use_tls = args.iter().any(|arg| arg == "-tls");
+    let use_websocket = args.iter().any(|arg| arg == "-ws");
     let perf_test = args.iter().any(|arg| arg == "-perf");
 
     let log = args.iter().any(|arg| arg == "-log");
@@ -82,13 +84,14 @@ async fn async_main() -> anyhow::Result<()> {
     };
 
     debug!("Addr : {}", addr);
+    debug!("WebSocket mode: {}", use_websocket);
 
     if perf_test {
         let mut thread_handles = vec![];
 
         for i in 0..thread_count {
             thread_handles.push(thread::spawn(move || {
-                let mut state = TestState::new(addr, use_tls, i, None, None).unwrap();
+                let mut state = TestState::new(addr, use_tls, use_websocket, i, None, None).unwrap();
                 state.process_greeting().unwrap();
                 state.run_perf_test().unwrap();
                 let speed = state.measurement_state().upload_speed.unwrap() * 8.0
@@ -128,7 +131,7 @@ async fn async_main() -> anyhow::Result<()> {
     for i in 0..thread_count {
         let barrier = barrier.clone();
         thread_handles.push(thread::spawn(move || {
-            let mut state = TestState::new(addr, use_tls, i, None, None).unwrap();
+            let mut state = TestState::new(addr, use_tls, use_websocket, i, None, None).unwrap();
             state.process_greeting().unwrap();
             barrier.wait();
             state.run_get_chunks().unwrap();
@@ -148,16 +151,8 @@ async fn async_main() -> anyhow::Result<()> {
             barrier.wait();
             state.run_get_time().unwrap();
             barrier.wait();
-            state.run_put_no_result().unwrap();
-            if i == 0 {
-                print_result(
-                    "Pre Upload",
-                    "Chunk Size (bytes)",
-                    Some(state.measurement_state().chunk_size),
-                );
-            }
-            barrier.wait();
-            state.run_put().unwrap();
+            state.run_perf_test().unwrap();
+            // println!("Upload speed: {}", state.measurement_state().upload_speed.unwrap());
             barrier.wait();
             let result = MeasurementState {
                 upload_results_for_graph: state
@@ -178,6 +173,7 @@ async fn async_main() -> anyhow::Result<()> {
                 buffer: state.measurement_state().buffer.clone(),
                 phase_start_time: state.measurement_state().phase_start_time,
                 failed: state.measurement_state().failed,
+                upload_measurements: state.measurement_state().upload_measurements.clone(),
             };
             result
         }));
@@ -191,10 +187,46 @@ async fn async_main() -> anyhow::Result<()> {
 
     let download_speed = calculate_download_speed(&state_refs);
 
-    print_test_result("Download Test", "Completed", Some(download_speed));
+    let d_speed = state_refs.iter()
+    .map(|s| (s.download_bytes.unwrap(), s.download_time.unwrap()) )
+    .reduce(|(b1, t1), (b2, t2)| (b1 + b2, t1 + t2))
+    .unwrap();
 
-    let upload_speed = calculate_upload_speed(&state_refs);
-    print_test_result("Upload Test", "Completed", Some(upload_speed));
+    let d_speed_bps = (d_speed.0 as f64 * 8.0) / (d_speed.1 as f64 / 1_000_000_000.0) * thread_count as f64;
+    let d_speed_gbps = d_speed_bps / 1_000_000_000.0;  // 10^9 для Gbit/s
+    let d_speed_mbps = d_speed_bps / 1_000_000.0;      // 10^6 для Mbit/s
+
+    print_test_result("Download Test Interpolated", "Completed", Some(download_speed));
+
+    print_test_result("Download Test", "Completed", Some((d_speed_bps, d_speed_gbps, d_speed_mbps)));
+    
+
+
+
+    // let upload_speed = calculate_upload_speed(&state_refs);
+
+    let perf = calculate_perf_speed(&state_refs);
+
+    let speed = state_refs.iter()
+    .map(|s| (s.upload_bytes.unwrap(), s.upload_time.unwrap()) )
+    .reduce(|(b1, t1), (b2, t2)| (b1 + b2, t1 + t2))
+    .unwrap();
+
+    let speed_bps = (speed.0 as f64 * 8.0) / (speed.1 as f64 / 1_000_000_000.0) * thread_count as f64;
+    let speed_gbps = speed_bps / 1_000_000_000.0;  // 10^9 для Gbit/s
+    let speed_mbps = speed_bps / 1_000_000.0;      // 10^6 для Mbit/s
+
+    
+    // let mbps = speed / 8.0 * 1024.0;
+
+    print_test_result("Upload Test Interpolated", "Completed", Some(perf));
+    print_test_result("Upload Test", "Completed", Some((speed_bps, speed_gbps, speed_mbps)));
+
+
+    
+
+   
+
 
     Ok(())
 }
@@ -260,6 +292,27 @@ fn calculate_download_speed(states: &[&MeasurementState]) -> (f64, f64, f64) {
         thread_measurements.push(
             state
                 .measurements
+                .clone()
+                .into_iter()
+                .map(|m| (m.0, m.1))
+                .collect(),
+        );
+    }
+
+    calculate_speed_from_measurements(thread_measurements)
+}
+
+
+
+fn calculate_perf_speed(states: &[&MeasurementState]) -> (f64, f64, f64) {
+    let mut thread_measurements: Vec<Vec<(u64, u64)>> = Vec::new();
+    for state in states {
+        if state.failed {
+            continue;
+        }
+        thread_measurements.push(
+            state
+                .upload_measurements
                 .clone()
                 .into_iter()
                 .map(|m| (m.0, m.1))

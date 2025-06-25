@@ -294,26 +294,51 @@ impl OpenSslSysStream {
                 return Err(io::Error::new(io::ErrorKind::Other, "SSL not initialized"));
             }
 
-            // Записываем данные в SSL
+            // Сначала проверяем, есть ли данные в BIO для записи, которые нужно отправить
+            let mut temp_buf = vec![0u8; 8192];
+            let mut bio_data_sent = 0;
+            loop {
+                let n = BIO_read(self.write_bio, temp_buf.as_mut_ptr() as *mut _, temp_buf.len() as i32);
+                if n <= 0 {
+                    break;
+                }
+                debug!("Flushing {} bytes from write BIO", n);
+                match self.stream.write(&temp_buf[..n as usize]) {
+                    Ok(written) => {
+                        bio_data_sent += written;
+                        if written < n as usize {
+                            // Не все данные были отправлены, возвращаем WouldBlock
+                            debug!("Could not send all BIO data, would block");
+                            return Err(io::Error::new(io::ErrorKind::WouldBlock, "SSL write would block"));
+                        }
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        debug!("Socket write would block while flushing BIO");
+                        return Err(io::Error::new(io::ErrorKind::WouldBlock, "SSL write would block"));
+                    }
+                    Err(e) => {
+                        debug!("Socket write error while flushing BIO: {:?}", e);
+                        return Err(e);
+                    }
+                }
+            }
+
+            // Теперь пробуем записать новые данные в SSL
             debug!("Writing {} bytes to SSL", buf.len());
             let n = SSL_write(self.ssl, buf.as_ptr() as *const _, buf.len() as i32);
             if n > 0 {
                 let bytes_written_to_ssl = n as usize;
                 debug!("Successfully wrote {} bytes to SSL", bytes_written_to_ssl);
                 
-                // Читаем данные из BIO для записи
-                let mut temp_buf = vec![0u8; 8192];
+                // Пытаемся отправить данные из BIO
                 let mut total_written = 0;
-                let mut remaining = bytes_written_to_ssl;
-
-                while remaining > 0 {
+                loop {
                     let n = BIO_read(self.write_bio, temp_buf.as_mut_ptr() as *mut _, temp_buf.len() as i32);
                     if n <= 0 {
-                        debug!("No more data to write from BIO");
                         break;
                     }
 
-                    debug!("Read {} bytes from write BIO", n);
+                    debug!("Read {} bytes from write BIO after SSL_write", n);
                     let bytes_to_write = &temp_buf[..n as usize];
                     let mut written = 0;
                     while written < bytes_to_write.len() {
@@ -325,13 +350,9 @@ impl OpenSslSysStream {
                             Ok(n) => {
                                 debug!("Wrote {} bytes to socket", n);
                                 written += n;
-                                if written >= remaining {
-                                    debug!("Reached original write size, stopping");
-                                    break;
-                                }
                             }
                             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                                debug!("Socket write would block");
+                                debug!("Socket write would block after SSL_write");
                                 return Err(io::Error::new(io::ErrorKind::WouldBlock, "SSL write would block"));
                             }
                             Err(e) => {
@@ -341,7 +362,6 @@ impl OpenSslSysStream {
                         }
                     }
                     total_written += written;
-                    remaining -= written;
                 }
 
                 debug!("Total bytes written to socket: {}, returning bytes written to SSL: {}", 
@@ -351,10 +371,18 @@ impl OpenSslSysStream {
                 let err = SSL_get_error(self.ssl, n);
                 debug!("SSL write error: {}", err);
                 match err {
-                    SSL_ERROR_WANT_READ | SSL_ERROR_WANT_WRITE => {
+                    SSL_ERROR_WANT_READ => {
+                        debug!("SSL wants read during write");
                         Err(io::Error::new(io::ErrorKind::WouldBlock, "SSL write would block"))
                     }
-                    _ => Err(io::Error::new(io::ErrorKind::Other, "SSL write error")),
+                    SSL_ERROR_WANT_WRITE => {
+                        debug!("SSL wants write during write");
+                        Err(io::Error::new(io::ErrorKind::WouldBlock, "SSL write would block"))
+                    }
+                    _ => {
+                        debug!("SSL write error: {}", err);
+                        Err(io::Error::new(io::ErrorKind::Other, format!("SSL write error: {}", err)))
+                    }
                 }
             }
         }

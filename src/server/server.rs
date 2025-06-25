@@ -112,6 +112,7 @@ impl Server {
                     if let Some((stream, addr, is_ssl)) = result.0 {
                         let token_validator = self.token_validator.clone();
                         let config = self.config.clone();
+                        // stream.set_nodelay(true)?;
                         let tls_acceptor = self.tls_acceptor.clone();
                         tokio::spawn(async move {
                             if let Err(e) = handle_connection(stream, addr, is_ssl, token_validator, config, tls_acceptor).await {

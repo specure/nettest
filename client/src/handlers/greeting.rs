@@ -90,13 +90,26 @@ impl BasicHandler for GreetingHandler {
                 debug!("[on_write] Sending connection type command");
                 if self.write_buffer.is_empty() {
                     debug!("[on_write] Writing connection 1 type command");
-                    self.write_buffer
-                        .extend_from_slice(RMBT_UPGRADE_REQUEST.as_bytes());
+                    self.write_buffer.extend_from_slice(&stream.get_greeting());
                 }
-                if write_all_nb(&mut self.write_buffer, stream)? {
-                    debug!("[on_write] Writing connection 2 type command");
-                    stream.reregister(&poll, self.token, Interest::READABLE)?;
-                    measurement_state.phase = TestPhase::GreetingReceiveGreeting;
+
+                match stream {
+                    Stream::WebSocket(stream) => {
+                        debug!(
+                            "[on_write] WebSocket greeting sent",
+                        );
+
+                        measurement_state.phase = TestPhase::GreetingSendToken;
+                        stream.reregister(&poll, self.token, Interest::WRITABLE)?;
+                        self.read_buffer.clear();
+                    }
+                    _ => {
+                        if write_all_nb(&mut self.write_buffer, stream)? {
+                            debug!("[on_write] Writing connection 2 type command");
+                            stream.reregister(&poll, self.token, Interest::READABLE)?;
+                            measurement_state.phase = TestPhase::GreetingReceiveGreeting;
+                        }
+                    }
                 }
             }
             TestPhase::GreetingSendToken => {

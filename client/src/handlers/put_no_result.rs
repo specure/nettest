@@ -9,6 +9,7 @@ use bytes::{Buf, BytesMut};
 use fastrand;
 use log::{debug, info, trace};
 use mio::{net::TcpStream, Interest, Poll, Token};
+use serde_json::de;
 use std::io::{self, ErrorKind, Write};
 use std::time::Instant;
 
@@ -69,20 +70,22 @@ impl BasicHandler for PutNoResultHandler {
     ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::PutNoResultReceiveOk => loop {
+                debug!("PutNoResultReceiveOk token {:?}", self.token);
                 if (self.test_start_time.is_none()) {
                     self.test_start_time = Some(Instant::now());
                 }
-                
                 let mut a = vec![0u8; 1024];
+
                 match stream.read(&mut a) {
                     Ok(n) => {
                         self.read_buffer.extend_from_slice(&a[..n]);
 
                         let line = String::from_utf8_lossy(&self.read_buffer);
-                        trace!("Read PutNoResultReceiveOk {} token {:?}", line, self.token);
 
                         if line.contains("OK\n") {
                             self.write_buffer.clear();
+                            debug!("Read PutNoResultReceiveOk {} token {:?}", line, self.token);
+
                             measurement_state.phase = TestPhase::PutNoResultSendChunks;
                             stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                             self.read_buffer.clear();
@@ -90,9 +93,11 @@ impl BasicHandler for PutNoResultHandler {
                         }
                     }
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                        debug!("WouldBlock token {:?}", self.token);
                         return Ok(());
                     }
                     Err(e) => {
+                        debug!("Error token {:?}", self.token);
                         return Err(e.into());
                     }
                 }
@@ -105,7 +110,7 @@ impl BasicHandler for PutNoResultHandler {
                         Ok(n) => {
                             self.read_buffer.extend_from_slice(&a[..n]);
                             let time_str = String::from_utf8_lossy(&self.read_buffer);
-                            trace!("Read PutNoResultReceiveTime token afer read {:?} {:?}", self.token, time_str);
+                            debug!("Read PutNoResultReceiveTime token afer read {:?} {:?}", self.token, time_str);
 
 
                             if time_str.contains(ACCEPT_GETCHUNKS_STRING) {
@@ -159,7 +164,7 @@ impl BasicHandler for PutNoResultHandler {
     ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::PutNoResultSendCommand => {
-                trace!("PutNoResultSendCommand token {:?}", self.token);
+                debug!("PutNoResultSendCommand token {:?}", self.token);
                 if self.write_buffer.is_empty() {
                     self.write_buffer.extend_from_slice(self.get_put_no_result_command().as_bytes());
                 }
@@ -190,24 +195,36 @@ impl BasicHandler for PutNoResultHandler {
                 if self.test_start_time.is_none() {
                     self.test_start_time = Some(Instant::now());
                 }
+
+                let is_last_chunk = self.chunks_sent == self.total_chunks - 1;
+                debug!("Sending total token {:?}", self.total_chunks);
+                let chunk = if is_last_chunk {
+                    trace!("Sending last chunk token {:?}", self.token);
+                    CHUNK_TERMINATION_STORAGE.get(&self.chunk_size)
+                } else {
+                    debug!("Sending chunks token {:?}", self.token);
+
+                    CHUNK_STORAGE.get(&self.chunk_size)
+                };
+
+                let mut remaining: &[u8] = &chunk.unwrap()[self.current_chunk_offset..];
+
                 loop {
-                    trace!("Sending chunks token {:?}", self.token);
-                    let is_last_chunk = self.chunks_sent == self.total_chunks - 1;
-                    let chunk = if is_last_chunk {
-                        trace!("Sending last chunk token {:?}", self.token);
-                        CHUNK_TERMINATION_STORAGE.get(&self.chunk_size)
-                    } else {
-                        CHUNK_STORAGE.get(&self.chunk_size)
-                    };
+                  
 
                     if let Some(chunk) = chunk {
-                        let remaining = &chunk[self.current_chunk_offset..];
+                        debug!("Sending remaining  {:?}", remaining.len());
+                        debug!("Sending current chunk offset  {:?}", self.current_chunk_offset);
                         match stream.write(remaining) {
                             Ok(written) => {
+                                remaining.advance(written);
                                 self.current_chunk_offset += written;
                                 self.bytes_sent += written as u64;
 
+                                debug!("Sending written  {:?}", written);
+
                                 if self.current_chunk_offset == chunk.len() {
+                                    debug!("Equal token {:?}", self.token);
                                     // Чанк полностью записан
                                     self.chunks_sent += 1;
                                     self.current_chunk_offset = 0;
@@ -219,9 +236,11 @@ impl BasicHandler for PutNoResultHandler {
                                         stream.reregister(&poll, self.token, Interest::READABLE)?;
                                         return Ok(());
                                     }
+                                    return Ok(());
                                 }
                             }
                             Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                                // debug!("WouldBlock token {:?}", self.token);
                                 // Сохраняем прогресс и ждем следующего write event
                                 return Ok(());
                             }
@@ -229,6 +248,10 @@ impl BasicHandler for PutNoResultHandler {
                                 return Err(e.into());
                             }
                         }
+                    }
+                    else {
+                        debug!("No chunk token {:?}", self.token);
+                        return Ok(());
                     }
                 }
             }

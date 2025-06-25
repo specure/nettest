@@ -1,44 +1,29 @@
 use std::time::{Duration, Instant};
-use log::{debug, error};
+use log::{debug, info};
+use tokio::time::sleep;
 use crate::config::constants::{CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE, RESP_OK, RESP_ERR, RESP_TIME};
 use crate::stream::Stream;
 
-pub async fn handle_put_no_result(
+const TEST_DURATION_NS: u64 = 10_000_000_000;
+
+
+pub async fn handle_get_time(
     stream: &mut Stream,
-    command: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let parts: Vec<&str> = command.split_whitespace().collect();
-    if parts.len() > 2 {
-        stream.write_all(RESP_ERR.as_bytes()).await?;
+    let command = format!(
+        "GETTIME {} {}\n",
+        TEST_DURATION_NS / 1_000_000_000,
+        MAX_CHUNK_SIZE
+    );
+    stream.write_all(command.as_bytes()).await?;
 
-        debug!("Invalid number of arguments for PUTNORESULT: {}", command);
-        return Err("Invalid number of arguments for PUTNORESULT".into());
-    }
-
-    let chunk_size = if parts.len() == 2 {
-        match parts[1].parse::<usize>() {
-            Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => size,
-            _ => {
-                stream.write_all(RESP_ERR.as_bytes()).await?;
-                debug!("Invalid chunk size for PUTNORESULT: {}", parts[1]);
-                return Err("Invalid chunk size".into());
-            }
-        }
-    } else {
-        CHUNK_SIZE
-    };
-
-    debug!("Chunk size for PUTNORESULT: {}", chunk_size);
-
-    // Send OK to client after chunk size validation
-    stream.write_all(RESP_OK.as_bytes()).await?;
+    let chunk_size = MAX_CHUNK_SIZE;
 
     let mut total_bytes = 0;
-    let mut buffer = vec![0u8; chunk_size];
+    let mut buffer = vec![0u8; MAX_CHUNK_SIZE];
     let mut found_terminator = false;
     let start_time = Instant::now();
 
-    debug!("Starting PUTNORESULT");
     'read_chunks: loop {
         // Read exactly chunk_size bytes
         let mut bytes_read = 0;
@@ -53,7 +38,7 @@ pub async fn handle_put_no_result(
                     bytes_read += n;
                 },
                 Err(e) => {
-                    error!("Failed to read chunk: {}", e);
+                    debug!("Failed to read chunk: {}", e);
                     break 'read_chunks;
                 }
             }
@@ -68,13 +53,11 @@ pub async fn handle_put_no_result(
                 debug!("Found terminator: {}", terminator);
                 break;
             } else if terminator != 0x00 {
-                error!("Invalid chunk terminator: {}", terminator);
+                debug!("Invalid chunk terminator: {}", terminator);
                 break;
-            } else if terminator == 0x00 {
-                debug!("Correct chunk terminator: {}", terminator);
             }
         } else {
-            error!("Incomplete chunk read: {} bytes instead of {}", bytes_read, chunk_size);
+            debug!("Incomplete chunk read: {} bytes instead of {}", bytes_read, chunk_size);
             break;
         }
     }
@@ -84,18 +67,22 @@ pub async fn handle_put_no_result(
     // debug!("Sleeping 10 seconds");
     //  sleep(Duration::from_secs(10)).await;
 
-    debug!(
+    info!(
         "PUTNORESULT completed: received {} bytes in {} ns, found_terminator: {}",
         total_bytes,
         elapsed_ns,
         found_terminator
     );
 
-    // Send TIME response even if we didn't find a terminator
-    let time_response = format!("{} {}\n", RESP_TIME, elapsed_ns);
-    if let Err(e) = stream.write_all(time_response.as_bytes()).await {
-        debug!("Failed to send TIME response: {}", e);
-    }
+    let speed = total_bytes as f64 / elapsed_ns as f64 * 1000000000.0;
+
+    info!("Speed Gbit/s: {}", speed * 8.0 / 1024.0 / 1024.0 / 1024.0);
+
+    // // Send TIME response even if we didn't find a terminator
+    // let time_response = format!("{} {}\n", RESP_TIME, elapsed_ns);
+    // if let Err(e) = stream.write_all(time_response.as_bytes()).await {
+    //     debug!("Failed to send TIME response: {}", e);
+    // }
 
     Ok(())
 } 

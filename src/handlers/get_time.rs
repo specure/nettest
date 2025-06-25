@@ -1,7 +1,7 @@
 use crate::config::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RESP_ERR};
 use bytes::Bytes;
 use std::error::Error;
-use std::time::Instant;
+use quanta::Clock;
 
 use crate::stream::Stream;
 use crate::utils::random_buffer::get_random_slice;
@@ -48,7 +48,7 @@ pub async fn handle_get_time(
         match parts[1].parse::<usize>() {
             Ok(size) => {
                 if size < MIN_CHUNK_SIZE || size > MAX_CHUNK_SIZE {
-                    stream.write_all(RESP_ERR.as_bytes()).await?;
+                    stream.write(RESP_ERR.as_bytes()).await?;
                     return Ok(());
                 }
                 size
@@ -76,9 +76,10 @@ pub async fn handle_get_time(
     get_random_slice(&mut term_buf, 0);
     term_buf[chunk_size - 1] = 0x0FF;
 
-    let start_time = Instant::now();
+    let clock = Clock::new();
+    let start = clock.now();
     // Send data until time expires
-    while start_time.elapsed().as_secs() < duration {
+    while start.elapsed().as_nanos() < (duration * 1000000000) as u128 {
         // Get next chunk from the array, cycling through all chunks
         // debug!("Sending chunk {}", chunk_index);
         let chunk = &chunks[chunk_index];
@@ -91,10 +92,25 @@ pub async fn handle_get_time(
             chunk_index = 0;
         }
     }
+    // while start_time.elapsed().as_secs() < duration {
+    //     // Get next chunk from the array, cycling through all chunks
+    //     // debug!("Sending chunk {}", chunk_index);
+
+    //     let left = (total_bytes % chunk_size) as usize;
+
+    //     let remaining =&chunks[chunk_index][left..];
+
+
+    //     // let chunk = &CHUNK_STORAGE[&chunk_size];
+    //     let n = stream.write(remaining).await?;
+    //     total_bytes += n as usize;
+    //     // total_bytes += chunk_size;
+    // }
     debug!("Sending last chunk");
     stream.write_all(&term_buf).await?;
     stream.flush().await?;
-    let time_ns = start_time.elapsed().as_nanos();
+    let end = clock.now();
+    let time_ns = end - start;
     total_bytes += chunk_size;
 
     debug!("All data sent. Total bytes: {}", total_bytes);
@@ -110,7 +126,7 @@ pub async fn handle_get_time(
     }
 
     // Send TIME response
-    let time_response = format!("TIME {}\n", time_ns);
+    let time_response = format!("TIME {}\n", time_ns.as_nanos());
     stream.write_all(time_response.as_bytes()).await?;
     debug!("TIME response sent and flushed");
 

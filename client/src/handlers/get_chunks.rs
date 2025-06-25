@@ -83,7 +83,7 @@ impl BasicHandler for GetChunksHandler {
                 loop {
                     match stream.read(&mut buf) {
                         Ok(n) if n > 0 => {
-                            trace!("Read {} bytes of chunk", n);
+                            // trace!("Read {} bytes of chunk", n);
                             let current_unprocessed =
                                 self.unprocessed_bytes.fetch_add(n as u32, Ordering::SeqCst);
                             let total_bytes = current_unprocessed + n as u32;

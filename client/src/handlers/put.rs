@@ -117,6 +117,7 @@ impl BasicHandler for PutHandler {
         match measurement_state.phase {
             TestPhase::PutReceiveOk => {
                 //TODO improve
+                debug!("PutReceiveOk token {:?}", self.token);
                 if read_until(stream, &mut self.read_buffer, "OK\n")? {
                     measurement_state.phase = TestPhase::PutSendChunks;
                     self.read_buffer.clear();
@@ -125,6 +126,7 @@ impl BasicHandler for PutHandler {
             }
             TestPhase::PutSendChunks => {
                 let mut temp_accumulated: Vec<u8> = vec![0u8; 1024  * 10];
+                debug!("PutSendChunks token {:?}", self.token);
 
                 loop {
                     match stream.read(&mut temp_accumulated) {
@@ -178,6 +180,7 @@ impl BasicHandler for PutHandler {
         );
         match measurement_state.phase {
             TestPhase::PutSendCommand => {
+                debug!("PutSendCommand token {:?}", self.token);
                 self.write_buffer
                     .extend_from_slice(self.get_put_command().as_bytes());
 
@@ -189,6 +192,7 @@ impl BasicHandler for PutHandler {
                 }
             }
             TestPhase::PutSendChunks => {
+                debug!("PutSendChunks token {:?}", self.token);
                 if self.test_start_time.is_none() {
                     self.test_start_time = Some(Instant::now());
                 }

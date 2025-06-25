@@ -131,34 +131,15 @@ impl OpenSslStream {
     }
 
     pub fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match self.stream.ssl_write(buf) {
+        match self.stream.write(buf) {
             Ok(n) => Ok(n),
             Err(ref e) => {
-                if e.code() == ErrorCode::WANT_READ {
-                    // Нужно дождаться данных для чтения
-                    debug!("SSL needs to READ more data in WRITE !!!!!!");
-                    Err(io::Error::new(
-                        io::ErrorKind::WouldBlock,
-                        "SSL needs to read more data",
-                    ))
-                } else if e.code() == ErrorCode::WANT_WRITE {
-                    // Нужно дождаться возможности записи
+                if e.kind() == io::ErrorKind::WouldBlock {
                     Err(io::Error::new(
                         io::ErrorKind::WouldBlock,
                         "SSL write would block",
                     ))
-                } else if let Some(io_error) = e.io_error() {
-                    // Обработка ошибок ввода-вывода
-                    if io_error.kind() == io::ErrorKind::WouldBlock {
-                        Err(io::Error::new(
-                            io::ErrorKind::WouldBlock,
-                            "SSL write would block",
-                        ))
-                    } else {
-                        Err(io::Error::new(io::ErrorKind::Other, e.to_string()))
-                    }
                 } else {
-                    // Другие ошибки OpenSSL
                     Err(io::Error::new(io::ErrorKind::Other, e.to_string()))
                 }
             }

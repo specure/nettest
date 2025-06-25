@@ -59,6 +59,7 @@ impl HandlerFactory {
             TestPhase::PerfNoResultSendCommand => Some(&mut self.perf_handler),
             TestPhase::PerfNoResultReceiveOk => Some(&mut self.perf_handler),
             TestPhase::PerfNoResultSendChunks => Some(&mut self.perf_handler),
+            TestPhase::PerfNoResultSendLastChunk => Some(&mut self.perf_handler),
             TestPhase::PerfNoResultReceiveTime => Some(&mut self.perf_handler),
             TestPhase::PerfNoResultCompleted => None,
 

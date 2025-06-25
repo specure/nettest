@@ -1,3 +1,4 @@
+use crate::globals::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE};
 use crate::handlers::BasicHandler;
 use crate::state::{MeasurementState, TestPhase};
 use crate::stream::Stream;
@@ -20,25 +21,11 @@ pub struct PerfHandler {
     bytes_sent: u64,
     write_buffer: BytesMut,
     read_buffer: BytesMut,
-    data_buffer: Vec<u8>,
-    data_termination_buffer: Vec<u8>,
     upload_speed: Option<f64>,
 }
 
 impl PerfHandler {
     pub fn new(token: Token) -> Result<Self> {
-        // Create and fill buffer with random data
-        let mut data_buffer = vec![0u8; MAX_CHUNK_SIZE as usize];
-        for byte in &mut data_buffer {
-            *byte = fastrand::u8(..);
-        }
-        data_buffer[MAX_CHUNK_SIZE as usize - 1] = 0x00;
-        let mut data_termination_buffer = vec![0u8; MAX_CHUNK_SIZE as usize];
-        for byte in &mut data_termination_buffer {
-            *byte = fastrand::u8(..);
-        }
-        data_termination_buffer[MAX_CHUNK_SIZE as usize - 1] = 0xFF;
-
         Ok(Self {
             token,
             chunk_size: MAX_CHUNK_SIZE,
@@ -46,8 +33,6 @@ impl PerfHandler {
             bytes_sent: 0,
             write_buffer: BytesMut::with_capacity(1024),
             read_buffer: BytesMut::with_capacity(1024),
-            data_buffer,
-            data_termination_buffer,
             upload_speed: None,
         })
     }
@@ -94,7 +79,7 @@ impl BasicHandler for PerfHandler {
     ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::PerfNoResultReceiveOk => {
-                trace!("PerfNoResultReceiveOk");
+                debug!("PerfNoResultReceiveOk");
                 loop {
                     let mut a = vec![0u8; 1024];
                     match stream.read(&mut a) {
@@ -117,8 +102,25 @@ impl BasicHandler for PerfHandler {
                     }
                 }
             }
+            TestPhase::PerfNoResultSendChunks => {
+                debug!("PerfNoResultSendChunks");
+                let mut a = vec![0u8; 2048];
+                loop {
+                    match stream.read(&mut a) {
+                        Ok(n) => {
+                            self.read_buffer.extend_from_slice(&a[..n]);
+                        }
+                        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            return Err(e.into());
+                        }
+                    }
+                }
+            }
             TestPhase::PerfNoResultReceiveTime => {
-                trace!("PerfNoResultReceiveTime");
+                debug!("PerfNoResultReceiveTime");
                 while !read_until(
                     stream,
                     &mut self.read_buffer,
@@ -126,6 +128,8 @@ impl BasicHandler for PerfHandler {
                 )? {
                     let line: std::borrow::Cow<'_, str> =
                         String::from_utf8_lossy(&self.read_buffer);
+                    debug!("REsponse: {}", line);
+
                     if let Some(time_line) = line.lines().find(|l| l.starts_with("TIME")) {
                         if let Some(time_ns) = time_line
                             .split_whitespace()
@@ -144,6 +148,7 @@ impl BasicHandler for PerfHandler {
                 }
             }
             _ => {
+                debug!("PerfNoResult on_read phase: {:?}", measurement_state.phase);
                 return Ok(());
             }
         }
@@ -158,7 +163,7 @@ impl BasicHandler for PerfHandler {
     ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::PerfNoResultSendCommand => {
-                trace!("PerfNoResultSendCommand");
+                // debug!("PerfNoResultSendCommand");
                 self.write_buffer
                     .extend_from_slice(self.get_put_no_result_command().as_bytes());
                 if write_all_nb(&mut self.write_buffer, stream)? {
@@ -169,73 +174,98 @@ impl BasicHandler for PerfHandler {
                 Ok(())
             }
             TestPhase::PerfNoResultSendChunks => {
-                trace!("PerfNoResultSendChunks");
+                // debug!("PerfNoResultSendChunks");
                 if self.test_start_time.is_none() {
                     self.test_start_time = Some(Instant::now());
                 }
                 if let Some(start_time) = self.test_start_time {
-                    let elapsed = start_time.elapsed();
-                    let mut is_last = elapsed.as_nanos() >= TEST_DURATION_NS as u128;
-
                     let current_pos = self.bytes_sent & (self.chunk_size as u64 - 1);
-                    let buffer = if is_last {
-                        &self.data_termination_buffer
-                    } else {
-                        &self.data_buffer
-                    };
-
-                    let mut remaining = &buffer[current_pos as usize..];
-                    while !is_last {
-                        if remaining.is_empty() {
-                            // Add new chunk
-                            // trace!("Elapsed: {} ns", elapsed.as_nanos());
-                            is_last = start_time.elapsed().as_nanos() >= TEST_DURATION_NS as u128;
-
-                            if is_last {
-                                return Ok(());
-                            } else {
-                                remaining = &self.data_buffer;
-                            }
-                        }
+                    let buffer = CHUNK_STORAGE.get(&self.chunk_size).unwrap();
+                    let mut remaining: &[u8] = &buffer[current_pos as usize..];
+                    loop {
                         // Write from current position
                         match stream.write(remaining) {
                             Ok(written) => {
                                 self.bytes_sent += written as u64;
                                 remaining = &remaining[written..];
-                            }
-                            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                                // debug!("PutNoResultSendChunks processing chunk");
-                                return Ok(());
-                            }
-                            Err(e) => {
-                                return Err(e.into());
-                            }
-                        }
-                    }
+                                if remaining.is_empty() {
+                                    let tt = start_time.elapsed().as_nanos();
+                                    let is_last = tt >= TEST_DURATION_NS as u128;
+                                    measurement_state
+                                        .upload_measurements
+                                        .push_back((tt as u64, self.bytes_sent));
 
-                    while is_last && !remaining.is_empty() {
-                        // Send last chunk
-                        match stream.write(remaining) {
-                            Ok(written) => {
-                                self.bytes_sent += written as u64;
-                                remaining = &remaining[written..];
+                                    if is_last {
+                                        debug!("Go to PerfNoResultSendLastChunk");
+                                        measurement_state.phase =
+                                            TestPhase::PerfNoResultSendLastChunk;
+                                        return Ok(());
+                                    } else {
+                                        remaining = &buffer;
+                                    }
+                                }
                             }
                             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                                 return Ok(());
                             }
                             Err(e) => {
+                                trace!("PerfNoResultSendChunks error: {}", e);
                                 return Err(e.into());
                             }
                         }
                     }
-                    measurement_state.phase = TestPhase::PerfNoResultReceiveTime;
-                    stream.reregister(&poll, self.token, Interest::READABLE)?;
-                    return Ok(());
                 } else {
                     return Ok(());
                 }
             }
+
+            TestPhase::PerfNoResultSendLastChunk => {
+                debug!("PerfNoResultSendLastChunk");
+                let current_pos = self.bytes_sent & (self.chunk_size as u64 - 1);
+                let buffer = CHUNK_TERMINATION_STORAGE.get(&self.chunk_size).unwrap();
+                let mut remaining = &buffer[current_pos as usize..];
+
+                loop {
+                    // Write from current position
+                    match stream.write(remaining) {
+                        Ok(written) => {
+                            self.bytes_sent += written as u64;
+                            remaining = &remaining[written..];
+                            if remaining.is_empty() {
+                                debug!("PerfNoResultSendLastChunk success");
+                                measurement_state.phase = TestPhase::PerfNoResultReceiveTime;
+                                stream.reregister(&poll, self.token, Interest::READABLE | Interest::WRITABLE)?;
+                                return Ok(());
+                            }
+                        }
+                        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+
+                            debug!("PerfNoResultSendLastChunk WouldBlock");
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            debug!("PerfNoResultSendLastChunk error: {}", e);
+                            return Err(e.into());
+                        }
+                    }
+                }
+
+                // if !(stream.return_type() == "WebSocket") {
+                //     stream.reregister(&poll, self.token, Interest::READABLE)?;
+                // } else {
+                // stream.reregister(
+                //     &poll,
+                //     self.token,
+                //     Interest::READABLE | Interest::WRITABLE,
+                // )?;
+                // }
+                Ok(())
+            }
             _ => {
+                trace!(
+                    "PerfNoResultSendChunks phase: {:?}",
+                    measurement_state.phase
+                );
                 return Ok(());
             }
         }

@@ -46,7 +46,7 @@ pub async fn define_stream(
     }
 
     let is_get = buffer[0] == b'G' && buffer[1] == b'E' && buffer[2] == b'T' && buffer[3] == b' ';
-    debug!("Request is GET: {}", is_get);
+    debug!("Request is GET: {}", String::from_utf8_lossy(&buffer[..n]));
 
     if !is_get {
         error!("Not a GET request");
