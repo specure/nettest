@@ -1,6 +1,6 @@
 use anyhow::Result;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use log::{debug, error, info};
+use log::{debug, info};
 use mio::{net::TcpStream, Interest, Poll, Token};
 use sha1::{Digest, Sha1};
 use std::io::{self, Bytes, Read, Write};

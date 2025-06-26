@@ -7,7 +7,7 @@ use crate::{read_until, write_all_nb};
 use anyhow::Result;
 use bytes::BytesMut;
 use log::{debug, info, trace};
-use mio::{net::TcpStream, Interest, Poll, Token};
+use mio::{Interest, Poll, Token};
 use std::io::{self, Read};
 use std::time::{Duration, Instant};
 
@@ -18,12 +18,11 @@ pub struct GetTimeHandler {
     token: Token,
     chunk_size: usize,
     bytes_received: u64,
-    bytes_read: usize,
     start_time: Instant,
     read_buffer: BytesMut,
     write_buffer: BytesMut,
-    responses: Vec<(u64, u64)>, // (time_ns, bytes)
-    chunk_buffer: Vec<u8>,      // Буфер для чтения чанков
+    chunk_buffer: Vec<u8>, 
+    cursor: usize,     // Буфер для чтения чанков
 }
 
 impl GetTimeHandler {
@@ -32,12 +31,11 @@ impl GetTimeHandler {
             token,
             chunk_size: MAX_CHUNK_SIZE as usize,
             bytes_received: 0,
-            bytes_read: 0,
             read_buffer: BytesMut::with_capacity(MAX_CHUNK_SIZE as usize),
             write_buffer: BytesMut::with_capacity(1024),
-            responses: Vec::new(),
             chunk_buffer: Vec::with_capacity(MAX_CHUNK_SIZE as usize),
             start_time: Instant::now(),
+            cursor: 0,
         })
     }
 
@@ -53,28 +51,25 @@ impl BasicHandler for GetTimeHandler {
         poll: &Poll,
         measurement_state: &mut MeasurementState,
     ) -> Result<()> {
-        trace!("Reading chunk GetTimeHandler of size {}", self.chunk_size);
         match measurement_state.phase {
             TestPhase::GetTimeReceiveChunk => loop {
-                    match stream.read(&mut self.chunk_buffer) {
+                    match stream.read(&mut self.chunk_buffer[self.cursor..]) {
                         Ok(n) if n > 0 => {
+                            self.cursor += n;
                             self.bytes_received += n as u64;
-                            if self.bytes_received & (self.chunk_size as u64 - 1) == 0 {
-                                if self.chunk_buffer[n - 1] == 0x00 {
+                            if self.cursor == self.chunk_size {
+                                if self.chunk_buffer[self.cursor - 1] == 0x00 {
                                     measurement_state.measurements.push_back((
                                         self.start_time.elapsed().as_nanos() as u64,
                                         self.bytes_received,
                                     ));
-                                }
-                                if self.chunk_buffer[n - 1] == 0xFF {
-                                    measurement_state.measurements.push_back((
-                                        self.start_time.elapsed().as_nanos() as u64,
-                                        self.bytes_received,
-                                    ));
+                                    self.cursor = 0;
+                                } else
+                                if self.chunk_buffer[self.cursor - 1] == 0xFF {
                                     measurement_state.phase = TestPhase::GetTimeSendOk;
                                     stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                                     return Ok(());
-                                }
+                                } 
                             }
                         }
                         Ok(_) => {
@@ -131,11 +126,11 @@ impl BasicHandler for GetTimeHandler {
                         .as_bytes(),
                     );
                 }
+                self.start_time = Instant::now();
                 if write_all_nb(&mut self.write_buffer, stream)? {
                     measurement_state.phase = TestPhase::GetTimeReceiveChunk;
                     stream.reregister(&poll, self.token, Interest::READABLE)?;
                     self.write_buffer.clear();
-                    self.start_time = Instant::now();
                 }
             }
             TestPhase::GetTimeSendOk => {

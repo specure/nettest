@@ -168,6 +168,7 @@ impl BasicHandler for PerfHandler {
         match measurement_state.phase {
             TestPhase::PerfNoResultSendCommand => {
                 // debug!("PerfNoResultSendCommand");
+                self.chunk_size = measurement_state.chunk_size as u64; 
                 self.write_buffer
                     .extend_from_slice(self.get_put_no_result_command().as_bytes());
                 if write_all_nb(&mut self.write_buffer, stream)? {

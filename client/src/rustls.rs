@@ -1,6 +1,6 @@
 use anyhow::{Error, Result};
 use core::error;
-use log::{debug, error, info, trace};
+use log::{debug, info, trace};
 use mio::{net::TcpStream, Events, Interest, Poll, Token};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName};
 use rustls::CipherSuite::TLS13_AES_128_GCM_SHA256;
@@ -266,7 +266,7 @@ fn load_private_key(key_path: &Path) -> Result<PrivateKeyDer<'static>, Error> {
         debug!("Successfully loaded private key: {:?}", key);
         Ok(key)
     } else {
-        error!("No private keys found in key file");
+        debug!("No private keys found in key file");
         Err(Error::msg("No private keys found in key file"))
     }
 }

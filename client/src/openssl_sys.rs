@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::{debug, error, info, trace};
+use log::{debug, info, trace};
 use mio::{net::TcpStream, Interest, Poll, Token};
 use openssl_sys::*;
 use std::io::{self, Read, Write};

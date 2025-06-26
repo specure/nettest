@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::{debug, error, info};
+use log::{debug, info};
 use mio::{net::TcpStream, Interest, Poll, Token};
 use openssl::ssl::Error as SslError;
 use openssl::ssl::ErrorCode;

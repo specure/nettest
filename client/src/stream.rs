@@ -1,5 +1,5 @@
 use anyhow::{Ok, Result};
-use log::{debug, error, info};
+use log::{debug, info};
 use mio::{net::TcpStream, Interest, Poll, Token};
 use std::io::{self, Read, Write};
 use std::net::SocketAddr;

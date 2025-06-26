@@ -1,6 +1,6 @@
 use anyhow::Result;
 use bytes::BytesMut;
-use log::{debug, error, info, trace};
+use log::{debug, info, trace};
 use mio::{Events, Interest, Poll, Token};
 use std::collections::{HashMap, VecDeque};
 use std::time::Instant;
@@ -203,7 +203,7 @@ impl TestState {
         self.measurement_state.phase = TestPhase::GetTimeSendCommand;
         self.stream
             .reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
-        self.process_phase(TestPhase::GetTimeCompleted, ONE_SECOND_NS * 10)?;
+        self.process_phase(TestPhase::GetTimeCompleted, ONE_SECOND_NS * 12)?;
         Ok(())
     }
 
@@ -263,7 +263,7 @@ impl TestState {
                             &self.poll,
                             &mut self.measurement_state,
                         ) {
-                            error!(
+                            debug!(
                                 "Error in on_read for phase {:?}: {}",
                                 self.measurement_state.phase, e
                             );
@@ -283,7 +283,7 @@ impl TestState {
                             &self.poll,
                             &mut self.measurement_state,
                         ) {
-                            error!(
+                            debug!(
                                 "Error in on_write for phase {:?}: {}",
                                 self.measurement_state.phase, e
                             );
