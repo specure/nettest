@@ -175,7 +175,7 @@ impl GraphService {
             .map(|(x, y)| (*x as f32, *y as f32))
             .collect();
 
-        println!("{} Test - Speed over Time (textplots)", test_type);
+        println!("{} Test - Speed over Time", test_type);
         Chart::new(192, 48, min_x, max_x)
             .lineplot(&Shape::Lines(&points))
             .display();
