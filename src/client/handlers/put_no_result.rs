@@ -1,17 +1,15 @@
-use crate::globals::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE};
-use crate::handlers::BasicHandler;
-use crate::state::{MeasurementState, TestPhase};
-use crate::stream::Stream;
-use crate::utils::{ACCEPT_GETCHUNKS_STRING, MAX_CHUNKS_BEFORE_SIZE_INCREASE};
-use crate::{read_until, write_all_nb};
 use anyhow::Result;
 use bytes::{Buf, BytesMut};
-use fastrand;
-use log::{debug, info, trace};
-use mio::{net::TcpStream, Interest, Poll, Token};
-use serde_json::de;
-use std::io::{self, ErrorKind, Write};
+use log::{debug, trace};
+use mio::{Interest, Poll, Token};
+use std::io::{ErrorKind};
 use std::time::Instant;
+
+use crate::client::globals::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE};
+use crate::client::handlers::BasicHandler;
+use crate::client::state::TestPhase;
+use crate::client::utils::{ACCEPT_GETCHUNKS_STRING, MAX_CHUNKS_BEFORE_SIZE_INCREASE};
+use crate::client::{MeasurementState, Stream};
 
 const TEST_DURATION_NS: u64 = 2_000_000_000; // 2 seconds
 const MIN_CHUNK_SIZE: u64 = 4096; // 4KB
@@ -27,7 +25,6 @@ pub struct PutNoResultHandler {
     write_buffer: BytesMut,
     read_buffer: BytesMut,
     current_chunk_offset: usize,
-    upload_speed: Option<f64>,
 }
 
 impl PutNoResultHandler {
@@ -42,7 +39,6 @@ impl PutNoResultHandler {
             write_buffer: BytesMut::with_capacity(1024),
             read_buffer: BytesMut::with_capacity(1024),
             current_chunk_offset: 0,
-            upload_speed: None,
         })
     }
 
@@ -71,7 +67,7 @@ impl BasicHandler for PutNoResultHandler {
         match measurement_state.phase {
             TestPhase::PutNoResultReceiveOk => loop {
                 debug!("PutNoResultReceiveOk token {:?}", self.token);
-                if (self.test_start_time.is_none()) {
+                if self.test_start_time.is_none() {
                     self.test_start_time = Some(Instant::now());
                 }
                 let mut a = vec![0u8; 1024];
@@ -116,7 +112,7 @@ impl BasicHandler for PutNoResultHandler {
                             if time_str.contains(ACCEPT_GETCHUNKS_STRING) {
                                 trace!("Received trace:  {:?} token {:?}", time_str, self.token);
                                 
-                                if let Some(time_ns) = time_str
+                                if let Some(_) = time_str
                                     .split_whitespace()
                                     .nth(1)
                                     .and_then(|s| s.parse::<u64>().ok())

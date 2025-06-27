@@ -252,7 +252,7 @@ impl WebSocketTlsClient {
         info!("WebSocket handshake completed successfully");
 
         // Create WebSocket with the established connection
-        let mut config = WebSocketConfig::default();
+        let config = WebSocketConfig::default();
         // config.max_write_buffer_size = MAX_CHUNK_SIZE as usize;
         let ws =
             WebSocket::from_raw_socket(stream, tungstenite::protocol::Role::Client, Some(config));

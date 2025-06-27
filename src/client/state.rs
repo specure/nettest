@@ -1,14 +1,14 @@
 use anyhow::Result;
 use bytes::BytesMut;
-use log::{debug, info, trace};
+use log::{debug, trace};
 use mio::{Events, Interest, Poll, Token};
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::time::Instant;
 use std::{net::SocketAddr, path::Path, time::Duration};
 
-use crate::handlers::handler_factory::HandlerFactory;
-use crate::stream::Stream;
-use crate::DEFAULT_READ_BUFFER_SIZE;
+use crate::client::handlers::handler_factory::HandlerFactory;
+use crate::client::stream::Stream;
+use crate::client::utils::DEFAULT_READ_BUFFER_SIZE;
 
 const ONE_SECOND_NS: u128 = 1_000_000_000;
 
@@ -104,7 +104,6 @@ impl TestState {
 
         let mut stream = if use_tls && use_websocket {
             Stream::new_websocket_tls(addr)?
-            
         } else if use_tls {
             // Stream::new_openssl_sys(addr)?
             // Stream::new_openssl(addr)?
@@ -138,7 +137,7 @@ impl TestState {
             failed: false,
         };
 
-        let mut handler_factory: HandlerFactory = HandlerFactory::new(token)?;
+        let handler_factory: HandlerFactory = HandlerFactory::new(token)?;
 
         Ok(Self {
             stream,
@@ -235,7 +234,7 @@ impl TestState {
 
             trace!("Poll iteration token {:?}", self.token);
 
-            if (self.events.is_empty()) {
+            if self.events.is_empty() {
                 let time = self
                     .measurement_state
                     .phase_start_time

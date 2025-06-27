@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use std::error::Error;
 use std::net::SocketAddr;
-use log::{info, error, debug};
+use log::{info, debug};
 use crate::utils::{token_validator::TokenValidator, user::UserPrivileges};
 use crate::server::server_config::RmbtServerConfig;
 use tokio::sync::oneshot;
@@ -115,8 +115,8 @@ impl Server {
                         // stream.set_nodelay(true)?;
                         let tls_acceptor = self.tls_acceptor.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = handle_connection(stream, addr, is_ssl, token_validator, config, tls_acceptor).await {
-                                error!("Error handling connection: {}", e);
+                            if let Err(_) = handle_connection(stream, addr, is_ssl, token_validator, config, tls_acceptor).await {
+                                // error!("Error handling connection: {}", e);
                             }
                         });
                     }

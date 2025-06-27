@@ -1,8 +1,6 @@
 use crate::config::constants::{RESP_PONG};
 use crate::stream::Stream;
 use std::error::Error;
-use std::f64::consts::E;
-use std::time::Instant;
 use quanta::Clock;
 
 pub async fn handle_ping(stream: &mut Stream) -> Result<(), Box<dyn Error + Send + Sync>> {

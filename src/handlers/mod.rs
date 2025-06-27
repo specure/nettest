@@ -1,6 +1,5 @@
 use crate::config::constants::{RESP_BYE};
 use crate::stream::Stream;
-use log::{info};
 use std::error::Error;
 
 mod get_chunks;

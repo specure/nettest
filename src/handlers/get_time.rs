@@ -5,7 +5,7 @@ use quanta::Clock;
 
 use crate::stream::Stream;
 use crate::utils::random_buffer::get_random_slice;
-use log::{debug, error};
+use log::{debug};
 
 fn generate_chunks(num_chunks: usize, chunk_size: usize) -> Vec<Bytes> {
     let mut chunks = Vec::with_capacity(num_chunks);
@@ -62,7 +62,7 @@ pub async fn handle_get_time(
 
     // Check duration
     if duration < 2 {
-        error!("Duration must be at least 2 seconds");
+        // error!("Duration must be at least 2 seconds");
         stream.write_all(RESP_ERR.as_bytes()).await?;
         return Ok(());
     }
@@ -121,7 +121,7 @@ pub async fn handle_get_time(
     let response_str = String::from_utf8_lossy(&response[..n]);
 
     if response_str.trim() != "OK" {
-        error!("Expected OK response, got: {}", response_str);
+        // error!("Expected OK response, got: {}", response_str);
         return Err("Invalid response from client".into());
     }
 

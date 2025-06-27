@@ -1,15 +1,14 @@
 use anyhow::{Ok, Result};
-use log::{debug, info};
 use mio::{net::TcpStream, Interest, Poll, Token};
 use std::io::{self, Read, Write};
 use std::net::SocketAddr;
 use std::path::Path;
 
-use crate::openssl::OpenSslStream;
-use crate::rustls::RustlsStream;
-use crate::websocket::WebSocketClient;
-use crate::websocket_tls_openssl::WebSocketTlsClient;
-use crate::RMBT_UPGRADE_REQUEST;
+use crate::client::openssl::OpenSslStream;
+use crate::client::rustls::RustlsStream;
+use crate::client::websocket::WebSocketClient;
+use crate::client::websocket_tls_openssl::WebSocketTlsClient;
+use crate::client::RMBT_UPGRADE_REQUEST;
 
 #[derive(Debug)]
 pub enum Stream {
@@ -52,18 +51,18 @@ impl Stream {
             Stream::Tcp(_) => Ok(()),
             Stream::OpenSsl(stream) => stream.close(),
             Stream::WebSocket(stream) => stream.close(),
-            Stream::Rustls(stream) => Ok(()),
+            Stream::Rustls(_) => Ok(()),
             Stream::WebSocketTls(stream) => stream.close(),
         }
     }
 
     pub fn get_greeting(&mut self) -> Vec<u8> {
         match self {
-            Stream::Tcp(stream) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
-            Stream::OpenSsl(stream) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
-            Stream::WebSocket(stream) => stream.get_greeting(),
-            Stream::Rustls(stream) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
-            Stream::WebSocketTls(stream) => stream.get_greeting(),
+            Stream::Tcp(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
+            Stream::OpenSsl(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
+            Stream::WebSocket(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
+            Stream::Rustls(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
+            Stream::WebSocketTls(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
         }
     }
 

@@ -1,11 +1,6 @@
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
 use log::debug;
-use plotters::prelude::*;
-use plotters::style::*;
 use textplots::{Chart, Shape};
 use textplots::Plot;
-use rgb::RGB8;
 
 /// Структура для хранения результатов измерений
 #[derive(Debug, Clone)]
@@ -19,13 +14,13 @@ pub struct GraphService;
 
 impl GraphService {
     /// Отрисовывает график загрузки
-    pub fn print_download(measurement_results: &[MeasurementResult], speed_data: &(f64, f64, f64)) {
+    pub fn print_download(measurement_results: &[MeasurementResult], _speed_data: &(f64, f64, f64)) {
         println!("\n=== DOWNLOAD SPEED GRAPH ===");
         Self::print_speed_graph(measurement_results, "Download");
     }
 
     /// Отрисовывает график выгрузки
-    pub fn print_upload(measurement_results: &[MeasurementResult], speed_data: &(f64, f64, f64)) {
+    pub fn print_upload(measurement_results: &[MeasurementResult], _speed_data: &(f64, f64, f64)) {
         println!("\n=== UPLOAD SPEED GRAPH ===");
         Self::print_speed_graph(measurement_results, "Upload");
     }
@@ -141,7 +136,7 @@ impl GraphService {
                         // Если нет точки после target_time, используем последнюю известную
                         b as f64
                     }
-                    (None, Some((_, b))) => {
+                    (None, Some((_, _))) => {
                         0.0 as f64
                     }
                     _ => 0.0,

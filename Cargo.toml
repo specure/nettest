@@ -1,11 +1,10 @@
 [workspace]
 members = [
-    "client",
     "client-tokio"
 ]
 
 [package]
-name = "rmbt_server"
+name = "nettest"
 version = "0.1.0"
 edition = "2021"
 
@@ -34,7 +33,17 @@ tokio-rustls = { version = "0.25.0" }
 rustls = { version = "0.22.0" }
 rustls-pemfile = "2.0.0"
 quanta = "0.11"
-
+plotters = "0.3.7"
+plotters-backend = "0.3.7"
+textplots = "0.8.7"
+reqwest = { version = "0.11.16", features = ["json"] }
+serde_json = "1.0"
+anyhow = "1.0"
+mio = { version = "1", features = ["net"] }
+ringbuf = "0.4.8"
+openssl-sys = { version = "0.9"}
+rgb = "0.8.50"
+prettytable = "0.10.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 openssl-sys = { version = "0.9", features = ["vendored"] }

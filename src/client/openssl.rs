@@ -1,11 +1,9 @@
 use anyhow::Result;
-use log::{debug, info};
+use log::debug;
 use mio::{net::TcpStream, Interest, Poll, Token};
-use openssl::ssl::Error as SslError;
 use openssl::ssl::ErrorCode;
 use openssl::ssl::{Ssl, SslContext, SslMethod, SslMode, SslOptions, SslStream};
-use std::io::{self, Read, Write};
-use std::net::SocketAddr;
+use std::io::{self, Write};
 
 #[derive(Debug)]
 pub struct OpenSslStream {

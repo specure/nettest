@@ -1,15 +1,14 @@
-use crate::globals::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE};
-use crate::handlers::BasicHandler;
-use crate::state::{MeasurementState, TestPhase};
-use crate::stream::Stream;
-use crate::{read_until, write_all_nb};
 use anyhow::Result;
 use bytes::BytesMut;
-use fastrand;
-use log::{debug, info, trace};
-use mio::{net::TcpStream, Interest, Poll, Token};
-use std::io::{self, Write};
+use log::{debug, trace};
+use mio::{Interest, Poll, Token};
+use std::io::{self};
 use std::time::Instant;
+
+use crate::client::globals::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE};
+use crate::client::handlers::BasicHandler;
+use crate::client::state::TestPhase;
+use crate::client::{write_all_nb, MeasurementState, Stream};
 
 const TEST_DURATION_NS: u64 = 7_000_000_000; // 3 seconds
 const MAX_CHUNK_SIZE: u64 = 4194304; // 2MB
@@ -156,7 +155,6 @@ impl BasicHandler for PerfHandler {
                 return Ok(());
             }
         }
-        Ok(())
     }
 
     fn on_write(
@@ -268,7 +266,6 @@ impl BasicHandler for PerfHandler {
                 //     Interest::READABLE | Interest::WRITABLE,
                 // )?;
                 // }
-                Ok(())
             }
             _ => {
                 debug!(

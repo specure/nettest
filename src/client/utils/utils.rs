@@ -1,9 +1,10 @@
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use bytes::{Buf, BytesMut};
 use mio::net::TcpStream;
 use log::debug;
 
-use crate::stream::Stream;
+use crate::client::Stream;
+
 
 
 /// Reads from the stream until the specified string is found in the buffer

@@ -1,7 +1,6 @@
 use anyhow::Result;
-use mio::{net::TcpStream, Interest, Poll, Token};
-use crate::{state::{MeasurementState, TestPhase}};
-use crate::stream::Stream;
+use mio::{Poll};
+use crate::{client::MeasurementState, client::Stream};
 
 pub trait BasicHandler {
     // Обработка события чтения

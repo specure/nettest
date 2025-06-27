@@ -1,17 +1,13 @@
-use crate::handlers::BasicHandler;
-use crate::state::{MeasurementState, TestPhase};
-use crate::stream::Stream;
-use crate::{read_until, write_all_nb};
+use crate::client::handlers::BasicHandler;
+use crate::client::state::TestPhase;
+use crate::client::{read_until, write_all_nb, MeasurementState, Stream};
 use anyhow::Result;
-use bytes::{Buf, BytesMut};
+use bytes::{ BytesMut};
 use log::debug;
-use mio::{net::TcpStream, Interest, Poll, Token};
-use std::io::{self, Read, Write};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use mio::{Interest, Poll, Token};
+use std::io;
+use std::time::{ Instant};
 
-const MIN_PINGS: u32 = 10;
 const MAX_PINGS: u32 = 200;
 const PING_DURATION_NS: u64 = 1_000_000_000; // 1 second
 const PONG_RESPONSE: &[u8] = b"PONG\n";

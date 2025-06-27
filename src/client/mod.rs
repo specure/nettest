@@ -1,56 +1,49 @@
-use anyhow::Result;
-use fastrand;
+pub mod rustls;
+pub mod openssl_sys;
+pub mod openssl;
+pub mod websocket;
+pub mod websocket_tls_openssl;
+pub mod stream;
+pub mod state;
+pub mod handlers;
+pub mod utils;
+pub mod globals;
+pub mod graph;
+
+pub use stream::Stream;
+pub use state::{TestState, MeasurementState};
+pub use handlers::{
+    greeting::GreetingHandler,
+    get_chunks::GetChunksHandler,
+    put::PutHandler,
+    put_no_result::PutNoResultHandler,
+};
+pub use utils::{read_until, write_all, write_all_nb, DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE, RMBT_UPGRADE_REQUEST};
+
+
 use log::{debug, info};
-use measurement_client::Stream;
-use mio::{Events, Poll};
+use crate::client::graph::graph_service::{GraphService, MeasurementResult};
 use prettytable::format::{FormatBuilder, LinePosition, LineSeparator};
-use prettytable::{cell, row, Table};
-use std::collections::HashMap;
-use std::env;
+use prettytable::{ row, Table};
 use std::net::SocketAddr;
 use std::sync::{Arc, Barrier};
 use std::thread;
 
-mod graph_service;
-mod handlers;
-mod state;
-use graph_service::{GraphService, MeasurementResult};
-use state::{MeasurementState, TestState};
-pub mod globals;
-pub mod openssl;
-pub mod openssl_sys;
-pub mod rustls;
-pub mod stream;
-pub mod utils;
-pub mod websocket;
-pub mod websocket_tls_openssl;
-
-pub use handlers::{
-    get_chunks::GetChunksHandler, greeting::GreetingHandler, put::PutHandler,
-    put_no_result::PutNoResultHandler,
-};
-pub use utils::{
-    read_until, write_all, write_all_nb, DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE,
-    RMBT_UPGRADE_REQUEST,
-};
-
-const MIN_CHUNK_SIZE: u64 = 4096; // 4KB
-const MAX_CHUNK_SIZE: u64 = 4194304; // 4MB
 
 const GREEN: &str = "\x1b[32m";
 const RESET: &str = "\x1b[0m";
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    async_main().await
-}
+// #[tokio::main]
+// async fn main() -> Result<()> {
+//     async_main().await
+// }
 
-async fn async_main() -> anyhow::Result<()> {
+pub async fn async_main(args: Vec<String>) -> anyhow::Result<()> {
+
     info!("Starting measurement client...");
     print_test_header();
 
-    // Парсим аргументы командной строки
-    let args: Vec<String> = env::args().collect();
+
     let use_tls = args.iter().any(|arg| arg == "-tls");
     let use_websocket = args.iter().any(|arg| arg == "-ws");
     let perf_test = args.iter().any(|arg| arg == "-perf");
@@ -470,36 +463,6 @@ fn calculate_perf_speed(states: &[&MeasurementState]) -> (f64, f64, f64) {
     calculate_speed_from_measurements(thread_measurements)
 }
 
-fn calculate_upload_speed(states: &[&MeasurementState]) -> (f64, f64, f64) {
-    let mut results: HashMap<u32, Vec<(u64, u64)>> = HashMap::new();
-
-    for (thread_id, state) in states.iter().enumerate() {
-        if state.failed {
-            continue;
-        }
-        for line in state.read_buffer_temp.split(|&b| b == b'\n') {
-            debug!("Line: {:?}", String::from_utf8_lossy(line));
-            if line.is_empty() {
-                continue;
-            }
-            let s = String::from_utf8_lossy(line);
-            let parts: Vec<&str> = s.split_whitespace().collect();
-            if parts.len() >= 4 && parts[0] == "TIME" && parts[2] == "BYTES" {
-                if let (Ok(time_ns), Ok(bytes)) = (parts[1].parse::<u64>(), parts[3].parse::<u64>())
-                {
-                    results
-                        .entry(thread_id as u32)
-                        .or_default()
-                        .push((time_ns, bytes));
-                }
-            }
-        }
-    }
-
-    let thread_measurements: Vec<Vec<(u64, u64)>> = results.into_values().collect();
-    calculate_speed_from_measurements(thread_measurements)
-}
-
 fn print_test_header() {
     // Print centered green title
     let title = "Nettest Broadband Test";
@@ -557,7 +520,7 @@ fn print_test_result(phase: &str, status: &str, speed: Option<(f64, f64, f64)>) 
     println!("{}", table);
 }
 
-fn print_result(phase: &str, status: &str, speed: Option<(usize)>) {
+fn print_result(phase: &str, status: &str, speed: Option<usize>) {
     let mut table = Table::new();
     let format = FormatBuilder::new()
         .column_separator('│')
@@ -570,7 +533,7 @@ fn print_result(phase: &str, status: &str, speed: Option<(usize)>) {
         .build();
     table.set_format(format);
 
-    let result = if let Some((mbps)) = speed {
+    let result = if let Some(mbps) = speed {
         format!("{} - {:.2} ", status, mbps)
     } else {
         status.to_string()

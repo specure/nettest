@@ -1,10 +1,9 @@
 use anyhow::Result;
-use log::{debug, info, trace};
+use log::{debug};
 use mio::{net::TcpStream, Interest, Poll, Token};
 use openssl_sys::*;
 use std::io::{self, Read, Write};
 use std::net::SocketAddr;
-use std::ptr;
 
 #[derive(Debug)]
 pub struct OpenSslSysStream {

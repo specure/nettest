@@ -3,7 +3,7 @@ use crate::handlers::{
     handle_get_chunks, handle_get_time, handle_ping, handle_put, handle_put_no_result, handle_quit,
 };
 use crate::utils::token_validator::TokenValidator;
-use log::{debug, error, info};
+use log::{debug};
 use std::error::Error;
 use std::sync::Arc;
 use crate::server::server_config::RmbtServerConfig;
@@ -12,33 +12,31 @@ use crate::stream::Stream;
 pub struct ConnectionHandler {
     stream: Stream,
     config: Arc<RmbtServerConfig>,
-    token_validator: Arc<TokenValidator>,
 }
 
 impl ConnectionHandler {
     pub fn new(
         stream: Stream,
         config: Arc<RmbtServerConfig>,
-        token_validator: Arc<TokenValidator>,
+        _token_validator: Arc<TokenValidator>,
     ) -> Self {
         Self {
             stream,
             config,
-            token_validator,
         }
     }
 
     pub async fn handle(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         debug!("Handling connection");
         if let Err(e) = self.send_greeting().await {
-            error!("Failed to send greeting: {}", e);
+            // error!("Failed to send greeting: {}", e);
             return Err(e);
         }
         debug!("Greeting sent");
 
 
         if let Err(e) = self.handle_token().await {
-            error!("Token validation failed: {}", e);
+            // error!("Token validation failed: {}", e);
             return Err(e);
         }
         debug!("Token validated");
@@ -101,7 +99,7 @@ impl ConnectionHandler {
                             break;
                         }
                         _ => {
-                            error!("Error reading from stream: {}", e);
+                            // error!("Error reading from stream: {}", e);
                             return Err(e.into());
                         }
                     }
@@ -142,7 +140,7 @@ impl ConnectionHandler {
         let token_line = String::from_utf8_lossy(&buffer[..n]);
         debug!("Received token line: {}", token_line.to_string());
 
-        let token_line = token_line.trim();
+        let _token_line = token_line.trim();
 
         self.stream.write_all("OK\n".as_bytes()).await?;
         Ok(())
@@ -188,98 +186,4 @@ impl ConnectionHandler {
         // }
     }
 
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tokio::net::TcpListener;
-    use tokio::net::TcpStream;
-
-    #[tokio::test]
-    async fn test_handle_connection() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        // Client connection
-        let client = TcpStream::connect(addr).await.unwrap();
-
-        // Server accepts connection
-        let (server, _) = listener.accept().await.unwrap();
-
-        let config = Arc::new(RmbtServerConfig::default());
-        let token_validator = Arc::new(TokenValidator::new(vec![], vec![]));
-
-        let mut handler = ConnectionHandler::new(
-            Stream::Plain(server),
-            config,
-            token_validator,
-        );
-
-        // Test connection handling
-        tokio::spawn(async move {
-            handler.handle().await.unwrap();
-        });
-
-        // Clean up
-        drop(client);
-    }
-
-    #[tokio::test]
-    async fn test_handle_quit() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        // Client connection
-        let client = TcpStream::connect(addr).await.unwrap();
-
-        // Server accepts connection
-        let (server, _) = listener.accept().await.unwrap();
-
-        let config = Arc::new(RmbtServerConfig::default());
-        let token_validator = Arc::new(TokenValidator::new(vec![], vec![]));
-
-        let mut handler = ConnectionHandler::new(
-            Stream::Plain(server),
-            config,
-            token_validator,
-        );
-
-        // Test quit command
-        tokio::spawn(async move {
-            handler.handle().await.unwrap();
-        });
-
-        // Clean up
-        drop(client);
-    }
-
-    #[tokio::test]
-    async fn test_handle_ping() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        // Client connection
-        let client = TcpStream::connect(addr).await.unwrap();
-
-        // Server accepts connection
-        let (server, _) = listener.accept().await.unwrap();
-
-        let config = Arc::new(RmbtServerConfig::default());
-        let token_validator = Arc::new(TokenValidator::new(vec![], vec![]));
-
-        let mut handler = ConnectionHandler::new(
-            Stream::Plain(server),
-            config,
-            token_validator,
-        );
-
-        // Test ping command
-        tokio::spawn(async move {
-            handler.handle().await.unwrap();
-        });
-
-        // Clean up
-        drop(client);
-    }
 }

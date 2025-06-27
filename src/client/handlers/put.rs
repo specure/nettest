@@ -1,17 +1,15 @@
-use crate::handlers::BasicHandler;
-use crate::state::{MeasurementState, TestPhase};
-use crate::stream::Stream;
-use crate::utils::utils::write_all_nb_loop;
-use crate::utils::ACCEPT_GETCHUNKS_STRING;
-use crate::{read_until, write_all_nb};
 use anyhow::Result;
 use bytes::{Buf, BytesMut};
 use fastrand;
-use log::{debug, info, trace};
-use mio::{net::TcpStream, Interest, Poll, Token};
-use std::io::{self, IoSlice, Read, Write};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
+use log::{debug, trace};
+use mio::{ Interest, Poll, Token};
+use std::io::{self};
+use std::time::{Instant};
+
+use crate::client::handlers::BasicHandler;
+use crate::client::state::TestPhase;
+use crate::client::utils::ACCEPT_GETCHUNKS_STRING;
+use crate::client::{read_until, write_all_nb, MeasurementState, Stream};
 
 const TEST_DURATION_NS: u64 = 7_000_000_000; // 7 seconds
 const MAX_CHUNK_SIZE: u64 = 4194304; // 4MB

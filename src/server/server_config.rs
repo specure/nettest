@@ -1,6 +1,6 @@
 use crate::logger;
 use crate::utils::{daemon, secret_keys, user};
-use log::{debug, error, info, LevelFilter};
+use log::{debug, LevelFilter};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs;
@@ -35,8 +35,7 @@ pub struct TlsConfig {
 }
 
 impl RmbtServerConfig {
-    pub fn from_args() -> Result<Self, Box<dyn Error + Send + Sync>> {
-        let args: Vec<String> = std::env::args().collect();
+    pub fn from_args(args: Vec<String>) -> Result<Self, Box<dyn Error + Send + Sync>> {
 
         // if args.len() == 1 {
         //     let addr = "127.0.0.1:5005".parse().unwrap();
@@ -68,7 +67,7 @@ impl RmbtServerConfig {
 
       
 
-        Self::from_args_vec(std::env::args().collect())
+        Self::from_args_vec(args)
     }
 
     pub fn from_args_vec(args: Vec<String>) -> Result<Self, Box<dyn Error + Send + Sync>> {
@@ -95,7 +94,7 @@ impl RmbtServerConfig {
                 config.secret_key_labels = keys.iter().map(|k| k.label.clone()).collect();
             }
             Err(e) => {
-                error!("Error while opening secret.key: {}", e);
+                // error!("Error while opening secret.key: {}", e);
                 return Err(format!("Error while opening secret.key: {}", e).into());
             }
         }

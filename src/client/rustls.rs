@@ -1,9 +1,7 @@
 use anyhow::{Error, Result};
-use core::error;
 use log::{debug, info, trace};
-use mio::{net::TcpStream, Events, Interest, Poll, Token};
-use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName};
-use rustls::CipherSuite::TLS13_AES_128_GCM_SHA256;
+use mio::{net::TcpStream, Interest, Poll, Token};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
 use rustls::{ClientConfig, ClientConnection, RootCertStore};
 use std::fs;
 use std::io::{self, BufReader, Read, Write};
@@ -11,7 +9,6 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::utils::MAX_CHUNK_SIZE;
 
 #[derive(Debug)]
 pub struct RustlsStream {
@@ -26,7 +23,7 @@ impl RustlsStream {
         cert_path: Option<&Path>,
         key_path: Option<&Path>,
     ) -> Result<Self> {
-        let mut stream = TcpStream::connect(addr)?;
+        let stream = TcpStream::connect(addr)?;
         stream.set_nodelay(true)?;
 
         let config = if let (Some(cert_path), Some(key_path)) = (cert_path, key_path) {

@@ -1,5 +1,5 @@
-use std::time::{Duration, Instant};
-use log::{debug, error};
+use std::time::{Instant};
+use log::{debug};
 use crate::config::constants::{CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE, RESP_OK, RESP_ERR, RESP_TIME};
 use crate::stream::Stream;
 
@@ -52,8 +52,8 @@ pub async fn handle_put_no_result(
                     }
                     bytes_read += n;
                 },
-                Err(e) => {
-                    error!("Failed to read chunk: {}", e);
+                Err(_) => {
+                    // error!("Failed to read chunk: {}", e);
                     break 'read_chunks;
                 }
             }
@@ -68,13 +68,13 @@ pub async fn handle_put_no_result(
                 debug!("Found terminator: {}", terminator);
                 break;
             } else if terminator != 0x00 {
-                error!("Invalid chunk terminator: {}", terminator);
+                // error!("Invalid chunk terminator: {}", terminator);
                 break;
             } else if terminator == 0x00 {
                 debug!("Correct chunk terminator: {}", terminator);
             }
         } else {
-            error!("Incomplete chunk read: {} bytes instead of {}", bytes_read, chunk_size);
+            // error!("Incomplete chunk read: {} bytes instead of {}", bytes_read, chunk_size);
             break;
         }
     }

@@ -1,19 +1,15 @@
-use crate::handlers::BasicHandler;
-use crate::state::{MeasurementState, TestPhase};
-use crate::utils::{
-    read_until, ACCEPT_GETCHUNKS_STRING, DEFAULT_READ_BUFFER_SIZE, MAX_CHUNKS_BEFORE_SIZE_INCREASE,
-    MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, OK_COMMAND, PRE_DOWNLOAD_DURATION_NS, TIME_BUFFER_SIZE,
-};
-use crate::{write_all_nb};
-use crate::stream::Stream;
+use crate::client::globals::MIN_CHUNK_SIZE;
+use crate::client::handlers::BasicHandler;
+use crate::client::state::TestPhase;
+use crate::client::utils::{ACCEPT_GETCHUNKS_STRING, MAX_CHUNKS_BEFORE_SIZE_INCREASE, MAX_CHUNK_SIZE, OK_COMMAND, PRE_DOWNLOAD_DURATION_NS, TIME_BUFFER_SIZE};
+use crate::client::{write_all_nb, MeasurementState, Stream, DEFAULT_READ_BUFFER_SIZE};
 use anyhow::Result;
 use bytes::BytesMut;
 use log::{debug, trace};
-use mio::{net::TcpStream, Interest, Poll, Token};
-use std::io::{self, Read};
+use mio::{Interest, Poll, Token};
+use std::io::{self};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
-use std::collections::VecDeque;
 
 pub struct GetChunksHandler {
     token: Token,
@@ -30,7 +26,7 @@ impl GetChunksHandler {
     pub fn new(token: Token) -> Result<Self> {
         Ok(Self {
             token,
-            chunk_size: MIN_CHUNK_SIZE,
+            chunk_size: MIN_CHUNK_SIZE as u32,
             total_chunks: 1,
             chunks_received: AtomicU32::new(0),
             test_start_time: None,
@@ -39,7 +35,6 @@ impl GetChunksHandler {
             write_buffer: BytesMut::with_capacity(DEFAULT_READ_BUFFER_SIZE),
         })
     }
-
 
     fn increase_chunk_size(&mut self) {
         if self.total_chunks < MAX_CHUNKS_BEFORE_SIZE_INCREASE {
@@ -127,14 +122,17 @@ impl BasicHandler for GetChunksHandler {
                         Ok(n) => {
                             self.time_buffer.extend_from_slice(&buf[..n]);
                             let buffer_str = String::from_utf8_lossy(&self.time_buffer);
-                            
+
                             if buffer_str.contains(ACCEPT_GETCHUNKS_STRING) {
                                 if let Some(time_ns) = self.parse_time_response(&buffer_str) {
                                     trace!("Time: {} ns", time_ns);
-                                    if time_ns < PRE_DOWNLOAD_DURATION_NS && self.chunk_size < MAX_CHUNK_SIZE {
+                                    if time_ns < PRE_DOWNLOAD_DURATION_NS
+                                        && self.chunk_size < MAX_CHUNK_SIZE
+                                    {
                                         self.increase_chunk_size();
                                         self.reset_chunk_counters();
-                                        measurement_state.phase = TestPhase::GetChunksSendChunksCommand;
+                                        measurement_state.phase =
+                                            TestPhase::GetChunksSendChunksCommand;
                                         stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                                     } else {
                                         measurement_state.chunk_size = self.chunk_size as usize;

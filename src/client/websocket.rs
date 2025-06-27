@@ -3,14 +3,11 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use log::{debug, info};
 use mio::{net::TcpStream, Interest, Poll, Token};
 use sha1::{Digest, Sha1};
-use std::io::{self, Bytes, Read, Write};
+use std::io::{self, Read, Write};
 use std::net::SocketAddr;
-use tungstenite::protocol::frame::coding::{Data, OpCode};
-use tungstenite::protocol::frame::Frame;
 use tungstenite::protocol::WebSocketConfig;
 use tungstenite::{protocol::WebSocket, Message};
 
-use crate::globals::MAX_CHUNK_SIZE;
 
 const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
@@ -174,7 +171,7 @@ impl WebSocketClient {
         info!("WebSocket handshake completed successfully");
 
         // Create WebSocket with the established connection
-        let mut config = WebSocketConfig::default();
+        let config = WebSocketConfig::default();
         // config.max_write_buffer_size = MAX_CHUNK_SIZE as usize;
         let ws =
             WebSocket::from_raw_socket(stream, tungstenite::protocol::Role::Client, Some(config));

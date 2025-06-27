@@ -1,7 +1,7 @@
 use crate::stream::Stream;
 use crate::stream::Stream::{Plain, Tls};
 use crate::utils::websocket::{generate_handshake_response, Handshake};
-use log::{debug, error, info};
+use log::{debug, info};
 use regex::Regex;
 use std::error::Error;
 use std::sync::Arc;
@@ -27,7 +27,7 @@ pub async fn define_stream(
             stream = Tls(acceptor.accept(tcp_stream).await?);
             debug!("TLS connection established");
         } else {
-            error!("No TLS acceptor");
+            // error!("No TLS acceptor");
             return Err("No TLS acceptor".into());
         }
     } else {
@@ -41,7 +41,7 @@ pub async fn define_stream(
     debug!("Read {} bytes from stream", n);
     
     if n < 4 {
-        error!("Received data too short: {} bytes", n);
+        // error!("Received data too short: {} bytes", n);
         return Err("Invalid request: data too short".into());
     }
 
@@ -49,7 +49,7 @@ pub async fn define_stream(
     debug!("Request is GET: {}", String::from_utf8_lossy(&buffer[..n]));
 
     if !is_get {
-        error!("Not a GET request");
+        // error!("Not a GET request");
         return Err("Invalid request: not a GET request".into());
     }
     let request = String::from_utf8_lossy(&buffer[..n]);
@@ -82,7 +82,7 @@ pub async fn define_stream(
         debug!("Parsing WebSocket handshake");
         let handshake = Handshake::parse(&request)?;
         if !handshake.is_valid() {
-            error!("Invalid WebSocket handshake");
+            // error!("Invalid WebSocket handshake");
             return Err("Invalid WebSocket handshake".into());
         }
         debug!("WebSocket handshake parsed successfully");
@@ -100,7 +100,7 @@ pub async fn define_stream(
                 Ok(ws_stream)
             }
             Err(e) => {
-                error!("WebSocket upgrade failed: {}", e);
+                // error!("WebSocket upgrade failed: {}", e);
                 Err(Box::new(e) as Box<dyn Error + Send + Sync>)
             }
         }

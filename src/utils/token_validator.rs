@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::sleep;
-use log::{debug, error, info};
+use log::{debug};
 use crate::config::constants::{MAX_ACCEPT_EARLY, MAX_ACCEPT_LATE};
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
@@ -25,7 +25,7 @@ impl TokenValidator {
     }
 
     /// Проверка токена
-    pub async fn validate(&self, token_uuid: &str, start_time_str: &str, hmac: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
+    pub async fn validate(&self, _token_uuid: &str, _start_time_str: &str, _hmac: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
         // Проверяем токен с каждым ключом
         return Ok(true);
         // for (i, key) in self.secret_keys.iter().enumerate() {
@@ -40,9 +40,9 @@ impl TokenValidator {
         // Ok(false)
     }
 
-    async fn validate_with_key(&self, token_uuid: &str, start_time_str: &str, hmac: &str, key: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
+    async fn validate_with_key(&self, token_uuid: &str, start_time_str: &str, _hmac: &str, key: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
         if Uuid::parse_str(token_uuid).is_err() {
-            error!("Invalid UUID format: \"{}\"", token_uuid);
+            // error!("Invalid UUID format: \"{}\"", token_uuid);
             return Ok(false);
         }
 
@@ -53,11 +53,11 @@ impl TokenValidator {
         let start_time = start_time_str.parse::<i64>()?;
 
         if start_time - (MAX_ACCEPT_EARLY as i64) > now {
-            error!("Client is not allowed yet. {} seconds too early", start_time - now);
+            // error!("Client is not allowed yet. {} seconds too early", start_time - now);
             return Ok(false);
         }
         if start_time + (MAX_ACCEPT_LATE as i64) < now {
-            error!("Client is {} seconds too late", now - start_time);
+            // error!("Client is {} seconds too late", now - start_time);
             return Ok(false);
         }
 
@@ -72,7 +72,7 @@ impl TokenValidator {
         mac.update(message.as_bytes());
         let result = mac.finalize();
         let code_bytes = result.into_bytes();
-        let computed_hmac = BASE64.encode(code_bytes);
+        let _computed_hmac = BASE64.encode(code_bytes);
 
         Ok(true)
     }

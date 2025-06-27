@@ -1,10 +1,7 @@
-use std::time::Duration;
-
 use futures::{SinkExt, StreamExt};
-use log::{debug, error, info};
+use log::{debug, info};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::time::sleep;
 use tokio_rustls::server::TlsStream;
 use tokio_tungstenite::WebSocketStream;
 
@@ -44,7 +41,7 @@ impl Stream {
                 Ok(Stream::WebSocketTls(ws_stream))
             }
             _ => {
-                error!("Cannot upgrade non-TCP stream to WebSocket");
+                // error!("Cannot upgrade non-TCP stream to WebSocket");
                 Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
                     "Cannot upgrade non-TCP stream to WebSocket",
@@ -121,7 +118,7 @@ impl Stream {
                     )
                 };
                 stream.send(message).await.map_err(|e| {
-                    error!("WebSocket: Error sending message in write: {}", e);
+                    // error!("WebSocket: Error sending message in write: {}", e);
                     std::io::Error::new(std::io::ErrorKind::Other, e)
                 })?;
                 Ok(buf.len())
@@ -135,7 +132,7 @@ impl Stream {
                     )
                 };
                 stream.send(message).await.map_err(|e| {
-                    error!("WebSocketTls: Error sending message in write: {}", e);
+                    // error!("WebSocketTls: Error sending message in write: {}", e);
                     std::io::Error::new(std::io::ErrorKind::Other, e)
                 })?;
                 Ok(buf.len())
@@ -164,7 +161,7 @@ impl Stream {
                     )
                 };
                 stream.send(message).await.map_err(|e| {
-                    error!("WebSocket: Error sending message: {}", e);
+                    // error!("WebSocket: Error sending message: {}", e);
                     std::io::Error::new(std::io::ErrorKind::Other, e)
                 })?;
                 Ok(())
@@ -178,7 +175,7 @@ impl Stream {
                     )
                 };
                 stream.send(message).await.map_err(|e| {
-                    error!("WebSocketTls: Error sending message: {}", e);
+                    // error!("WebSocketTls: Error sending message: {}", e);
                     std::io::Error::new(std::io::ErrorKind::Other, e)
                 })?;
                 Ok(())

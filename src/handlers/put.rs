@@ -1,5 +1,5 @@
 use std::time::{ Instant};
-use log::{debug, error};
+use log::{debug};
 use crate::config::constants::{CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE, RESP_OK, RESP_ERR, RESP_TIME};
 use crate::stream::Stream;
 
@@ -25,7 +25,7 @@ pub async fn handle_put(
     stream.write_all(RESP_OK.as_bytes()).await?;
 
     let start_time = Instant::now();
-    let mut last_time_ns = -1;
+    // let mut last_time_ns = -1;
     let mut total_bytes = 0;
     let mut buffer = vec![0u8; chunk_size];
     let mut found_terminator = false;
@@ -42,8 +42,8 @@ pub async fn handle_put(
                     }
                     bytes_read += n;
                 },
-                Err(e) => {
-                    error!("Failed to read chunk: {}", e);
+                Err(_) => {
+                    // error!("Failed to read chunk: {}", e);
                     break 'read_chunks;
                 }
             }
@@ -63,8 +63,8 @@ pub async fn handle_put(
             // if last_time_ns == -1  {
                 debug!("Sending intermediate TIME response");
                 let time_response = format!("{} {} BYTES {}\n", RESP_TIME, current_time_ns, total_bytes);
-                if let Err(e) = stream.write_all(time_response.as_bytes()).await {
-                    error!("Failed to send intermediate TIME response: {}", e);
+                if let Err(_) = stream.write_all(time_response.as_bytes()).await {
+                    // error!("Failed to send intermediate TIME response: {}", e);
                     break;
                 }
             // }
@@ -74,11 +74,11 @@ pub async fn handle_put(
                 found_terminator = true;
                 break;
             } else if terminator != 0x00 {
-                error!("Invalid chunk terminator: {}", terminator);
+                // error!("Invalid chunk terminator: {}", terminator);
                 break;
             }
         } else {
-            error!("Incomplete chunk read: {} bytes instead of {}", bytes_read, chunk_size);
+            // error!("Incomplete chunk read: {} bytes instead of {}", bytes_read, chunk_size);
             break;
         }
     }
@@ -86,8 +86,8 @@ pub async fn handle_put(
     // Send final TIME response
     let total_time_ns = start_time.elapsed().as_nanos() as i64;
     let final_time_response = format!("{} {}\n", RESP_TIME, total_time_ns);
-    if let Err(e) = stream.write_all(final_time_response.as_bytes()).await {
-        error!("Failed to send final TIME response: {}", e);
+    if let Err(_) = stream.write_all(final_time_response.as_bytes()).await {
+        // error!("Failed to send final TIME response: {}", e);
     }
 
     debug!(

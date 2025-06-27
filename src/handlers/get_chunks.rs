@@ -1,7 +1,7 @@
 use crate::config::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RESP_ERR};
 use std::error::Error;
 use std::time::Instant;
-use log::{debug, error};
+use log::{debug};
 use crate::stream::Stream;
 use bytes::Bytes;
 use crate::utils::random_buffer::get_random_slice;
@@ -49,7 +49,7 @@ pub async fn handle_get_chunks(stream: &mut Stream, command: &str) -> Result<(),
     };
 
     if num_chunks < 1 {
-        error!("Number of chunks must be at least 1");
+        // error!("Number of chunks must be at least 1");
         stream.write_all(RESP_ERR.as_bytes()).await?;
         return Ok(());
     }
@@ -67,7 +67,7 @@ pub async fn handle_get_chunks(stream: &mut Stream, command: &str) -> Result<(),
     let response_str = String::from_utf8_lossy(&response[..n]);
 
     if response_str.trim() != "OK" {
-        error!("Expected OK response, got: {}", response_str);
+        // error!("Expected OK response, got: {}", response_str);
         return Err("Invalid response from client".into());
     }
 

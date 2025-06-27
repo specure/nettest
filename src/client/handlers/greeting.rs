@@ -1,16 +1,8 @@
-use std::io::{self, Write};
-
-use crate::handlers::BasicHandler;
-use crate::state::{MeasurementState, TestPhase};
-use crate::stream::Stream;
-use crate::utils::{
-    read_until, write_all, write_all_nb, ACCEPT_GETCHUNKS_STRING, DEFAULT_READ_BUFFER_SIZE,
-    DEFAULT_WRITE_BUFFER_SIZE, RMBT_UPGRADE_REQUEST,
-};
+use crate::client::{handlers::BasicHandler, read_until, state::TestPhase, utils::ACCEPT_GETCHUNKS_STRING, write_all_nb, MeasurementState, Stream, DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE};
 use anyhow::Result;
 use bytes::BytesMut;
 use log::{debug, trace};
-use mio::{net::TcpStream, Interest, Poll, Token};
+use mio::{Interest, Poll, Token};
 
 pub struct GreetingHandler {
     token: Token,

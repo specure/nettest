@@ -1,10 +1,7 @@
-use crate::handlers::{
-    BasicHandler, GetChunksHandler, GetTimeHandler, GreetingHandler, PingHandler, PutHandler, 
-    PutNoResultHandler, PerfHandler,
-};
-use crate::state::TestPhase;
 use anyhow::Result;
 use mio::Token;
+
+use crate::client::{handlers::{BasicHandler, GetTimeHandler, PerfHandler, PingHandler}, state::TestPhase, GetChunksHandler, GreetingHandler, PutHandler, PutNoResultHandler};
 
 pub struct HandlerFactory {
     greeting_handler: GreetingHandler,
