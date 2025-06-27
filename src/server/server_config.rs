@@ -321,6 +321,10 @@ fn parse_listen_address(addr: &str) -> Result<SocketAddr, Box<dyn Error + Send +
 
 fn print_help() {
     println!("==== rmbtd ====");
+    println!("By default, rmbtd will listen TCP on port 5005 and TLS on port 8080.");
+    println!("Usage: 'nettest -s' will listen on TCP on port 5005");
+    println!("Usage: 'nettest -s -k privkey1.pem -c fullchain1.pem'  will listen on TCP and TLS on ports 5005 and 8080");
+    println!("Usage: nettest -s [-l <listen_address>] [-c <cert_path>] [-k <key_path>] [-t <num_threads>] [-u <user>] [-d] [-D] [-w] [-v <version>]");
     println!("command line arguments:\n");
     println!(" -l/-L  listen on (IP and) port; -L for SSL;");
     println!("        examples: \"443\",\"1.2.3.4:1234\",\"[2001:1234::567A]:1234\"");

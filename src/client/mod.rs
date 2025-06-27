@@ -43,6 +43,12 @@ pub async fn async_main(args: Vec<String>) -> anyhow::Result<()> {
     info!("Starting measurement client...");
     print_test_header();
 
+    if  args.contains(&"-h".to_string())
+    || args.contains(&"--help".to_string())
+{
+    print_help();
+}
+
 
     let use_tls = args.iter().any(|arg| arg == "-tls");
     let use_websocket = args.iter().any(|arg| arg == "-ws");
@@ -541,4 +547,16 @@ fn print_result(phase: &str, status: &str, speed: Option<usize>) {
 
     table.add_row(row![format!("{:<30}", phase), format!("{:<40}", result)]);
     println!("{}", table);
+}
+
+fn print_help() {
+    println!("Usage: nettest -c <server_address> [-t<num_threads>] [-ws] [-tls] ");
+    println!("By default, nettest will connect to server on port :5005 or :8080");
+    println!("Usage: nettest -c 127.0.0.1 -ws -tls -t5");
+    println!("-ws - use websocket");
+    println!("-tls - use tls");
+    println!("-log - `RUST_LOG=debug ./nettest 127.0.0.1  -t5 -tls -log`");
+    println!("-t<num_threads> - number of threads");
+    println!("-help - print help");
+    println!("-h - print help");
 }

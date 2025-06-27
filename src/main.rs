@@ -56,9 +56,18 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         server.run().await?;
         info!("Server stopped");
     } else {
-        eprintln!("Invalid argument");
+        print_help();
         return Err("Invalid argument".into());
     }
 
     Ok(())
+}
+
+
+fn print_help() {
+    println!("Usage: -c <server_address> : to run client");
+    println!("Usage: -s : to run server");
+
+    println!("Usage: nettest -c -h | --help  to print client help");
+    println!("Usage: nettest -s -h | --help to print server help");
 }
