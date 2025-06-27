@@ -10,10 +10,6 @@ pub const RMBT_UPGRADE_REQUEST: &str = "GET /rmbt HTTP/1.1 \r\n\
     RMBT-Version: 1.2.0\r\n\
     \r\n";
 
-pub const WEBSOCKET_UPGRADE_REQUEST: &str = "GET /websocket HTTP/1.1 \r\n\
-    Connection: Upgrade \r\n\
-    Upgrade: websocket\r\n\
-    \r\n";
 
 pub async fn handle_greeting(
     mut stream: &mut Stream,

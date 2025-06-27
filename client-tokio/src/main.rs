@@ -89,8 +89,8 @@ async fn run_multithreaded_test(use_tls: bool, use_websocket: bool, thread_count
         results.push(result);
     }
 
-    let total_upload_speed = results.iter().map(|r| r.upload_bytes as f64 * 8.0 / (r.upload_time as f64 / 1_000_000_000.0)).sum::<f64>();
-    let total_download_speed = results.iter().map(|r| r.download_bytes as f64 * 8.0 / (r.download_time as f64 / 1_000_000_000.0)).sum::<f64>();
+    let total_upload_speed = results.iter().map(|r| r.upload_bytes as f64 * 8.0 / r.upload_time as f64 * 1000000000.0).sum::<f64>();
+    let total_download_speed = results.iter().map(|r| r.download_bytes as f64 * 8.0 / r.download_time as f64 * 1000000000.0).sum::<f64>();
     let avg_ping = results.iter().map(|r| r.ping).sum::<u64>() / thread_count as u64;
     
     
