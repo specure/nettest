@@ -1,11 +1,14 @@
 use crate::server::server::Server;
 use crate::server::server_config::RmbtServerConfig;
+use crate::mioserver::MioServer;
 use log::{debug, info};
 use std::error::Error as StdError;
+use std::net::SocketAddr;
 
 pub mod config;
 pub mod handlers;
 pub mod logger;
+pub mod mioserver;
 pub mod server;
 pub mod stream;
 pub mod utils;
@@ -55,6 +58,21 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         info!("Starting server...");
         server.run().await?;
         info!("Server stopped");
+    } else if args[1] == "-m" {
+        // Инициализация логгера с настройкой уровня
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
+            .init();
+        
+        // Запуск MIO TCP сервера на порту 5005
+        let addr: SocketAddr = "127.0.0.1:5005".parse()?;
+        
+        info!("Starting MIO TCP server on {}", addr);
+        
+        
+        let mut mio_server = MioServer::new(addr)?;
+        mio_server.run()?;
+        
+        info!("MIO TCP server stopped");
     } else {
         print_help();
         return Err("Invalid argument".into());
@@ -67,6 +85,7 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
 fn print_help() {
     println!("Usage: -c <server_address> : to run client");
     println!("Usage: -s : to run server");
+    println!("Usage: -m : to run MIO TCP server on port 5005");
 
     println!("Usage: nettest -c -h | --help  to print client help");
     println!("Usage: nettest -s -h | --help to print server help");
