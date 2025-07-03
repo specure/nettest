@@ -73,31 +73,57 @@ impl PutHandler {
         // Сортируем результаты по времени
         results.sort_by_key(|&(time, _)| time);
 
-        // Находим последнее измерение
-        if let Some((t_star, _)) = results.last() {
-            // Выполняем интерполяцию
-            let mut total_bytes = 0.0;
-            for i in 0..results.len() - 1 {
-                let (t1, b1) = results[i];
-                let (t2, b2) = results[i + 1];
-                if t2 >= *t_star {
-                    let ratio = (*t_star - t1) as f64 / (t2 - t1) as f64;
-                    total_bytes += b1 as f64 + ratio * (b2 - b1) as f64;
-                    break;
-                }
-            }
-
-            // Рассчитываем скорость
-            let speed_bps = total_bytes * 8.0 / (*t_star as f64 / 1_000_000_000.0);
-            let speed_gbps = speed_bps / 1_000_000_000.0;
-            trace!(
-                "Uplink speed (interpolated): {:.2} Gbit/s ({:.2} bps)",
-                speed_gbps,
-                speed_bps
-            );
-        } else {
-            trace!("Не удалось рассчитать скорость");
+        if results.is_empty() {
+            trace!("Не удалось рассчитать скорость - нет данных");
+            return;
         }
+
+        // Находим t* - минимальное время последнего измерения
+        let t_star = results.last().unwrap().0;
+
+        // Интерполяция согласно RMBT спецификации
+        let mut total_bytes = 0.0;
+        
+        // Находим l - индекс первого измерения >= t*
+        let mut l = None;
+        for (j, (time, _)) in results.iter().enumerate() {
+            if *time >= t_star {
+                l = Some(j);
+                break;
+            }
+        }
+        
+        let l = l.unwrap_or(results.len() - 1);
+        
+        if l == 0 {
+            // Если первое измерение уже >= t*, используем его
+            total_bytes = results[0].1 as f64;
+        } else if l < results.len() {
+            // Интерполяция между двумя точками
+            let (t_l_minus_1, b_l_minus_1) = results[l - 1];
+            let (t_l, b_l) = results[l];
+            
+            if t_l > t_l_minus_1 {
+                // b = b^(l-1) + (t* - t^(l-1)) * (b^(l) - b^(l-1)) / (t^(l) - t^(l-1))
+                let ratio = (t_star - t_l_minus_1) as f64 / (t_l - t_l_minus_1) as f64;
+                total_bytes = b_l_minus_1 as f64 + ratio * (b_l - b_l_minus_1) as f64;
+            } else {
+                // Если времена равны, используем последнее значение
+                total_bytes = b_l as f64;
+            }
+        } else {
+            // Если l указывает за пределы массива, используем последнее измерение
+            total_bytes = results.last().unwrap().1 as f64;
+        }
+
+        // Рассчитываем скорость R = (1/t*) * b
+        let speed_bps = (total_bytes * 8.0) / (t_star as f64 / 1_000_000_000.0);
+        let speed_gbps = speed_bps / 1_000_000_000.0;
+        trace!(
+            "Uplink speed (interpolated): {:.2} Gbit/s ({:.2} bps)",
+            speed_gbps,
+            speed_bps
+        );
     }
 
     pub fn get_put_command(&self) -> String {

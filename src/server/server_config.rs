@@ -87,17 +87,17 @@ impl RmbtServerConfig {
             secret_key_labels: Vec::new(),
         };
 
-        // Try to read secret keys from file
-        match secret_keys::read_secret_keys("secret.key") {
-            Ok(keys) => {
-                config.secret_keys = keys.iter().map(|k| k.key.clone()).collect();
-                config.secret_key_labels = keys.iter().map(|k| k.label.clone()).collect();
-            }
-            Err(e) => {
-                // error!("Error while opening secret.key: {}", e);
-                return Err(format!("Error while opening secret.key: {}", e).into());
-            }
-        }
+        // // Try to read secret keys from file
+        // match secret_keys::read_secret_keys("secret.key") {
+        //     Ok(keys) => {
+        //         config.secret_keys = keys.iter().map(|k| k.key.clone()).collect();
+        //         config.secret_key_labels = keys.iter().map(|k| k.label.clone()).collect();
+        //     }
+        //     Err(e) => {
+        //         // error!("Error while opening secret.key: {}", e);
+        //         return Err(format!("Error while opening secret.key: {}", e).into());
+        //     }
+        // }
 
         let mut i = 1;
         while i < args.len() {

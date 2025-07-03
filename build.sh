@@ -57,6 +57,12 @@ install_dependencies() {
             brew install openssl@3
         fi
         
+        # Install fontconfig if not present
+        if ! brew list fontconfig >/dev/null 2>&1; then
+            print_status "Installing fontconfig..."
+            brew install fontconfig
+        fi
+        
         # Install pkg-config if not present
         if ! command_exists pkg-config; then
             print_status "Installing pkg-config..."
@@ -72,19 +78,21 @@ install_dependencies() {
             # Debian/Ubuntu
             print_status "Using apt package manager"
             sudo apt-get update
-            sudo apt-get install -y build-essential curl pkg-config libssl-dev
+            sudo apt-get install -y build-essential curl pkg-config libssl-dev libfontconfig1-dev libfreetype6-dev libharfbuzz-dev
+            # Additional fontconfig installation
+            sudo apt install -y libfontconfig1-dev pkg-config
         elif command_exists yum; then
             # CentOS/RHEL
             print_status "Using yum package manager"
             sudo yum groupinstall -y "Development Tools"
-            sudo yum install -y curl pkg-config openssl-devel
+            sudo yum install -y curl pkg-config openssl-devel fontconfig-devel freetype-devel harfbuzz-devel
         elif command_exists dnf; then
             # Fedora
             print_status "Using dnf package manager"
             sudo dnf groupinstall -y "Development Tools"
-            sudo dnf install -y curl pkg-config openssl-devel
+            sudo dnf install -y curl pkg-config openssl-devel fontconfig-devel freetype-devel harfbuzz-devel
         else
-            print_error "Unsupported Linux distribution. Please install build-essential, curl, pkg-config, and libssl-dev manually."
+            print_error "Unsupported Linux distribution. Please install build-essential, curl, pkg-config, libssl-dev, libfontconfig1-dev, libfreetype6-dev, and libharfbuzz-dev manually."
             exit 1
         fi
         
@@ -183,7 +191,7 @@ build_project() {
     print_status "Running cargo build..."
     if  RUSTFLAGS="-C target-cpu=native" cargo build --release; then
         print_success "Project built successfully!"
-        print_status "Binary location: target/release/rmbt_server"
+        print_status "Binary location: target/release/nettest"
     else
         print_error "Build failed"
         exit 1

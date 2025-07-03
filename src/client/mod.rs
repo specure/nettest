@@ -384,43 +384,60 @@ fn calculate_speed_from_measurements(measurements: Vec<Vec<(u64, u64)>>) -> (f64
         return (0.0, 0.0, 0.0);
     }
 
-    // Находим t* - минимальное время последнего измерения
+    // Находим t* - минимальное время последнего измерения среди всех потоков
     let t_star = measurements
         .iter()
         .filter_map(|m| m.last().map(|(time, _)| *time))
         .min()
         .unwrap_or(0);
 
+    if t_star == 0 {
+        return (0.0, 0.0, 0.0);
+    }
+
     let mut total_bytes = 0.0;
 
-    // Для каждого потока
+    // Для каждого потока k
     for thread_measurements in measurements {
         if thread_measurements.is_empty() {
             continue;
         }
 
-        // Находим последнее измерение до t*
-        let mut last_valid_idx = 0;
-        for (i, (time, _)) in thread_measurements.iter().enumerate() {
-            if *time <= t_star {
-                last_valid_idx = i;
-            } else {
+        // Находим l_k - индекс первого измерения >= t*
+        let mut l_k = None;
+        for (j, (time, _)) in thread_measurements.iter().enumerate() {
+            if *time >= t_star {
+                l_k = Some(j);
                 break;
             }
         }
-        // Если есть следующее измерение после t*, интерполируем
-        if last_valid_idx + 1 < thread_measurements.len() {
-            let (t1, b1) = thread_measurements[last_valid_idx];
-            let (t2, b2) = thread_measurements[last_valid_idx + 1];
 
-            // Интерполяция: b = b1 + (t* - t1) * (b2 - b1) / (t2 - t1)
-            let ratio = (t_star - t1) as f64 / (t2 - t1) as f64;
-            let interpolated_bytes = b1 as f64 + ratio * (b2 - b1) as f64;
-            total_bytes += interpolated_bytes;
+        // Если не нашли измерение >= t*, используем последнее
+        let l_k = l_k.unwrap_or(thread_measurements.len() - 1);
+
+        // Интерполяция согласно RMBT спецификации
+        let b_k = if l_k == 0 {
+            // Если первое измерение уже >= t*, используем его
+            thread_measurements[0].1 as f64
+        } else if l_k < thread_measurements.len() {
+            // Интерполяция между двумя точками
+            let (t_lk_minus_1, b_lk_minus_1) = thread_measurements[l_k - 1];
+            let (t_lk, b_lk) = thread_measurements[l_k];
+            
+            if t_lk > t_lk_minus_1 {
+                // b_k = b_k^(l_k-1) + (t* - t_k^(l_k-1)) * (b_k^(l_k) - b_k^(l_k-1)) / (t_k^(l_k) - t_k^(l_k-1))
+                let ratio = (t_star - t_lk_minus_1) as f64 / (t_lk - t_lk_minus_1) as f64;
+                b_lk_minus_1 as f64 + ratio * (b_lk - b_lk_minus_1) as f64
+            } else {
+                // Если времена равны, используем последнее значение
+                b_lk as f64
+            }
         } else {
-            // Если нет следующего измерения, используем последнее известное
-            total_bytes += thread_measurements[last_valid_idx].1 as f64;
-        }
+            // Если l_k указывает за пределы массива, используем последнее измерение
+            thread_measurements.last().unwrap().1 as f64
+        };
+
+        total_bytes += b_k;
     }
 
     // Вычисляем скорость R = (1/t*) * Σ(b_k)
