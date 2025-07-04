@@ -2,16 +2,17 @@ use log::debug;
 use mio::{Interest, Poll};
 use std::io;
 
-use crate::{config::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE}, mioserver::{server::TestState, ServerTestPhase}};
+use crate::{
+    config::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE},
+    mioserver::{server::TestState, ServerTestPhase},
+};
 
 pub fn handle_main_command_send(poll: &Poll, state: &mut TestState) -> io::Result<()> {
     debug!("handle_accept_token_quit");
     if state.write_pos == 0 {
         let command = b"ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n";
 
-        state
-            .write_buffer[..command.len()]
-            .copy_from_slice(command);
+        state.write_buffer[..command.len()].copy_from_slice(command);
     }
     loop {
         match state.stream.write(&state.write_buffer[state.write_pos..]) {
@@ -46,14 +47,13 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
             Ok(n) => {
                 state.read_pos += n;
 
+                debug!("handle_receive_command 12312312: {:?}", String::from_utf8_lossy(&state.read_buffer[0..20]));
+
                 if state.read_buffer[state.read_pos - 1..state.read_pos] == [b'\n'] {
                     let command_str = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
 
-                    debug!("command_str: {}", command_str);
-
                     if command_str.starts_with("GETCHUNKS") {
                         let parts: Vec<&str> = command_str[9..].trim().split_whitespace().collect();
-
 
                         if parts.len() != 1 && parts.len() != 2 {
                             //TODO: send error
@@ -74,9 +74,14 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
                             MIN_CHUNK_SIZE
                         } else {
                             match parts[1].parse::<usize>() {
-                                Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => size,
+                                Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => {
+                                    size
+                                }
                                 _ => {
-                                    return Err(io::Error::new(io::ErrorKind::Other, "Invalid command"));
+                                    return Err(io::Error::new(
+                                        io::ErrorKind::Other,
+                                        "Invalid command",
+                                    ));
                                 }
                             }
                         };
@@ -84,15 +89,32 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
                         state.num_chunks = num_chunks;
                         state.chunk_size = chunk_size;
                         state.measurement_state = ServerTestPhase::GetChunkSendChunk;
-                        if let Err(e) = state
-                            .stream
-                            .reregister(poll, state.token, Interest::WRITABLE)
+                        state.read_pos = 0;
+
+                        if let Err(e) =
+                            state
+                                .stream
+                                .reregister(poll, state.token, Interest::WRITABLE)
                         {
                             return Err(io::Error::new(io::ErrorKind::Other, e));
                         }
-                        state.read_pos = 0;
                         return Ok(());
+                    }
 
+                    if command_str.starts_with("PING\n") {
+                        debug!("command_str PING: {}", command_str);
+
+                        state.read_pos = 0;
+
+                        state.measurement_state = ServerTestPhase::PongSend;
+                        if let Err(e) =
+                            state
+                                .stream
+                                .reregister(poll, state.token, Interest::WRITABLE)
+                        {
+                            return Err(io::Error::new(io::ErrorKind::Other, e));
+                        }
+                        return Ok(());
                     }
 
                     state.measurement_state = ServerTestPhase::AcceptCommandReceive;

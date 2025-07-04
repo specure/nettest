@@ -166,11 +166,11 @@ impl Worker {
                     
                     if let Some(state) = self.connections.get_mut(&token) {
                         if event.is_readable() {
+                            debug!("Worker {}: event is readable", self.id);
                             should_remove = handle_client_readable_data(state, &self.poll).is_err();
-                            trace!("Worker {}: event is readable", self.id);
                         }
                         if event.is_writable() {
-                            trace!("Worker {}: event is writable", self.id);
+                            debug!("Worker {}: event is writable", self.id);
                             should_remove = handle_client_writable_data(state, &self.poll).is_err();
                         }
                     }
