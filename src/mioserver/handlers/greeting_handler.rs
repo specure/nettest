@@ -126,7 +126,7 @@ pub fn handle_greeting_send_ok(poll: &Poll, state: &mut TestState) -> Result<(),
                 state.write_pos += n;
                 if state.write_pos == state.write_buffer.len() {
                     state.write_pos = 0;
-                    // state.measurement_state = ServerTestPhase::GreetingReceiveToken;
+                    state.measurement_state = ServerTestPhase::AcceptCommandSend;
                     if let Err(e) = state
                         .stream
                         .reregister(poll, state.token, Interest::WRITABLE)

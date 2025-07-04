@@ -56,6 +56,7 @@ impl BasicHandler for GreetingHandler {
                 while !a {
                     a = read_until(stream, &mut self.read_buffer, ACCEPT_GETCHUNKS_STRING)?;
                     if a {
+                        debug!("Greeting received: {}", String::from_utf8_lossy(&self.read_buffer));
                         break;
                     }
                 }

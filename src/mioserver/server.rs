@@ -1,11 +1,13 @@
 use bytes::BytesMut;
 use mio::{Events, Interest, Poll, Token};
 use mio::net::{TcpListener, TcpStream};
+use quanta::Clock;
 use std::collections::HashMap;
 use std::io::{self};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, Condvar};
 use std::thread;
+use std::time::Instant;
 use log::{debug, info, trace};
 
 use crate::client::Stream;
@@ -35,6 +37,11 @@ pub struct TestState {
     pub read_bytes: BytesMut,
     pub read_pos: usize,
     pub write_pos: usize,
+    pub num_chunks: usize,
+    pub chunk_size: usize,
+    pub processed_chunks: usize,
+    pub clock: Option<Instant>,
+    pub time_ns: Option<u128>,
 }
 
 impl WorkerThread {
@@ -114,6 +121,11 @@ impl Worker {
                 read_bytes: BytesMut::new(),
                 read_pos: 0,
                 write_pos: 0,
+                num_chunks: 0,
+                chunk_size: 0,
+                processed_chunks: 0,
+                clock: None,
+                time_ns: None,
             });
             
             debug!("Worker {} registered new connection with token {:?}", self.id, token);

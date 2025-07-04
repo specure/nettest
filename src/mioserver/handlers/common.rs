@@ -1,0 +1,110 @@
+use log::debug;
+use mio::{Interest, Poll};
+use std::io;
+
+use crate::{config::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE}, mioserver::{server::TestState, ServerTestPhase}};
+
+pub fn handle_main_command_send(poll: &Poll, state: &mut TestState) -> io::Result<()> {
+    debug!("handle_accept_token_quit");
+    if state.write_pos == 0 {
+        let command = b"ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n";
+
+        state
+            .write_buffer[..command.len()]
+            .copy_from_slice(command);
+    }
+    loop {
+        match state.stream.write(&state.write_buffer[state.write_pos..]) {
+            Ok(n) => {
+                state.write_pos += n;
+                if state.write_pos == state.write_buffer.len() {
+                    state.write_pos = 0;
+                    state.measurement_state = ServerTestPhase::AcceptCommandReceive;
+                    if let Err(e) = state
+                        .stream
+                        .reregister(poll, state.token, Interest::READABLE)
+                    {
+                        return Err(io::Error::new(io::ErrorKind::Other, e));
+                    }
+                    return Ok(());
+                }
+            }
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                return Ok(());
+            }
+            Err(e) => {
+                return Err(e);
+            }
+        }
+    }
+}
+
+pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Result<()> {
+    debug!("handle_receive_command");
+    loop {
+        match state.stream.read(&mut state.read_buffer[state.read_pos..]) {
+            Ok(n) => {
+                state.read_pos += n;
+
+                if state.read_buffer[state.read_pos - 1..state.read_pos] == [b'\n'] {
+                    let command_str = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
+
+                    debug!("command_str: {}", command_str);
+
+                    if command_str.starts_with("GETCHUNKS") {
+                        let parts: Vec<&str> = command_str[9..].trim().split_whitespace().collect();
+
+
+                        if parts.len() != 1 && parts.len() != 2 {
+                            //TODO: send error
+                            return Err(io::Error::new(io::ErrorKind::Other, "Invalid command"));
+                        }
+
+                        let num_chunks = match parts[0].parse::<usize>() {
+                            Ok(n) => n,
+                            Err(_) => {
+                                return Err(io::Error::new(
+                                    io::ErrorKind::Other,
+                                    "Invalid command",
+                                ));
+                            }
+                        };
+
+                        let chunk_size = if parts.len() == 1 {
+                            MIN_CHUNK_SIZE
+                        } else {
+                            match parts[1].parse::<usize>() {
+                                Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => size,
+                                _ => {
+                                    return Err(io::Error::new(io::ErrorKind::Other, "Invalid command"));
+                                }
+                            }
+                        };
+
+                        state.num_chunks = num_chunks;
+                        state.chunk_size = chunk_size;
+                        state.measurement_state = ServerTestPhase::GetChunkSendChunk;
+                        if let Err(e) = state
+                            .stream
+                            .reregister(poll, state.token, Interest::WRITABLE)
+                        {
+                            return Err(io::Error::new(io::ErrorKind::Other, e));
+                        }
+                        state.read_pos = 0;
+                        return Ok(());
+
+                    }
+
+                    state.measurement_state = ServerTestPhase::AcceptCommandReceive;
+                    return Ok(());
+                }
+            }
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                return Ok(());
+            }
+            Err(e) => {
+                return Err(e);
+            }
+        }
+    }
+}

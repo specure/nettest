@@ -4,4 +4,13 @@ pub enum ServerTestPhase {
     GreetingSendAcceptToken,
     GreetingReceiveToken,
     GreetingSendOk,
+
+    AcceptTokenQuit,
+    AcceptCommandReceive,
+    AcceptCommandSend,
+
+    GetChunkSendOk,
+    GetChunkSendChunk,
+    GetChunksReceiveOK,
+    GetChunksSendTime,
 }
