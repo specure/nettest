@@ -52,6 +52,7 @@ pub async fn async_main(args: Vec<String>) -> anyhow::Result<()> {
     let use_tls = args.iter().any(|arg| arg == "-tls");
     let use_websocket = args.iter().any(|arg| arg == "-ws");
     let perf_test = args.iter().any(|arg| arg == "-perf");
+    let graphs = args.iter().any(|arg| arg == "-g");
 
     let log = args.iter().any(|arg| arg == "-log");
     if log {
@@ -260,11 +261,11 @@ pub async fn async_main(args: Vec<String>) -> anyhow::Result<()> {
     // let upload_speed = calculate_upload_speed(&state_refs);
 
     // Отрисовываем графики используя GraphService
-    if !download_results.is_empty() {
+    if !download_results.is_empty() && graphs {
         GraphService::print_download(&download_results, &download_speed);
     }
 
-    if !upload_results.is_empty() {
+    if !upload_results.is_empty() && graphs {
         GraphService::print_upload(&upload_results, &perf);
     }
 
