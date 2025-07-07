@@ -10,7 +10,7 @@ pub fn handle_greeting_accep_token_read(
     poll: &Poll,
     state: &mut TestState,
 ) -> Result<(), std::io::Error> {
-    debug!("handle_greeting_accep_token_read");
+    trace!("handle_greeting_accep_token_read");
     loop {
         match state.stream.read(&mut state.read_buffer[state.read_pos..]) {
             Ok(n) => {
@@ -44,7 +44,7 @@ pub fn handle_greeting_send_accept_token(
     poll: &Poll,
     state: &mut TestState,
 ) -> Result<(), std::io::Error> {
-    debug!("handle_greeting_send_accept_token");
+    trace!("handle_greeting_send_accept_token");
     let version = b"RMBTv1.5.0\n";
     let accept = b"ACCEPT TOKEN QUIT\n";
 
@@ -82,16 +82,12 @@ pub fn handle_greeting_receive_token(
     poll: &Poll,
     state: &mut TestState,
 ) -> Result<(), std::io::Error> {
-    debug!("handle_greeting_receive_token");
+    trace!("handle_greeting_receive_token");
     loop {
         match state.stream.read(&mut state.read_buffer[state.read_pos..]) {
             Ok(n) => {
                 state.read_pos += n;
                 let end = b"\n";
-                let line = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
-
-                debug!("handle_greeting_receive_token: line received {}", line);
-
                 //compare last 2 bytes with end
                 if state.read_buffer[state.read_pos - 1..state.read_pos] == *end {
                     state.read_pos = 0;
@@ -116,7 +112,7 @@ pub fn handle_greeting_receive_token(
 }
 
 pub fn handle_greeting_send_ok(poll: &Poll, state: &mut TestState) -> Result<(), std::io::Error> {
-    debug!("handle_greeting_send_ok");
+    trace!("handle_greeting_send_ok");
     let ok = b"OK\r\n";
     if state.write_pos == 0 {
         state.write_buffer[..ok.len()].copy_from_slice(ok);

@@ -1,7 +1,7 @@
-use crate::mioserver::{handlers::{common::{handle_main_command_receive, handle_main_command_send}, get_time::{handle_get_time_receive_ok, handle_get_time_send_chunk, handle_get_time_send_time}, getchunks::{handle_get_chunks_receive_ok, handle_get_chunks_send_chunks, handle_get_chunks_send_ok, handle_get_chunks_send_time}, greeting_handler::{handle_greeting_accep_token_read, handle_greeting_receive_token, handle_greeting_send_accept_token, handle_greeting_send_ok}, ping::{handle_ping_receive_ok, handle_ping_send_time, handle_pong_send}}, server::TestState, ServerTestPhase};
+use crate::mioserver::{handlers::{common::{handle_main_command_receive, handle_main_command_send}, getchunks::{handle_get_chunks_receive_ok, handle_get_chunks_send_chunks, handle_get_chunks_send_ok, handle_get_chunks_send_time}, gettime::{handle_get_time_receive_ok, handle_get_time_send_chunk, handle_get_time_send_time}, greeting_handler::{handle_greeting_accep_token_read, handle_greeting_receive_token, handle_greeting_send_accept_token, handle_greeting_send_ok}, ping::{handle_ping_receive_ok, handle_ping_send_time, handle_pong_send}, putnoresult::{handle_put_no_result_receive_chunk, handle_put_no_result_send_ok, handle_put_no_result_send_time}}, server::TestState, ServerTestPhase};
 use mio::Poll;
 use std::io;
-use log::{info};
+use log::{debug};
 
 
 pub fn handle_client_readable_data(state: &mut TestState, poll: &Poll) -> io::Result<()> {
@@ -16,8 +16,10 @@ pub fn handle_client_readable_data(state: &mut TestState, poll: &Poll) -> io::Re
         ServerTestPhase::GetTimeReceiveOk => handle_get_time_receive_ok(poll, state),
 
         ServerTestPhase::PingReceiveOk => handle_ping_receive_ok(poll, state),
+
+        ServerTestPhase::PutNoResultReceiveChunk => handle_put_no_result_receive_chunk(poll, state),
         _ => {
-            info!("Unknown measurement state: {:?}", state.measurement_state);
+            debug!("Unknown measurement state: {:?}", state.measurement_state);
             Ok(())
         }
     }
@@ -41,11 +43,14 @@ pub fn handle_client_writable_data(state: &mut TestState, poll: &Poll) -> io::Re
         ServerTestPhase::GetTimeSendChunk => handle_get_time_send_chunk(poll, state),
         ServerTestPhase::GetTimeSendTime => handle_get_time_send_time(poll, state),
 
+        ServerTestPhase::PutNoResultSendOk => handle_put_no_result_send_ok(poll, state),
+        ServerTestPhase::PutNoResultSendTime => handle_put_no_result_send_time(poll, state),
+
 
 
 
         _ => {
-            info!("Unknown measurement state: {:?}", state.measurement_state);
+            debug!("Unknown measurement state: {:?}", state.measurement_state);
             Ok(())
         }
     }

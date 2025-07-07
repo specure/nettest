@@ -15,7 +15,10 @@ pub fn handle_main_command_send(poll: &Poll, state: &mut TestState) -> io::Resul
     }
     let command_len = command.len();
     loop {
-        match state.stream.write(&state.write_buffer[state.write_pos..command_len]) {
+        match state
+            .stream
+            .write(&state.write_buffer[state.write_pos..command_len])
+        {
             Ok(n) if n > 0 => {
                 state.write_pos += n;
                 debug!("n: {}", n);
@@ -32,7 +35,7 @@ pub fn handle_main_command_send(poll: &Poll, state: &mut TestState) -> io::Resul
                 }
             }
             Ok(_) => {
-                return Ok(());
+                return Err(io::Error::new(io::ErrorKind::Other, "Connection closed"));
             }
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                 return Ok(());
@@ -49,7 +52,6 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
     loop {
         match state.stream.read(&mut state.read_buffer[state.read_pos..]) {
             Ok(n) if n > 0 => {
-
                 state.read_pos += n;
 
                 if state.read_buffer[state.read_pos - 1..state.read_pos] == [b'\n'] {
@@ -170,12 +172,35 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
                         return Ok(());
                     }
 
+                    if command_str.starts_with("PUTNORESULT") {
+                        let parts: Vec<&str> = command_str.split_whitespace().collect();
+
+                        if parts.len() > 2 {
+                            return Err(io::Error::new(io::ErrorKind::Other, "Invalid command"));
+                        }
+
+                        match parts[1].parse::<usize>() {
+                            Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => {
+                                state.chunk_size = size;
+                            }
+                            _ => {
+                                state.chunk_size = MIN_CHUNK_SIZE;
+                            }
+                        }
+                        state.read_pos = 0;
+                        state.measurement_state = ServerTestPhase::PutNoResultSendOk;
+                        if let Err(e) = state.stream.reregister(poll, state.token, Interest::WRITABLE) {
+                            return Err(io::Error::new(io::ErrorKind::Other, e));
+                        }
+                        return Ok(());
+                    }
+
                     state.measurement_state = ServerTestPhase::AcceptCommandReceive;
                     return Ok(());
                 }
             }
             Ok(_) => {
-                return Ok(());
+                return Err(io::Error::new(io::ErrorKind::Other, "Connection closed"));
             }
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                 return Ok(());

@@ -1,7 +1,6 @@
 use bytes::BytesMut;
 use mio::{Events, Interest, Poll, Token};
 use mio::net::{TcpListener, TcpStream};
-use quanta::Clock;
 use std::collections::HashMap;
 use std::io::{self};
 use std::net::SocketAddr;
@@ -11,12 +10,13 @@ use std::time::Instant;
 use log::{debug, info, trace};
 
 use crate::client::Stream;
+use crate::config::constants::MIN_CHUNK_SIZE;
 use crate::mioserver::handlers::basic_handler::{handle_client_readable_data, handle_client_writable_data};
 use crate::mioserver::handlers::greeting_handler::{handle_greeting_accep_token_read, handle_greeting_send_accept_token};
 use crate::mioserver::ServerTestPhase;
 
 const MAX_CONNECTIONS: usize = 1024;
-const NUM_WORKER_THREADS: usize = 4;
+const NUM_WORKER_THREADS: usize = 10;
 
 pub struct WorkerThread {
     thread: thread::JoinHandle<()>,
@@ -43,6 +43,7 @@ pub struct TestState {
     pub clock: Option<Instant>,
     pub time_ns: Option<u128>,
     pub duration: u64,
+    pub chunk_buffer: Vec<u8>,
 }
 
 impl WorkerThread {
@@ -128,6 +129,7 @@ impl Worker {
                 clock: None,
                 time_ns: None,
                 duration: 0,
+                chunk_buffer: vec![0; MIN_CHUNK_SIZE as usize],
             });
             
             debug!("Worker {} registered new connection with token {:?}", self.id, token);
@@ -157,7 +159,7 @@ impl Worker {
         
         loop {
             // Обрабатываем события с таймаутом
-            if let Err(e) = self.poll.poll(&mut self.events, Some(std::time::Duration::from_millis(100))) {
+            if let Err(e) = self.poll.poll(&mut self.events, Some(std::time::Duration::from_millis(1000))) {
                 info!("Worker {}: Poll error: {}", self.id, e);
                 return Err(e);
             }
@@ -168,11 +170,11 @@ impl Worker {
                     
                     if let Some(state) = self.connections.get_mut(&token) {
                         if event.is_readable() {
-                            debug!("Worker {}: event is readable", self.id);
+                            trace!("Worker {}: event is readable", self.id);
                             should_remove = handle_client_readable_data(state, &self.poll).is_err();
                         }
                         if event.is_writable() {
-                            debug!("Worker {}: event is writable", self.id);
+                            trace!("Worker {}: event is writable", self.id);
                             should_remove = handle_client_writable_data(state, &self.poll).is_err();
                         }
                     }
@@ -210,7 +212,7 @@ impl MioServer {
             worker_threads.push(worker);
         }
         
-        info!("MIO TCP Server started on {} with {} worker threads", addr, NUM_WORKER_THREADS);
+        debug!("MIO TCP Server started on {} with {} worker threads", addr, NUM_WORKER_THREADS);
         
         Ok(Self {
             listener,
@@ -226,7 +228,7 @@ impl MioServer {
                 Ok((mut stream, addr)) => {
                     // Настраиваем поток для неблокирующего режима
                     if let Err(e) = stream.set_nodelay(true) {
-                        info!("Failed to set TCP_NODELAY: {}", e);
+                        debug!("Failed to set TCP_NODELAY: {}", e);
                     }
                     
                     // Кладим соединение в очередь и будим один поток
@@ -244,7 +246,7 @@ impl MioServer {
                     thread::sleep(std::time::Duration::from_millis(10));
                 }
                 Err(e) => {
-                    info!("Error accepting connection: {}", e);
+                    debug!("Error accepting connection: {}", e);
                     return Err(e);
                 }
             }
@@ -254,6 +256,6 @@ impl MioServer {
 
 impl Drop for MioServer {
     fn drop(&mut self) {
-        info!("MIO TCP Server shutting down");
+        debug!("MIO TCP Server shutting down");
     }
 } 

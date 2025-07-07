@@ -1,11 +1,11 @@
-use log::debug;
+use log::trace;
 use mio::{Interest, Poll};
 use std::{io, time::Instant};
 
 use crate::mioserver::{server::TestState, ServerTestPhase};
 
 pub fn handle_pong_send(poll: &Poll, state: &mut TestState) -> io::Result<()> {
-    debug!("handle_pong_send");
+    trace!("handle_pong_send");
     let pong = b"PONG\n";
     if state.write_pos == 0 {
         state.write_buffer[..pong.len()].copy_from_slice(pong);
@@ -28,9 +28,7 @@ pub fn handle_pong_send(poll: &Poll, state: &mut TestState) -> io::Result<()> {
                         return Err(io::Error::new(io::ErrorKind::Other, e));
                     }
                     state.write_pos = 0;
-                    debug!("handle_pong_send: {:?}", String::from_utf8_lossy(&state.read_buffer[0..20]));
                     state.measurement_state = ServerTestPhase::PingReceiveOk;
-                    debug!("handle_pong_send: {:?}", state.measurement_state);
                     return Ok(());
                 }
             }
@@ -45,24 +43,15 @@ pub fn handle_pong_send(poll: &Poll, state: &mut TestState) -> io::Result<()> {
 }
 
 pub fn handle_ping_receive_ok(poll: &Poll, state: &mut TestState) -> io::Result<()> {
-    debug!("handle_ping_receive_ok");
+    trace!("handle_ping_receive_ok");
     let ok = b"OK\n";
     loop {
-        match state
-            .stream
-            .read(&mut state.read_buffer)
-        {
+        match state.stream.read(&mut state.read_buffer) {
             Ok(n) => {
-                debug!("handle_ping_receive_ok: {:?}", n);
                 if n == 0 {
-                    debug!("handle_ping_receive_ok: EOF");
                     return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "EOF"));
                 }
                 state.read_pos += n;
-                debug!(
-                    "handle_ping_receive_ok: {:?}",
-                    String::from_utf8_lossy(&state.read_buffer[0..3])
-                );
                 if state.read_buffer[0..ok.len()] == ok[..] {
                     let time = state.clock.unwrap().elapsed().as_nanos();
                     state.clock = None;
@@ -71,7 +60,7 @@ pub fn handle_ping_receive_ok(poll: &Poll, state: &mut TestState) -> io::Result<
                     state.read_pos = 0;
                     if let Err(e) = state
                         .stream
-                        .reregister(poll, state.token,  Interest::WRITABLE)
+                        .reregister(poll, state.token, Interest::WRITABLE)
                     {
                         return Err(io::Error::new(io::ErrorKind::Other, e));
                     }
@@ -89,7 +78,7 @@ pub fn handle_ping_receive_ok(poll: &Poll, state: &mut TestState) -> io::Result<
 }
 
 pub fn handle_ping_send_time(poll: &Poll, state: &mut TestState) -> io::Result<()> {
-    debug!("handle_ping_send_time");
+    trace!("handle_ping_send_time");
     let time = format!("TIME {}\n", state.time_ns.unwrap());
     if state.write_pos == 0 {
         state.write_buffer[..time.len()].copy_from_slice(time.as_bytes());

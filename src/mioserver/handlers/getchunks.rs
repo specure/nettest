@@ -1,11 +1,11 @@
-use log::debug;
+use log::trace;
 use mio::{Interest, Poll};
 use std::{io, time::Instant};
 
 use crate::{client::globals::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE}, mioserver::{server::TestState, ServerTestPhase}};
 
 pub fn handle_get_chunks_send_ok(poll: &Poll, state: &mut TestState) -> io::Result<()> {
-    debug!("handle_get_chunks_send_ok");
+    trace!("handle_get_chunks_send_ok");
     if state.write_pos == 0 {
         let ok: &'static [u8; 3] = b"OK\n";
         state.write_buffer[..ok.len()].copy_from_slice(ok);
@@ -38,7 +38,7 @@ pub fn handle_get_chunks_send_ok(poll: &Poll, state: &mut TestState) -> io::Resu
 
 
 pub fn handle_get_chunks_send_chunks(poll: &Poll, state: &mut TestState) -> io::Result<()> {
-    debug!("handle_get_chunks_send_chunks");
+    trace!("handle_get_chunks_send_chunks");
     let chunk_size = state.chunk_size;
     let chunk_num = state.num_chunks;
     if state.clock.is_none() {
@@ -81,7 +81,7 @@ pub fn handle_get_chunks_send_chunks(poll: &Poll, state: &mut TestState) -> io::
 }
 
 pub fn handle_get_chunks_receive_ok(poll: &Poll, state: &mut TestState) -> io::Result<()> {
-    debug!("handle_get_chunks_receive_ok");
+    trace!("handle_get_chunks_receive_ok");
     loop {
         match state.stream.read(&mut state.read_buffer) {
             Ok(n) => {
@@ -110,7 +110,7 @@ pub fn handle_get_chunks_receive_ok(poll: &Poll, state: &mut TestState) -> io::R
 }
 
 pub fn handle_get_chunks_send_time(poll: &Poll, state: &mut TestState) -> io::Result<()> {
-    debug!("handle_get_chunks_send_time");
+    trace!("handle_get_chunks_send_time");
 
     let time_ns = state.time_ns.unwrap();
     state.clock = None;
