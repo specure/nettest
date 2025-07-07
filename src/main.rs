@@ -59,9 +59,8 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         server.run().await?;
         info!("Server stopped");
     } else if args[1] == "-m" {
-        // Инициализация логгера с настройкой уровня
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
-            .init();
+        // env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
+        //     .init();
         
         // Запуск MIO TCP сервера на порту 5005
         let addr: SocketAddr = "127.0.0.1:5005".parse()?;
