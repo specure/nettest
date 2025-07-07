@@ -60,6 +60,7 @@ pub fn handle_greeting_send_accept_token(
             state.write_pos += n;
             if state.write_pos == state.write_buffer.len() {
                 state.write_pos = 0;
+                state.read_pos = 0;
                 state.measurement_state = ServerTestPhase::GreetingReceiveToken;
                 if let Err(e) = state
                     .stream

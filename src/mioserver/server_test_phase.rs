@@ -17,4 +17,8 @@ pub enum ServerTestPhase {
     PongSend,
     PingReceiveOk,
     PingSendTime,
+
+    GetTimeSendChunk,
+    GetTimeReceiveOk,
+    GetTimeSendTime,
 }

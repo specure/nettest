@@ -42,6 +42,7 @@ pub struct TestState {
     pub processed_chunks: usize,
     pub clock: Option<Instant>,
     pub time_ns: Option<u128>,
+    pub duration: u64,
 }
 
 impl WorkerThread {
@@ -126,6 +127,7 @@ impl Worker {
                 processed_chunks: 0,
                 clock: None,
                 time_ns: None,
+                duration: 0,
             });
             
             debug!("Worker {} registered new connection with token {:?}", self.id, token);
