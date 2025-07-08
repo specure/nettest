@@ -1,12 +1,13 @@
 use crate::client::handlers::BasicHandler;
 use crate::client::state::TestPhase;
+use crate::client::utils::ACCEPT_GETCHUNKS_STRING;
 use crate::client::{read_until, write_all_nb, MeasurementState, Stream};
 use anyhow::Result;
-use bytes::{ BytesMut};
+use bytes::BytesMut;
 use log::debug;
 use mio::{Interest, Poll, Token};
 use std::io;
-use std::time::{ Instant};
+use std::time::Instant;
 
 const MAX_PINGS: u32 = 200;
 const PING_DURATION_NS: u64 = 1_000_000_000; // 1 second
@@ -63,6 +64,7 @@ impl BasicHandler for PingHandler {
     ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::PingReceivePong => {
+                debug!("PingReceivePong");
                 let mut buf1 = vec![0u8; PONG_RESPONSE.len()];
                 match stream.read(&mut buf1) {
                     Ok(n) if n > 0 => {
@@ -88,41 +90,78 @@ impl BasicHandler for PingHandler {
                 }
             }
             TestPhase::PingReceiveTime => {
-                if read_until(
-                    stream,
-                    &mut self.read_buffer,
-                    "ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n",
-                )? {
-                    let elapsed = self.test_start_time.unwrap().elapsed();
-                    let buffer_str = String::from_utf8_lossy(&self.read_buffer);
-                    if let Some(time_start) = buffer_str.find("TIME ") {
-                        if let Some(time_end) = buffer_str[time_start..].find('\n') {
-                            let time_str = &buffer_str[time_start + 5..time_start + time_end];
+                debug!("PingReceiveTime");
+                loop {
+                    let mut buffer = vec![0u8; 1024];
+                    match stream.read(&mut buffer) {
+                        Ok(n) if n > 0 => {
+                            //допииши в конец буфера
+                            self.read_buffer.extend_from_slice(
+                                &buffer[..n],
+                            );
+                            debug!(
+                                "PingReceiveTime: read_buffer: {}",
+                                String::from_utf8_lossy(&self.read_buffer)
+                            );
+                            let read_buffer_str = String::from_utf8_lossy(&self.read_buffer);
+                            if read_buffer_str
+                                .contains(ACCEPT_GETCHUNKS_STRING)
+                            {
+                                let elapsed = self.test_start_time.unwrap().elapsed();
+                                let buffer_str = String::from_utf8_lossy(&self.read_buffer);
+                                if let Some(time_start) = buffer_str.find("TIME ") {
+                                    if let Some(time_end) = buffer_str[time_start..].find('\n') {
+                                        let time_str =
+                                            &buffer_str[time_start + 5..time_start + time_end];
 
-                            if let Ok(time_ns) = time_str.parse::<u64>() {
-                                self.ping_times.push(time_ns);
-                                let pings_sent = self.ping_times.len();
+                                        if let Ok(time_ns) = time_str.parse::<u64>() {
+                                            self.ping_times.push(time_ns);
+                                            let pings_sent = self.ping_times.len();
 
-                                if elapsed.as_nanos() < PING_DURATION_NS as u128
-                                    && pings_sent < MAX_PINGS as usize
-                                {
-                                    measurement_state.phase = TestPhase::PingSendPing;
-                                    stream.reregister(&poll, self.token, Interest::WRITABLE)?;
-                                    self.read_buffer.clear();
-                                } else {
-                                    // Calculate final median latency
-                                    if let Some(median) = self.get_median_latency() {
-                                        debug!("Final median latency: {} ns", median);
-                                        self.time_result = Some(median);
-                                        measurement_state.ping_median = Some(median);
+                                            if elapsed.as_nanos() < PING_DURATION_NS as u128
+                                                && pings_sent < MAX_PINGS as usize
+                                            {
+                                                measurement_state.phase = TestPhase::PingSendPing;
+                                                stream.reregister(
+                                                    &poll,
+                                                    self.token,
+                                                    Interest::WRITABLE,
+                                                )?;
+                                                self.read_buffer.clear();
+                                            } else {
+                                                // Calculate final median latency
+                                                if let Some(median) = self.get_median_latency() {
+                                                    debug!("Final median latency: {} ns", median);
+                                                    self.time_result = Some(median);
+                                                    measurement_state.ping_median = Some(median);
+                                                }
+                                                measurement_state.phase = TestPhase::PingCompleted;
+                                                stream.reregister(
+                                                    &poll,
+                                                    self.token,
+                                                    Interest::WRITABLE,
+                                                )?;
+                                                self.read_buffer.clear();
+                                            }
+                                        }
                                     }
-                                    measurement_state.phase = TestPhase::PingCompleted;
-                                    stream.reregister(&poll, self.token, Interest::WRITABLE)?;
-                                    self.read_buffer.clear();
                                 }
                             }
+                          
+                        }
+                        Ok(_) => {
+                            return Ok(());
+                        }
+                        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                            debug!("PingReceiveTime: WouldBlock");
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            debug!("PingReceiveTime: Error: {}", e);
+                            return Err(e.into());
                         }
                     }
+                    
                 }
             }
             _ => {}
@@ -138,6 +177,7 @@ impl BasicHandler for PingHandler {
     ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::PingSendPing => {
+                debug!("PingSendPing");
                 if self.write_buffer.is_empty() {
                     self.write_buffer
                         .extend_from_slice(self.get_ping_command().as_bytes());
@@ -152,6 +192,7 @@ impl BasicHandler for PingHandler {
                 }
             }
             TestPhase::PingSendOk => {
+                debug!("PingSendOk");
                 if self.write_buffer.is_empty() {
                     self.write_buffer
                         .extend_from_slice(self.get_ok_command().as_bytes());

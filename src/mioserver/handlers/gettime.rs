@@ -28,6 +28,7 @@ pub fn handle_get_time_send_chunk(poll: &Poll, state: &mut TestState) -> io::Res
                 if state.write_pos == chunk.len() {
                     state.write_pos = 0;
                     if is_last {
+                        trace!("is_last");
                         state.measurement_state = ServerTestPhase::GetTimeReceiveOk;
                         state.read_pos = 0;
                         if let Err(e) = state
@@ -38,10 +39,12 @@ pub fn handle_get_time_send_chunk(poll: &Poll, state: &mut TestState) -> io::Res
                         }
                         return Ok(());
                     }
-                    return Ok(());
+                    trace!("not is_last");
                 }
+                trace!("write_pos: {}", state.write_pos);
             }
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                trace!("WouldBlock");
                 return Ok(());
             }
             Err(e) => {

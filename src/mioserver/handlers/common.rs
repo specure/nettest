@@ -8,7 +8,7 @@ use crate::{
 };
 
 pub fn handle_main_command_send(poll: &Poll, state: &mut TestState) -> io::Result<()> {
-    debug!("handle_accept_token_quit_send");
+    debug!("handle_get_put_ping_quit_send");
     let command = b"ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n";
     if state.write_pos == 0 {
         state.write_buffer[0..command.len()].copy_from_slice(command);
@@ -21,7 +21,6 @@ pub fn handle_main_command_send(poll: &Poll, state: &mut TestState) -> io::Resul
         {
             Ok(n) if n > 0 => {
                 state.write_pos += n;
-                debug!("n: {}", n);
                 if state.write_pos == command_len {
                     state.write_pos = 0;
                     state.measurement_state = ServerTestPhase::AcceptCommandReceive;
@@ -56,6 +55,8 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
 
                 if state.read_buffer[state.read_pos - 1..state.read_pos] == [b'\n'] {
                     let command_str = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
+
+                    debug!("command_str: {}", command_str);
 
                     if command_str.starts_with("GETCHUNKS") {
                         let parts: Vec<&str> = command_str[9..].trim().split_whitespace().collect();

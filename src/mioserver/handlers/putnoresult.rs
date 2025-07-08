@@ -57,10 +57,8 @@ pub fn handle_put_no_result_receive_chunk(poll: &Poll, state: &mut TestState) ->
                             return Err(io::Error::new(io::ErrorKind::Other, e));
                         }
                         return Ok(());
-                    } else if state.chunk_buffer[state.read_pos - 1] == 0x00 {
-                        state.read_pos = 0;
-                        return  handle_put_no_result_receive_chunk(poll, state);
                     }
+                    state.read_pos = 0;
                 }
             }
             Ok(_) => {

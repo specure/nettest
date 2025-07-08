@@ -92,7 +92,14 @@ pub fn handle_ping_send_time(poll: &Poll, state: &mut TestState) -> io::Result<(
                 state.write_pos += n;
                 if state.write_pos == time.len() {
                     state.write_pos = 0;
+                    state.read_pos = 0;
                     state.measurement_state = ServerTestPhase::AcceptCommandSend;
+                    if let Err(e) = state
+                        .stream
+                        .reregister(poll, state.token, Interest::WRITABLE)
+                    {
+                        return Err(io::Error::new(io::ErrorKind::Other, e));
+                    }
                     return Ok(());
                 }
             }

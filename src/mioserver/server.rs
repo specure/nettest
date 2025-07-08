@@ -16,7 +16,7 @@ use crate::mioserver::handlers::greeting_handler::{handle_greeting_accep_token_r
 use crate::mioserver::ServerTestPhase;
 
 const MAX_CONNECTIONS: usize = 1024;
-const NUM_WORKER_THREADS: usize = 10;
+const NUM_WORKER_THREADS: usize = 1;
 
 pub struct WorkerThread {
     thread: thread::JoinHandle<()>,

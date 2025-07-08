@@ -290,7 +290,7 @@ impl Default for RmbtServerConfig {
     }
 }
 
-fn parse_listen_address(addr: &str) -> Result<SocketAddr, Box<dyn Error + Send + Sync>> {
+pub fn parse_listen_address(addr: &str) -> Result<SocketAddr, Box<dyn Error + Send + Sync>> {
     // Try IPv6 format: [::1]:8080
     if addr.starts_with('[') {
         if let Some(end_bracket) = addr.rfind(']') {

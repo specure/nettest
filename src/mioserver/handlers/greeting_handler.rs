@@ -85,11 +85,11 @@ pub fn handle_greeting_receive_token(
     trace!("handle_greeting_receive_token");
     loop {
         match state.stream.read(&mut state.read_buffer[state.read_pos..]) {
-            Ok(n) => {
+            Ok(n)  => {
                 state.read_pos += n;
                 let end = b"\n";
                 //compare last 2 bytes with end
-                if state.read_buffer[state.read_pos - 1..state.read_pos] == *end {
+                if n > 0 && state.read_buffer[state.read_pos - 1..state.read_pos] == *end {
                     state.read_pos = 0;
                     state.measurement_state = ServerTestPhase::GreetingSendOk;
                     if let Err(e) = state
