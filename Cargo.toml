@@ -38,5 +38,5 @@ mio = { version = "1", features = ["net"] }
 ringbuf = "0.4.8"
 rgb = "0.8.50"
 prettytable = "0.10.0"
-
+num_cpus = "1.13"
 
