@@ -5,3 +5,4 @@ pub mod getchunks;
 pub mod ping;
 pub mod gettime;
 pub mod putnoresult;
+pub mod put;

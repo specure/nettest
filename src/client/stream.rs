@@ -131,24 +131,28 @@ impl Stream {
         }
     }
 
-    pub fn reregister(&mut self, poll: &Poll, token: Token, interest: Interest) -> Result<()> {
+    pub fn reregister(&mut self, poll: &Poll, token: Token, interest: Interest) ->  io::Result<()>  {
         match self {
             Stream::Tcp(stream) => {
-                poll.registry().reregister(stream, token, interest)?;
+                poll.registry().reregister(stream, token, interest)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
             }
             Stream::OpenSsl(stream) => {
-                stream.reregister(poll, token, interest)?;
+                stream.reregister(poll, token, interest)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
             }
             Stream::WebSocket(stream) => {
-                stream.reregister(poll, token, interest)?;
+                stream.reregister(poll, token, interest)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
             }
             Stream::Rustls(stream) => {
-                stream.reregister(poll, token, interest)?;
+                stream.reregister(poll, token, interest)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
             }
             Stream::WebSocketTls(stream) => {
-                stream.reregister(poll, token, interest)?;
+                stream.reregister(poll, token, interest)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
             }
         }
-        Ok(())
     }
 }

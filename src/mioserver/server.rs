@@ -12,18 +12,15 @@ use log::{debug, info, trace};
 use crate::client::Stream;
 use crate::config::constants::MIN_CHUNK_SIZE;
 use crate::mioserver::handlers::basic_handler::{handle_client_readable_data, handle_client_writable_data};
-use crate::mioserver::handlers::greeting_handler::{handle_greeting_accep_token_read, handle_greeting_send_accept_token};
 use crate::mioserver::ServerTestPhase;
 
-const MAX_CONNECTIONS: usize = 1024;
-
 pub struct WorkerThread {
-    thread: thread::JoinHandle<()>,
+    _thread: thread::JoinHandle<()>,
 }
 
 pub struct MioServer {
     listener: TcpListener,
-    worker_threads: Vec<WorkerThread>,
+    _worker_threads: Vec<WorkerThread>,
     worker_queues: Vec<Arc<(Mutex<VecDeque<TcpStream>>, Waker)>>, // Отдельная очередь для каждого воркера
     worker_connection_counts: Arc<Mutex<Vec<usize>>>, // Счетчики соединений для каждого воркера
 }
@@ -36,6 +33,7 @@ pub struct TestState {
     pub write_buffer: [u8; 1024 * 8],
     pub read_bytes: BytesMut,
     pub read_pos: usize,
+    pub total_bytes: u64,
     pub write_pos: usize,
     pub num_chunks: usize,
     pub chunk_size: usize,
@@ -60,7 +58,7 @@ impl WorkerThread {
                 }
             })?;
         
-        Ok(WorkerThread { thread })
+        Ok(WorkerThread { _thread: thread })
     }
 }
 
@@ -76,13 +74,9 @@ struct Worker {
 
 impl Worker {
     fn new(id: usize, worker_queue: Arc<(Mutex<VecDeque<TcpStream>>, Waker)>, worker_connection_counts: Arc<Mutex<Vec<usize>>>) -> io::Result<Self> {
-        println!("Worker {}: creating Poll", id);
         let poll = Poll::new()?;
-        println!("Worker {}: Poll created, creating Events", id);
-        let events = Events::with_capacity(MAX_CONNECTIONS);
-        println!("Worker {}: Events created, creating HashMap", id);
+        let events = Events::with_capacity(1024);
         let connections = HashMap::new();
-        println!("Worker {}: HashMap created, creating Worker struct", id);
         
         Ok(Worker {
             id,
@@ -96,10 +90,7 @@ impl Worker {
     }
     
     fn run(&mut self) -> io::Result<()> {
-        println!("Worker {}: entering run method", self.id);
-        
         loop {
-            // Проверяем, есть ли новые соединения в очереди этого воркера
             let maybe_stream = {
                 let (lock, _) = &*self.worker_queue;
                 let mut guard = lock.lock().unwrap();
@@ -143,6 +134,7 @@ impl Worker {
                     time_ns: None,
                     duration: 0,
                     chunk_buffer: vec![0; MIN_CHUNK_SIZE as usize],
+                    total_bytes: 0,
                 });
                 
                 // Счетчик уже увеличен при назначении соединения этому воркеру
@@ -163,7 +155,6 @@ impl Worker {
     }
     
     fn process_all_connections(&mut self) -> io::Result<()> {
-        // Обрабатываем события с таймаутом
         if let Err(e) = self.poll.poll(&mut self.events, Some(std::time::Duration::from_millis(100))) {
             info!("Worker {}: Poll error: {}", self.id, e);
             return Err(e);
@@ -175,29 +166,37 @@ impl Worker {
             let event_token = event.token();
             
             if let Some(state) = self.connections.get_mut(&event_token) {
-                let mut should_remove = false;
+                let mut should_remove : Result<usize, io::Error> = Ok(0);
                 
                 if event.is_readable() {
                     trace!("Worker {}: event is readable for token {:?}", self.id, event_token);
-                    should_remove = handle_client_readable_data(state, &self.poll).is_err();
-                }
+                    should_remove = handle_client_readable_data(state, &self.poll);
+                } else
                 if event.is_writable() {
                     trace!("Worker {}: event is writable for token {:?}", self.id, event_token);
-                    should_remove = handle_client_writable_data(state, &self.poll).is_err();
+                    should_remove = handle_client_writable_data(state, &self.poll);
                 }
                 
-                if should_remove {
-                    info!("Worker {}: Error handling client data for token {:?}", self.id, event_token);
-                    connections_to_remove.push(event_token);
+                match should_remove {
+                    Ok(n) => {
+                        if n == 0 {
+                            connections_to_remove.push(event_token);
+                        }
+                        // If n > 0, continue processing
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        continue;
+                    }
+                    Err(e) => {
+                        info!("Worker {}: Error handling client data for token {:?} with error {:?}", self.id, event_token, e);
+                        connections_to_remove.push(event_token);
+                    }
                 }
             }
         }
         
-        // Удаляем завершенные соединения
         for token in connections_to_remove {
             self.connections.remove(&token);
-            
-            // Уменьшаем счетчик соединений для этого воркера
             {
                 let mut counts = self.worker_connection_counts.lock().unwrap();
                 counts[self.id] -= 1;
@@ -216,9 +215,6 @@ impl MioServer {
         let listener = TcpListener::bind(addr)?;
         
         let logical = num_cpus::get();
-        println!("Logical: {}", logical);
-        
-        // Создаем отдельную очередь и Waker для каждого воркера
         let mut worker_queues = Vec::new();
         for i in 0..logical {
             let poll = Poll::new()?;
@@ -229,10 +225,8 @@ impl MioServer {
             worker_queues.push(queue);
         }
         
-        // Создаем счетчики соединений для каждого воркера
         let worker_connection_counts = Arc::new(Mutex::new(vec![0; logical]));
         
-        // Создаем воркеры
         let mut worker_threads = Vec::new();
         
         for i in 0..logical {
@@ -244,7 +238,7 @@ impl MioServer {
         
         Ok(Self {
             listener,
-            worker_threads,
+            _worker_threads: worker_threads,
             worker_queues,
             worker_connection_counts,
         })
@@ -253,14 +247,12 @@ impl MioServer {
     pub fn run(&mut self) -> io::Result<()> {
         loop {
             match self.listener.accept() {
-                Ok((mut stream, addr)) => {
-                    // Настраиваем поток для неблокирующего режима
+                Ok((stream, _addr)) => {
                     if let Err(e) = stream.set_nodelay(true) {
                         debug!("Failed to set TCP_NODELAY: {}", e);
                     }
                     
-                    // Выбираем воркера с наименьшим количеством соединений
-                    let (selected_worker, current_counts) = {
+                    let (selected_worker, _current_counts) = {
                         let counts = self.worker_connection_counts.lock().unwrap();
                         let counts_vec: Vec<usize> = counts.clone();
                         let min_count = counts.iter().min().unwrap_or(&0);
@@ -268,18 +260,12 @@ impl MioServer {
                         (selected, counts_vec)
                     };
                     
-                    println!("Available workers: {:?}", current_counts);
-                    println!("Selected worker {} for new connection (connection count: {})", 
-                           selected_worker, current_counts[selected_worker]);
-                    
-                    // Увеличиваем счетчик соединений для выбранного воркера СРАЗУ
                     {
                         let mut counts = self.worker_connection_counts.lock().unwrap();
                         counts[selected_worker] += 1;
                         println!("Worker {}: connection count increased to {}", selected_worker, counts[selected_worker]);
                     }
                     
-                    // Кладим соединение в очередь выбранного воркера и будим его
                     let (lock, waker) = &*self.worker_queues[selected_worker];
                     {
                         let mut queue = lock.lock().unwrap();
@@ -290,7 +276,6 @@ impl MioServer {
                     debug!("Connection added to worker {} queue and worker woken", selected_worker);
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    // Нет новых соединений
                     thread::sleep(std::time::Duration::from_millis(10));
                 }
                 Err(e) => {

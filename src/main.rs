@@ -62,8 +62,8 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
 
 
 
-        // env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
-        //     .init();
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
+            .init();
         
         // Запуск MIO TCP сервера на порту 5005
         let addr: SocketAddr = parse_listen_address("5005")?;
