@@ -41,11 +41,12 @@ impl OpenSslStream {
         let mut events = mio::Events::with_capacity(128);
 
         // Регистрируем сокет для чтения и записи
-        poll.registry().register(
+        poll.registry().reregister(
             stream.get_mut(),
             Token(0),
             Interest::READABLE | Interest::WRITABLE,
         )?;
+        debug!("Registered stream");
 
         // Ждем, пока TCP соединение будет установлено
         loop {

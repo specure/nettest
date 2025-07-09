@@ -6,6 +6,7 @@ use std::path::Path;
 
 use crate::client::openssl::OpenSslStream;
 use crate::client::rustls::RustlsStream;
+use crate::client::rustls_server::RustlsServerStream;
 use crate::client::websocket::WebSocketClient;
 use crate::client::websocket_tls_openssl::WebSocketTlsClient;
 use crate::client::RMBT_UPGRADE_REQUEST;
@@ -16,6 +17,7 @@ pub enum Stream {
     WebSocket(WebSocketClient),
     OpenSsl(OpenSslStream),
     Rustls(RustlsStream),
+    RustlsServer(RustlsServerStream),
     WebSocketTls(WebSocketTlsClient),
 }
 
@@ -33,6 +35,7 @@ impl Stream {
             Stream::WebSocket(_) => "WebSocket",
             Stream::Rustls(_) => "Rustls",
             Stream::WebSocketTls(_) => "WebSocketTls",
+            Stream::RustlsServer(_) => "RustlsServer",
         }
     }
 
@@ -46,6 +49,11 @@ impl Stream {
         Ok(Self::Rustls(stream))
     }
 
+    pub fn new_rustls_server(stream: TcpStream, cert_path: Option<&Path>, key_path: Option<&Path>) -> Result<Self> {
+        let stream = RustlsServerStream::new(stream, cert_path, key_path)?;
+        Ok(Self::RustlsServer(stream))
+    }
+
     pub fn close(&mut self) -> Result<()> {
         match self {
             Stream::Tcp(_) => Ok(()),
@@ -53,6 +61,7 @@ impl Stream {
             Stream::WebSocket(stream) => stream.close(),
             Stream::Rustls(_) => Ok(()),
             Stream::WebSocketTls(stream) => stream.close(),
+            Stream::RustlsServer(_) => Ok(()),
         }
     }
 
@@ -63,6 +72,7 @@ impl Stream {
             Stream::WebSocket(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
             Stream::Rustls(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
             Stream::WebSocketTls(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
+            Stream::RustlsServer(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
         }
     }
 
@@ -72,6 +82,7 @@ impl Stream {
         let stream = OpenSslStream::new(stream1, "localhost")?;
         Ok(Self::OpenSsl(stream))
     }
+    
 
     pub fn new_websocket_tls(addr: SocketAddr) -> Result<Self> {
         let stream1 = TcpStream::connect(addr)?;
@@ -87,6 +98,7 @@ impl Stream {
             Stream::WebSocket(stream) => stream.read(buf),
             Stream::Rustls(stream) => stream.read(buf),
             Stream::WebSocketTls(stream) => stream.read(buf),
+            Stream::RustlsServer(stream) => stream.read(buf),
         }
     }
 
@@ -97,6 +109,7 @@ impl Stream {
             Stream::WebSocket(stream) => stream.write(buf),
             Stream::Rustls(stream) => stream.write(buf),
             Stream::WebSocketTls(stream) => stream.write(buf),
+            Stream::RustlsServer(stream) => stream.write(buf),
         }
     }
 
@@ -117,6 +130,9 @@ impl Stream {
             Stream::WebSocketTls(stream) => {
                 stream.register(poll, token, interest)?;
             }
+            Stream::RustlsServer(stream) => {
+                stream.register(poll, token, interest)?;
+            }
         }
         Ok(())
     }
@@ -128,6 +144,7 @@ impl Stream {
             Stream::WebSocket(stream) => stream.flush(),
             Stream::Rustls(stream) => stream.flush(),
             Stream::WebSocketTls(stream) => stream.flush(),
+            Stream::RustlsServer(stream) => stream.flush(),
         }
     }
 
@@ -150,6 +167,10 @@ impl Stream {
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
             }
             Stream::WebSocketTls(stream) => {
+                stream.reregister(poll, token, interest)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            }
+            Stream::RustlsServer(stream) => {
                 stream.reregister(poll, token, interest)
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
             }

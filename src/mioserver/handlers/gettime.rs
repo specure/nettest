@@ -4,7 +4,7 @@ use log::trace;
 use mio::{Interest, Poll};
 
 use crate::{
-    client::globals::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE},
+    client::globals::{get_chunk, CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE},
     mioserver::{server::TestState, ServerTestPhase},
 };
 
@@ -20,9 +20,24 @@ pub fn handle_get_time_send_chunk(poll: &Poll, state: &mut TestState) -> io::Res
     let is_last = state.clock.unwrap().elapsed().as_nanos() > duration as u128 * 1000000000;
 
     let chunk = if is_last {
-        CHUNK_TERMINATION_STORAGE.get(&(chunk_size as u64)).unwrap()
+        CHUNK_TERMINATION_STORAGE.get(&(chunk_size as u64)).unwrap_or_else(
+            || {
+                if state.terminal_chunk.is_none() {
+                    let chunk = get_chunk(chunk_size as u64, true);
+                    state.terminal_chunk = Some(chunk);
+                }
+                state.terminal_chunk.as_ref().unwrap()
+            }
+        )
     } else {
-        CHUNK_STORAGE.get(&(chunk_size as u64)).unwrap()
+        CHUNK_STORAGE.get(&(chunk_size as u64)).unwrap_or_else(|| {
+            if state.chunk.is_none() {
+                let chunk = get_chunk(chunk_size as u64, false);
+                state.chunk = Some(chunk);
+            }
+            state.chunk.as_ref().unwrap()
+
+        })
     };
     loop {
         let n = state.stream.write(&chunk[state.write_pos..])?;

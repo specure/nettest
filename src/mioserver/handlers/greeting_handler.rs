@@ -4,7 +4,7 @@ use anyhow::Result;
 use log::trace;
 use mio::{Interest, Poll};
 
-use crate::mioserver::{server::TestState, ServerTestPhase};
+use crate::{client::globals::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE}, config::constants::CHUNK_SIZE, mioserver::{server::TestState, ServerTestPhase}};
 
 pub fn handle_greeting_accep_token_read(
     poll: &Poll,
@@ -44,13 +44,19 @@ pub fn handle_greeting_send_accept_token(
         // Копируем version в начало буфера
         state.write_buffer[..version.len()].copy_from_slice(version);
         // Копируем accept после version
-        state.write_buffer[version.len()..version.len() + accept.len()].copy_from_slice(accept);
+        let len = version.len() + accept.len();
+        trace!("len {}", len);
+        state.write_buffer[version.len()..len].copy_from_slice(accept);
     }
 
     loop {
-        let n = state.stream.write(&state.write_buffer[state.write_pos..])?;
+        let n = state.stream.write(&state.write_buffer[state.write_pos..(version.len() + accept.len())])?;
+        if n == 0 {
+            return Err(io::Error::new(io::ErrorKind::WouldBlock, "Would block"));
+        }
         state.write_pos += n;
-        if state.write_pos == state.write_buffer.len() {
+        trace!("Wrote handle_greeting_send_accept_token {}", n);
+        if state.write_pos == (version.len() + accept.len()) {
             state.write_pos = 0;
             state.read_pos = 0;
             state.measurement_state = ServerTestPhase::GreetingReceiveToken;
@@ -72,9 +78,11 @@ pub fn handle_greeting_receive_token(
         state.read_pos += n;
         let end = b"\n";
         //compare last 2 bytes with end
+        //TODO handle properly client uuid
         if n > 0 && state.read_buffer[state.read_pos - 1..state.read_pos] == *end {
-            state.read_pos = 0;
             state.measurement_state = ServerTestPhase::GreetingSendOk;
+            trace!("Greeting received token: {}", String::from_utf8_lossy(&state.read_buffer));
+            state.read_pos = 0;
             state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
             return Ok(n);
         }
@@ -86,14 +94,35 @@ pub fn handle_greeting_send_ok(
     state: &mut TestState,
 ) -> Result<usize, std::io::Error> {
     trace!("handle_greeting_send_ok");
-    let ok = b"OK\r\n";
+    let ok = b"OK\n";
+
     if state.write_pos == 0 {
         state.write_buffer[..ok.len()].copy_from_slice(ok);
     }
     loop {
-        let n = state.stream.write(&state.write_buffer[state.write_pos..])?;
+        let n = state.stream.write(&state.write_buffer[state.write_pos..ok.len()])?;
         state.write_pos += n;
-        if state.write_pos == state.write_buffer.len() {
+        if state.write_pos == ok.len() {
+            state.write_pos = 0;
+            state.measurement_state = ServerTestPhase::GreetingSendChunksize;
+            state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
+            return Ok(n);
+        }
+    }
+}
+
+pub fn handle_greeting_send_chunksize( poll: &Poll,
+    state: &mut TestState,) -> Result<usize, std::io::Error> {
+    trace!("handle_greeting_send_ok");
+    let chunk_size_msg = format!("CHUNKSIZE {} {} {}\n", CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE); //todo compare version
+
+    if state.write_pos == 0 {
+        state.write_buffer[..chunk_size_msg.len()].copy_from_slice(chunk_size_msg.as_bytes());
+    }
+    loop {
+        let n = state.stream.write(&state.write_buffer[state.write_pos..chunk_size_msg.len()])?;
+        state.write_pos += n;
+        if state.write_pos == chunk_size_msg.len() {
             state.write_pos = 0;
             state.measurement_state = ServerTestPhase::AcceptCommandSend;
             state.stream.reregister(poll, state.token, Interest::WRITABLE)?;

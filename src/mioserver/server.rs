@@ -42,6 +42,9 @@ pub struct TestState {
     pub time_ns: Option<u128>,
     pub duration: u64,
     pub chunk_buffer: Vec<u8>,
+    pub chunk: Option<BytesMut>,
+    pub terminal_chunk: Option<BytesMut>,
+
 }
 
 impl WorkerThread {
@@ -120,7 +123,7 @@ impl Worker {
                 
                 self.connections.insert(token, TestState {
                     token,
-                    stream: Stream::Tcp(stream),
+                    stream: Stream::new_rustls_server(stream, None, None).unwrap(),
                     measurement_state: ServerTestPhase::GreetingReceiveConnectionType,
                     read_buffer: [0; 1024 * 8],
                     write_buffer: [0; 1024 * 8],
@@ -135,6 +138,8 @@ impl Worker {
                     duration: 0,
                     chunk_buffer: vec![0; MIN_CHUNK_SIZE as usize],
                     total_bytes: 0,
+                    chunk: None,
+                    terminal_chunk: None,
                 });
                 
                 // Счетчик уже увеличен при назначении соединения этому воркеру

@@ -1,7 +1,10 @@
 use crate::client::globals::MIN_CHUNK_SIZE;
 use crate::client::handlers::BasicHandler;
 use crate::client::state::TestPhase;
-use crate::client::utils::{ACCEPT_GETCHUNKS_STRING, MAX_CHUNKS_BEFORE_SIZE_INCREASE, MAX_CHUNK_SIZE, OK_COMMAND, PRE_DOWNLOAD_DURATION_NS, TIME_BUFFER_SIZE};
+use crate::client::utils::{
+    ACCEPT_GETCHUNKS_STRING, MAX_CHUNKS_BEFORE_SIZE_INCREASE, MAX_CHUNK_SIZE, OK_COMMAND,
+    PRE_DOWNLOAD_DURATION_NS, TIME_BUFFER_SIZE,
+};
 use crate::client::{write_all_nb, MeasurementState, Stream, DEFAULT_READ_BUFFER_SIZE};
 use anyhow::Result;
 use bytes::BytesMut;
@@ -20,6 +23,8 @@ pub struct GetChunksHandler {
     unprocessed_bytes: AtomicU32,
     time_buffer: BytesMut,
     write_buffer: BytesMut,
+    chunk_buffer: Vec<u8>,
+    cursor: usize,
 }
 
 impl GetChunksHandler {
@@ -33,6 +38,8 @@ impl GetChunksHandler {
             unprocessed_bytes: AtomicU32::new(0),
             time_buffer: BytesMut::with_capacity(TIME_BUFFER_SIZE),
             write_buffer: BytesMut::with_capacity(DEFAULT_READ_BUFFER_SIZE),
+            chunk_buffer: Vec::with_capacity(MAX_CHUNK_SIZE as usize),
+            cursor: 0,
         })
     }
 
@@ -42,6 +49,7 @@ impl GetChunksHandler {
             trace!("Increased total chunks to {}", self.total_chunks);
         } else {
             self.chunk_size = (self.chunk_size * 2).min(MAX_CHUNK_SIZE);
+            self.chunk_buffer.resize(self.chunk_size as usize, 0);
             trace!("Increased chunk size to {}", self.chunk_size);
         }
     }
@@ -73,46 +81,44 @@ impl BasicHandler for GetChunksHandler {
     ) -> Result<()> {
         match measurement_state.phase {
             TestPhase::GetChunksReceiveChunk => {
-                let mut buf: Vec<u8> = vec![0u8; self.chunk_size as usize];
-                trace!("Reading chunk of size {}", self.chunk_size);
+                debug!("GetChunksReceiveChunk");
                 loop {
-                    match stream.read(&mut buf) {
+                    debug!("Reading chunk {} bytes n {}", self.chunk_buffer.len(), self.cursor);
+                    match stream.read(&mut self.chunk_buffer[self.cursor..]) {
                         Ok(n) if n > 0 => {
-                            trace!("Read {} bytes of chunk", n);
-                            let current_unprocessed =
-                                self.unprocessed_bytes.fetch_add(n as u32, Ordering::SeqCst);
-                            let total_bytes = current_unprocessed + n as u32;
-                            let complete_chunks = total_bytes / self.chunk_size;
-                            self.unprocessed_bytes
-                                .store(total_bytes % self.chunk_size, Ordering::SeqCst);
-                            let current_chunks = self
-                                .chunks_received
-                                .fetch_add(complete_chunks, Ordering::SeqCst);
-                            if current_chunks + complete_chunks >= self.total_chunks {
-                                let is_last_chunk = buf[n - 1] == 0xFF;
-                                if is_last_chunk {
-                                    trace!(
-                                        "Received last chunk {}",
-                                        current_chunks + complete_chunks
-                                    );
+                            self.cursor += n;
+                            debug!("Chunk received {} bytes", n);
+                            if self.cursor == self.chunk_size as usize {
+                                debug!("Chunk received");
+                                self.chunks_received.fetch_add(1, Ordering::SeqCst);
+                                if self.chunk_buffer[self.cursor - 1] == 0x00 {
+                                    debug!("Chunk received 0x00");
+                                    self.cursor = 0;
+                                } else if self.chunk_buffer[self.cursor - 1] == 0xFF {
+                                    debug!("Chunk received 0xFF");
                                     measurement_state.phase = TestPhase::GetChunksSendOk;
+                                    self.cursor = 0;
                                     stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                                     return Ok(());
+                                }
+                                if self.cursor > 0 && self.chunk_buffer[self.cursor - 1] != 0x00 && self.chunk_buffer[self.cursor - 1] != 0xFF {
+                                    let a = String::from_utf8_lossy(&self.chunk_buffer);
+                                    debug!("Chunk received Invalid chunk: {}", a);
+                                    return Err(anyhow::anyhow!("Chunk received Invalid chunk"));
                                 }
                             }
                         }
                         Ok(_) => {
-                            debug!("Read 0 bytes");
                             return Ok(());
                         }
                         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                            trace!("WouldBlock GetChunksReceiveChunk");
                             return Ok(());
                         }
                         Err(e) => return Err(e.into()),
                     }
                 }
             }
+
             TestPhase::GetChunksReceiveTime => {
                 trace!("GetChunksReceiveTime");
                 loop {
@@ -172,6 +178,8 @@ impl BasicHandler for GetChunksHandler {
                     measurement_state.phase = TestPhase::GetChunksReceiveChunk;
                     self.unprocessed_bytes.store(0, Ordering::SeqCst);
                     self.chunks_received.store(0, Ordering::SeqCst);
+                    self.chunk_buffer = vec![0u8; self.chunk_size as usize];
+
                     self.test_start_time = Some(Instant::now());
                     stream.reregister(&poll, self.token, Interest::READABLE)?;
                     self.write_buffer.clear();

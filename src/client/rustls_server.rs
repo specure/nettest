@@ -1,61 +1,46 @@
 use anyhow::{Error, Result};
 use log::{debug, info, trace};
 use mio::{net::TcpStream, Interest, Poll, Token};
-use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
-use rustls::{ClientConfig, ClientConnection, RootCertStore, ServerConfig};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::{ServerConfig, ServerConnection};
 use std::fs;
 use std::io::{self, BufReader, Read, Write};
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 
-
 #[derive(Debug)]
-pub struct RustlsStream {
-    pub conn: ClientConnection,
+pub struct RustlsServerStream {
+    pub conn: ServerConnection,
     pub stream: TcpStream,
     handshake_done: bool,
+    pub finished: bool,
 }
 
-impl RustlsStream {
+impl RustlsServerStream {
     pub fn new(
-        addr: SocketAddr,
+        stream: TcpStream,
         cert_path: Option<&Path>,
         key_path: Option<&Path>,
     ) -> Result<Self> {
-        let stream = TcpStream::connect(addr)?;
         stream.set_nodelay(true)?;
 
-        let config = if let (Some(cert_path), Some(key_path)) = (cert_path, key_path) {
-            let mut root_store = RootCertStore::empty();
-            let certs = load_certs(cert_path)?;
+        let config = if let (cert_path, key_path) = (cert_path, key_path) {
+            let certs = load_certs(Path::new("fullchain1.pem"))?;
+            let key = load_private_key(Path::new("privkey1.pem"))?;
 
-            for cert in &certs {
-                root_store.add(cert.clone())?;
-            }
-
-            let key = load_private_key(key_path)?;
-
-            let config = ClientConfig::builder()
-                .with_root_certificates(root_store)
-                .with_client_auth_cert(certs, key)?;
+            let config = ServerConfig::builder()
+                .with_no_client_auth()
+                .with_single_cert(certs, key)
+                .map_err(|e| Error::msg(format!("Failed to create server config: {}", e)))?;
             config
         } else {
-            let config = ClientConfig::builder()
-                .dangerous()
-                .with_custom_certificate_verifier(Arc::new(danger::NoCertificateVerification))
-                .with_no_client_auth();
-            config
+            return Err(Error::msg(
+                "Certificate and key paths are required for server",
+            ));
         };
 
-        // Используем IP-адрес как домен для локального соединения
-        let server_name = if addr.ip().is_loopback() {
-            ServerName::DnsName("localhost".try_into()?)
-        } else {
-            ServerName::DnsName("dev.measurementservers.net".try_into()?)
-        };
-
-        let mut conn = ClientConnection::new(Arc::new(config), server_name)?;
+        let mut conn = ServerConnection::new(Arc::new(config))?;
 
         // conn.set_buffer_limit(Some(1024 * 1024 * 10));
 
@@ -63,6 +48,7 @@ impl RustlsStream {
             conn,
             stream,
             handshake_done: false,
+            finished: true,
         })
     }
 
@@ -70,7 +56,7 @@ impl RustlsStream {
         // trace!("Reading from RustlsStream");
 
         // Read TLS data
-        let k = match self.conn.read_tls(&mut self.stream) {
+        match self.conn.read_tls(&mut self.stream) {
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                 // trace!("TLS read would block");
                 // Принудительно отправляем данные для очистки буфера
@@ -87,14 +73,13 @@ impl RustlsStream {
                 return Err(e);
             }
             Ok(0) => {
-                debug!("TLS connection closed");
+                // trace!("TLS connection closed");
                 return Ok(0);
             }
             Ok(n) => {
                 trace!("Read {} bytes from TLS stream", n);
-                n
             }
-        };
+        }
 
         // Process any new TLS messages
         // debug!("Processing new packets");
@@ -119,8 +104,6 @@ impl RustlsStream {
             self.handshake_done = true;
         }
 
-        
-
         // Read any new plaintext
         if io_state.plaintext_bytes_to_read() > 0 {
             let n = self.conn.reader().read(buf)?;
@@ -128,12 +111,9 @@ impl RustlsStream {
             return Ok(n);
         }
 
-        
-
         // If we need to read more data, try again
-        if self.conn.wants_read() && k > 0 {
-            trace!("Need to read more data {} but wants_read is {}", io_state.plaintext_bytes_to_read(), self.conn.wants_read());
-
+        if self.conn.wants_read() {
+            trace!("Need to read more data");
             return self.read(buf);
         }
 
@@ -148,7 +128,6 @@ impl RustlsStream {
             return Ok(0);
         }
 
-        trace!("Read 0 bytes of new data");
         Ok(0)
     }
 
@@ -173,6 +152,11 @@ impl RustlsStream {
             }
         }
 
+        if !self.finished {
+            total_written += 1;
+            self.finished = true;
+        }
+
         // Теперь пробуем записать новые данные
         while total_written < buf.len() {
             match self.conn.writer().write(&buf[total_written..]) {
@@ -182,12 +166,12 @@ impl RustlsStream {
                     // Пытаемся отправить данные в сеть
                     while self.conn.wants_write() {
                         match self.conn.write_tls(&mut self.stream) {
-                            Ok(_) => {
+                            Ok(s) => {
                                 continue;
                             }
                             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                                trace!("Network write would block after {} bytes", total_written);
-                                break;
+                                self.finished = false;
+                                return Ok(total_written - 1);
                             }
                             Err(e) => {
                                 debug!("Network write error: {:?}", e);
@@ -210,6 +194,7 @@ impl RustlsStream {
             }
         }
 
+
         Ok(total_written)
     }
 
@@ -224,11 +209,6 @@ impl RustlsStream {
     pub fn reregister(&mut self, poll: &Poll, token: Token, interests: Interest) -> io::Result<()> {
         poll.registry()
             .reregister(&mut self.stream, token, interests)
-    }
-
-    pub fn perform_handshake(&mut self) -> Result<()> {
-        info!("TLS handshake completed successfully");
-        Ok(())
     }
 
     pub fn close(&mut self) -> io::Result<()> {
@@ -272,61 +252,5 @@ fn load_private_key(key_path: &Path) -> Result<PrivateKeyDer<'static>, Error> {
     } else {
         debug!("No private keys found in key file");
         Err(Error::msg("No private keys found in key file"))
-    }
-}
-
-mod danger {
-    use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-    use rustls::pki_types::UnixTime;
-    use rustls::pki_types::{CertificateDer, ServerName};
-    use rustls::DigitallySignedStruct;
-
-    #[derive(Debug)]
-    pub struct NoCertificateVerification;
-
-    impl ServerCertVerifier for NoCertificateVerification {
-        fn verify_server_cert(
-            &self,
-            _end_entity: &CertificateDer,
-            _intermediates: &[CertificateDer],
-            _server_name: &ServerName,
-            _scts: &[u8],
-            _now: UnixTime,
-        ) -> Result<ServerCertVerified, rustls::Error> {
-            Ok(ServerCertVerified::assertion())
-        }
-
-        fn verify_tls12_signature(
-            &self,
-            _message: &[u8],
-            _cert: &CertificateDer,
-            _dss: &DigitallySignedStruct,
-        ) -> Result<HandshakeSignatureValid, rustls::Error> {
-            Ok(HandshakeSignatureValid::assertion())
-        }
-
-        fn verify_tls13_signature(
-            &self,
-            _message: &[u8],
-            _cert: &CertificateDer,
-            _dss: &DigitallySignedStruct,
-        ) -> Result<HandshakeSignatureValid, rustls::Error> {
-            Ok(HandshakeSignatureValid::assertion())
-        }
-
-        fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-            vec![
-                rustls::SignatureScheme::RSA_PSS_SHA256,
-                rustls::SignatureScheme::RSA_PSS_SHA384,
-                rustls::SignatureScheme::RSA_PSS_SHA512,
-                rustls::SignatureScheme::RSA_PKCS1_SHA256,
-                rustls::SignatureScheme::RSA_PKCS1_SHA384,
-                rustls::SignatureScheme::RSA_PKCS1_SHA512,
-                rustls::SignatureScheme::ECDSA_NISTP256_SHA256,
-                rustls::SignatureScheme::ECDSA_NISTP384_SHA384,
-                rustls::SignatureScheme::ECDSA_NISTP521_SHA512,
-                rustls::SignatureScheme::ED25519,
-            ]
-        }
     }
 }

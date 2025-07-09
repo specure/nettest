@@ -35,23 +35,29 @@ pub fn handle_get_chunks_send_chunks(poll: &Poll, state: &mut TestState) -> io::
         state.write_pos = 0;
         state.clock = Some(Instant::now());
     }
+    let is_last = state.processed_chunks == chunk_num - 1;
+    let chunk = if is_last {
+        CHUNK_TERMINATION_STORAGE.get(&(chunk_size as u64)).unwrap()
+    } else {
+        CHUNK_STORAGE.get(&(chunk_size as u64)).unwrap()
+    };
     loop {
-        let chunk = if state.processed_chunks == chunk_num - 1 {
-            CHUNK_TERMINATION_STORAGE.get(&(chunk_size as u64)).unwrap()
-        } else {
-            CHUNK_STORAGE.get(&(chunk_size as u64)).unwrap()
-        };
+        trace!("Sending chunk: {}", state.processed_chunks);
+
         let n = state.stream.write(&chunk[state.write_pos..])?;
         state.write_pos += n;
         if state.write_pos == chunk.len() {
+            trace!("Sent chunk: {}", state.processed_chunks);
             state.processed_chunks += 1;
             state.write_pos = 0;
-            if state.processed_chunks == chunk_num {
+            if is_last {
+                trace!("Last chunk sent");
                 state.measurement_state = ServerTestPhase::GetChunksReceiveOK;
                 state.processed_chunks = 0;
                 state.stream.reregister(poll, state.token, Interest::READABLE)?;
                 return Ok(n);
             }
+            return Ok(n);
         }
     }
 }

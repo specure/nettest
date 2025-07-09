@@ -1,8 +1,12 @@
-use crate::client::{handlers::BasicHandler, read_until, state::TestPhase, utils::ACCEPT_GETCHUNKS_STRING, write_all_nb, MeasurementState, Stream, DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE};
+use crate::client::{
+    handlers::BasicHandler, read_until, state::TestPhase, utils::ACCEPT_GETCHUNKS_STRING,
+    write_all_nb, MeasurementState, Stream, DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE,
+};
 use anyhow::Result;
 use bytes::BytesMut;
 use log::{debug, trace};
 use mio::{Interest, Poll, Token};
+use std::io;
 
 pub struct GreetingHandler {
     token: Token,
@@ -42,34 +46,55 @@ impl BasicHandler for GreetingHandler {
                 }
                 measurement_state.phase = TestPhase::GreetingSendToken;
                 stream.reregister(&poll, self.token, Interest::WRITABLE)?;
+                trace!("Greeting received 1111: {}", String::from_utf8_lossy(&self.read_buffer));
                 self.read_buffer.clear();
+                return Ok(());
             }
-            _ => {}
-        }
-        match measurement_state.phase {
             TestPhase::GreetingReceiveResponse => {
                 trace!(
                     "[on_read] Receiving response {}",
                     String::from_utf8_lossy(&self.read_buffer)
                 );
-                let mut a = read_until(stream, &mut self.read_buffer, ACCEPT_GETCHUNKS_STRING)?;
-                while !a {
-                    a = read_until(stream, &mut self.read_buffer, ACCEPT_GETCHUNKS_STRING)?;
-                    if a {
-                        debug!("Greeting received: {}", String::from_utf8_lossy(&self.read_buffer));
-                        break;
+                let mut temp = vec![0; 1024 * 1024]; //TODO understand why 1024 is not enough
+
+                loop {
+                    match stream.read(&mut temp) {
+                        Ok(n) => {
+                            if n == 0 {
+                                return Err(anyhow::anyhow!("Error reading greeting: EOF"));
+                            }
+                            self.read_buffer.extend_from_slice(&temp[0..n]);
+                            if String::from_utf8_lossy(&self.read_buffer).contains(ACCEPT_GETCHUNKS_STRING) {
+                                measurement_state.phase = TestPhase::GreetingCompleted;
+                                stream.reregister(&poll, self.token, Interest::READABLE)?;
+                                //remove ok\n from buffer
+                                self.read_buffer.clear();
+                                return Ok(());
+                            }
+
+                            trace!(
+                                "Greeting received: {}",
+                                String::from_utf8_lossy(&self.read_buffer)
+                            );
+                        }
+                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                            trace!("Greeting received would block");
+                            stream.reregister(&poll, self.token, Interest::READABLE)?;
+
+                            return Ok(());
+                        }
+
+                        Err(e) => {
+                            return Err(anyhow::anyhow!("Error reading greeting: {}", e));
+                        }
                     }
                 }
-                measurement_state.phase = TestPhase::GreetingCompleted;
-                stream.reregister(&poll, self.token, Interest::READABLE)?;
-                //remove ok\n from buffer
-                self.read_buffer.clear();
+            }
+
+            _ => {
                 return Ok(());
             }
-            _ => {}
         }
-
-        Ok(())
     }
 
     fn on_write(
@@ -88,18 +113,14 @@ impl BasicHandler for GreetingHandler {
 
                 match stream {
                     Stream::WebSocketTls(stream) => {
-                        debug!(
-                            "[on_write] WebSocketTls greeting sent",
-                        );
+                        debug!("[on_write] WebSocketTls greeting sent",);
 
                         measurement_state.phase = TestPhase::GreetingSendToken;
                         stream.reregister(&poll, self.token, Interest::WRITABLE)?;
                         self.read_buffer.clear();
                     }
                     Stream::WebSocket(stream) => {
-                        debug!(
-                            "[on_write] WebSocket greeting sent",
-                        );
+                        debug!("[on_write] WebSocket greeting sent",);
 
                         measurement_state.phase = TestPhase::GreetingSendToken;
                         stream.reregister(&poll, self.token, Interest::WRITABLE)?;

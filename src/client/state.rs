@@ -157,7 +157,7 @@ impl TestState {
         )?;
 
         debug!("Greeting process_greeting");
-        self.process_phase(TestPhase::GreetingCompleted, ONE_SECOND_NS * 2)?;
+        self.process_phase(TestPhase::GreetingCompleted, ONE_SECOND_NS * 5)?;
 
         debug!("Greeting completed");
 
