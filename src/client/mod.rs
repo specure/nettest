@@ -1,24 +1,17 @@
-pub mod rustls;
-pub mod rustls_server;
-pub mod openssl;
-pub mod websocket;
-pub mod websocket_tls_openssl;
-pub mod stream;
 pub mod state;
 pub mod handlers;
 pub mod utils;
 pub mod globals;
 pub mod graph;
 
-pub use stream::Stream;
 pub use state::{TestState, MeasurementState};
 pub use handlers::{
     greeting::GreetingHandler,
     get_chunks::GetChunksHandler,
-    put::PutHandler,
-    put_no_result::PutNoResultHandler,
+    // put::PutHandler,
+    // put_no_result::PutNoResultHandler,
 };
-pub use utils::{read_until, write_all, write_all_nb, DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE, RMBT_UPGRADE_REQUEST};
+pub use utils::{read_until, write_all_nb, DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE, RMBT_UPGRADE_REQUEST};
 
 
 use log::{debug, info};
@@ -28,6 +21,7 @@ use prettytable::{ row, Table};
 use std::net::SocketAddr;
 use std::sync::{Arc, Barrier};
 use std::thread;
+use std::time::Duration;
 
 
 const GREEN: &str = "\x1b[32m";
@@ -37,6 +31,14 @@ const RESET: &str = "\x1b[0m";
 // async fn main() -> Result<()> {
 //     async_main().await
 // }
+
+
+struct Measurement {
+    measurements: Vec<(u64, u64)>,
+    failed: bool,
+    thread_id: usize,
+    upload_measurements: Vec<(u64, u64)>,
+}
 
 pub async fn async_main(args: Vec<String>) -> anyhow::Result<()> {
 
@@ -162,55 +164,35 @@ pub async fn async_main(args: Vec<String>) -> anyhow::Result<()> {
                 );
             }
             barrier.wait();
-            if i == 0 {
-                state.run_ping().unwrap();
-                let median = state.measurement_state().ping_median.unwrap();
-                print_result("Ping Median", "Completed (ns)", Some(median as usize));
-            }
+            // if i == 0 {
+            //     state.run_ping().unwrap();
+            //     let median = state.measurement_state().ping_median.unwrap();
+            //     print_result("Ping Median", "Completed (ns)", Some(median as usize));
+            // }
             barrier.wait();
             state.run_get_time().unwrap();
             barrier.wait();
-            debug!("Thread {} completed barrier", i);
-            state.run_perf_test().unwrap();
+            // debug!("Thread {} completed barrier", i);
+            // state.run_perf_test().unwrap();
             // println!("Upload speed: {}", state.measurement_state().upload_speed.unwrap());
             barrier.wait();
-            let result = MeasurementState {
-                upload_results_for_graph: state
-                    .measurement_state()
-                    .upload_results_for_graph
-                    .clone(),
-                upload_bytes: state.measurement_state().upload_bytes,
-                upload_time: state.measurement_state().upload_time,
-                upload_speed: state.measurement_state().upload_speed,
-                download_time: state.measurement_state().download_time,
-                download_bytes: state.measurement_state().download_bytes,
-                download_speed: state.measurement_state().download_speed,
-                chunk_size: state.measurement_state().chunk_size,
-                ping_median: state.measurement_state().ping_median,
-                read_buffer_temp: state.measurement_state().read_buffer_temp.clone(),
-                measurements: state.measurement_state().measurements.clone(),
-                phase: state.measurement_state().phase.clone(),
-                buffer: state.measurement_state().buffer.clone(),
-                phase_start_time: state.measurement_state().phase_start_time,
+            let result: Measurement = Measurement {
+                thread_id: i,
                 failed: state.measurement_state().failed,
-                upload_measurements: state
-                    .measurement_state()
-                    .upload_measurements
-                    .iter()
-                    .cloned()
-                    .collect(),
+                measurements: state.measurement_state().measurements.iter().cloned().collect(),
+                upload_measurements: state.measurement_state().upload_measurements.iter().cloned().collect(),
             };
             result
         }));
     }
 
-    let states: Vec<MeasurementState> = thread_handles
+    let states: Vec<Measurement> = thread_handles
         .into_iter()
         .map(|h| h.join().unwrap())
         .collect();
 
     debug!("States: {:?}", states.len());
-    let state_refs: Vec<&MeasurementState> = states
+    let state_refs: Vec<&Measurement> = states
         .iter()
         //TODO whar to do on failed threads?
         .filter(|s| !s.failed)
@@ -219,7 +201,7 @@ pub async fn async_main(args: Vec<String>) -> anyhow::Result<()> {
     debug!("State refs: {:?}", state_refs.len());
 
     // Создаем копию для использования в нескольких функциях
-    let state_refs_copy: Vec<&MeasurementState> = state_refs.clone();
+    let state_refs_copy: Vec<&Measurement> = state_refs.clone();
 
     let download_speed = calculate_download_speed(&state_refs);
 
@@ -449,7 +431,7 @@ fn calculate_speed_from_measurements(measurements: Vec<Vec<(u64, u64)>>) -> (f64
     (speed_bps, speed_gbps, speed_mbps)
 }
 
-fn calculate_download_speed(states: &[&MeasurementState]) -> (f64, f64, f64) {
+fn calculate_download_speed(states: &[&Measurement]) -> (f64, f64, f64) {
     let mut thread_measurements: Vec<Vec<(u64, u64)>> = Vec::new();
     for state in states {
         if state.failed {
@@ -468,7 +450,7 @@ fn calculate_download_speed(states: &[&MeasurementState]) -> (f64, f64, f64) {
     calculate_speed_from_measurements(thread_measurements)
 }
 
-fn calculate_perf_speed(states: &[&MeasurementState]) -> (f64, f64, f64) {
+fn calculate_perf_speed(states: &[&Measurement]) -> (f64, f64, f64) {
     let mut thread_measurements: Vec<Vec<(u64, u64)>> = Vec::new();
     for state in states {
         if state.failed {

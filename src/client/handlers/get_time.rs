@@ -7,34 +7,19 @@ use std::time::Instant;
 
 use crate::client::handlers::BasicHandler;
 use crate::client::state::TestPhase;
+use crate::client::utils::read_until;
 use crate::client::utils::ACCEPT_GETCHUNKS_STRING;
-use crate::client::{read_until, write_all_nb, MeasurementState, Stream};
+use crate::client::{write_all_nb, MeasurementState};
 
 const TEST_DURATION_NS: u64 = 7_000_000_000; // 7 seconds
 const MAX_CHUNK_SIZE: u32 = 4194304; // 4MB
 
 pub struct GetTimeHandler {
-    token: Token,
-    chunk_size: usize,
-    bytes_received: u64,
-    start_time: Instant,
-    read_buffer: BytesMut,
-    write_buffer: BytesMut,
-    chunk_buffer: Vec<u8>,
-    cursor: usize, // Буфер для чтения чанков
 }
 
 impl GetTimeHandler {
     pub fn new(token: Token) -> Result<Self> {
         Ok(Self {
-            token,
-            chunk_size: MAX_CHUNK_SIZE as usize,
-            bytes_received: 0,
-            read_buffer: BytesMut::with_capacity(MAX_CHUNK_SIZE as usize),
-            write_buffer: BytesMut::with_capacity(1024),
-            chunk_buffer: Vec::with_capacity(MAX_CHUNK_SIZE as usize),
-            start_time: Instant::now(),
-            cursor: 0,
         })
     }
 
@@ -44,59 +29,34 @@ impl GetTimeHandler {
 }
 
 impl BasicHandler for GetTimeHandler {
-    fn on_read(
-        &mut self,
-        stream: &mut Stream,
-        poll: &Poll,
-        measurement_state: &mut MeasurementState,
-    ) -> Result<()> {
+    fn on_read(&mut self, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
         match measurement_state.phase {
-            TestPhase::GetTimeReceiveChunk => loop {
-                match stream.read(&mut self.chunk_buffer[self.cursor..]) {
-                    Ok(n) if n > 0 => {
-                        self.cursor += n;
-                        self.bytes_received += n as u64;
-                        if self.cursor == self.chunk_size {
-                            if self.chunk_buffer[self.cursor - 1] == 0x00 {
-                                measurement_state.measurements.push_back((
-                                    self.start_time.elapsed().as_nanos() as u64,
-                                    self.bytes_received,
-                                ));
-                                self.cursor = 0;
-                            } else if self.chunk_buffer[self.cursor - 1] == 0xFF {
-                                measurement_state.phase = TestPhase::GetTimeSendOk;
-                                stream.reregister(&poll, self.token, Interest::WRITABLE)?;
-                                return Ok(());
-                            }
-                        }
-                    }
-                    Ok(_) => {
-                        return Ok(());
-                    }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        return Ok(());
-                    }
-                    Err(e) => return Err(e.into()),
-                }
-            },
-            TestPhase::GetTimeReceiveTime => {
-                if read_until(stream, &mut self.read_buffer, ACCEPT_GETCHUNKS_STRING)? {
-                    if let Some(time_ns) = String::from_utf8_lossy(&self.read_buffer)
-                        .split_whitespace()
-                        .nth(1)
-                        .and_then(|s| s.parse::<u64>().ok())
-                    {
-                        info!("Time: {} ns", String::from_utf8_lossy(&self.read_buffer));
-                        let speed = self.bytes_received as f64 / time_ns as f64;
-                        measurement_state.download_speed = Some(speed);
-                        measurement_state.download_time = Some(time_ns);
-                        measurement_state.download_bytes = Some(self.bytes_received);
+            TestPhase::GetTimeReceiveChunk => {
+                match handle_get_time_receive_chunk(poll, measurement_state) {
+                    Ok(n) => {
 
-                        debug!("Speed: {}", speed);
-                        measurement_state.phase = TestPhase::GetTimeCompleted;
-                        stream.reregister(&poll, self.token, Interest::WRITABLE)?;
+                        return Ok(());
                     }
-                    self.read_buffer.clear();
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        debug!("GetTimeReceiveChunk error: {:?}", e);
+                        return Err(e.into());
+                    }
+                }
+            }
+            TestPhase::GetTimeReceiveTime => {
+                match handle_get_time_receive_time(poll, measurement_state) {
+                    Ok(n) => {
+                        return Ok(());
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        return Err(e.into());
+                    }
                 }
             }
             _ => {}
@@ -104,46 +64,168 @@ impl BasicHandler for GetTimeHandler {
         Ok(())
     }
 
-    fn on_write(
-        &mut self,
-        stream: &mut Stream,
-        poll: &Poll,
-        measurement_state: &mut MeasurementState,
-    ) -> Result<()> {
+    fn on_write(&mut self, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
         match measurement_state.phase {
             TestPhase::GetTimeSendCommand => {
-                self.chunk_size = measurement_state.chunk_size;
-                self.chunk_buffer = vec![0u8; self.chunk_size];
-                if self.write_buffer.is_empty() {
-                    self.write_buffer.extend_from_slice(
-                        format!(
-                            "GETTIME {} {}\n",
-                            TEST_DURATION_NS / 1_000_000_000,
-                            self.chunk_size
-                        )
-                        .as_bytes(),
-                    );
-                }
-                self.start_time = Instant::now();
-                if write_all_nb(&mut self.write_buffer, stream)? {
-                    measurement_state.phase = TestPhase::GetTimeReceiveChunk;
-                    stream.reregister(&poll, self.token, Interest::READABLE)?;
-                    self.write_buffer.clear();
+                match handle_get_time_send_command(poll, measurement_state) {
+                    Ok(n) => {
+                        return Ok(());
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        return Err(e.into());
+                    }
                 }
             }
-            TestPhase::GetTimeSendOk => {
-                if self.write_buffer.is_empty() {
-                    self.write_buffer
-                        .extend_from_slice(self.get_ok_command().as_bytes());
+            TestPhase::GetTimeSendOk => match handle_get_time_send_ok(poll, measurement_state) {
+                Ok(n) => {
+                    return Ok(());
                 }
-                if write_all_nb(&mut self.write_buffer, stream)? {
-                    measurement_state.phase = TestPhase::GetTimeReceiveTime;
-                    stream.reregister(&poll, self.token, Interest::READABLE)?;
-                    self.write_buffer.clear();
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    return Ok(());
                 }
-            }
+                Err(e) => {
+                    return Err(e.into());
+                }
+            },
             _ => {}
         }
         Ok(())
+    }
+}
+
+pub fn handle_get_time_send_ok(
+    poll: &Poll,
+    state: &mut MeasurementState,
+) -> Result<usize, std::io::Error> {
+    debug!("GetTimeSendOk token {:?}", state.token);
+    if state.write_pos == 0 {
+        state.write_buffer[0..b"OK\n".len()].copy_from_slice(b"OK\n");
+    }
+    loop {
+        let n = state
+            .stream
+            .write(&state.write_buffer[state.write_pos..b"OK\n".len()])?;
+        state.write_pos += n;
+        if state.write_pos == b"OK\n".len() {
+            state.write_pos = 0;
+            state.read_pos = 0;
+            state.phase = TestPhase::GetTimeReceiveTime;
+            state
+                .stream
+                .reregister(&poll, state.token, Interest::READABLE)?;
+            return Ok(n);
+        }
+    }
+}
+
+pub fn handle_get_time_send_command(
+    poll: &Poll,
+    state: &mut MeasurementState,
+) -> Result<usize, std::io::Error> {
+    debug!("GetTimeSendCommand token {:?}", state.token);
+
+    let command = format!(
+        "GETTIME {} {}\n",
+        TEST_DURATION_NS / 1_000_000_000,
+        state.chunk_size
+    );
+    if state.write_pos == 0 {
+        state.write_buffer[0..command.len()].copy_from_slice(command.as_bytes());
+    }
+
+    loop {
+        let n = state
+            .stream
+            .write(&state.write_buffer[state.write_pos..command.len()])?;
+        state.write_pos += n;
+        if state.write_pos == command.len() {
+            state.write_pos = 0;
+            state.phase_start_time = Some(Instant::now());
+
+            state.phase = TestPhase::GetTimeReceiveChunk;
+            state.chunk_buffer.resize(state.chunk_size, 0);
+            state
+                .stream
+                .reregister(&poll, state.token, Interest::READABLE)?;
+            return Ok(n);
+        }
+    }
+}
+
+pub fn handle_get_time_receive_chunk(
+    poll: &Poll,
+    state: &mut MeasurementState,
+) -> Result<usize, std::io::Error> {
+    loop {
+        debug!("GetTimeReceiveChunk token {:?} started loop read_pos: {}", state.token, state.read_pos);
+        let n = state
+            .stream
+            .read(&mut state.chunk_buffer[state.read_pos..])?;
+            debug
+        if n == 0 {
+            debug!("GetTimeReceiveChunk token {:?} would block", state.token);
+            return Ok(0);
+        }
+        state.read_pos += n;
+        state.bytes_received += n as u64;
+        if state.read_pos == state.chunk_size {
+            if state.chunk_buffer[state.read_pos - 1] == 0x00 {
+                state.measurements.push_back((
+                    state.phase_start_time.unwrap().elapsed().as_nanos() as u64,
+                    state.bytes_received,
+                ));
+
+                state.read_pos = 0;
+                
+                return Ok(n);
+            } else if state.chunk_buffer[state.read_pos - 1] == 0xFF {
+                state.phase = TestPhase::GetTimeSendOk;
+                state
+                    .stream
+                    .reregister(&poll, state.token, Interest::WRITABLE)?;
+                return Ok(n);
+            }
+        }
+    }
+}
+
+pub fn handle_get_time_receive_time(
+    poll: &Poll,
+    state: &mut MeasurementState,
+) -> Result<usize, std::io::Error> {
+    debug!("GetTimeReceiveTime token {:?}", state.token);
+    loop {
+        let n = state
+            .stream
+            .read(&mut state.read_buffer[state.read_pos..])?;
+        state.read_pos += n;
+        let buffer_str = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
+
+        debug!("Received time response: {}", buffer_str);
+
+        if buffer_str.contains(ACCEPT_GETCHUNKS_STRING) {
+            if let Some(time_ns) = buffer_str
+                .split_whitespace()
+                .nth(1)
+                .and_then(|s| s.parse::<u64>().ok())
+            {
+                info!("Time: {} ns", String::from_utf8_lossy(&state.read_buffer));
+                let speed = state.bytes_received as f64 / time_ns as f64;
+                state.download_speed = Some(speed);
+                state.download_time = Some(time_ns);
+                state.download_bytes = Some(state.bytes_received);
+
+                debug!("Speed: {}", speed);
+                state.phase = TestPhase::GetTimeCompleted;
+                state.phase_start_time = None;
+                state
+                    .stream
+                    .reregister(&poll, state.token, Interest::WRITABLE)?;
+                return Ok(n);
+            }
+        }
     }
 }

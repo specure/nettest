@@ -1,9 +1,8 @@
-use std::io::{self, Write};
+use std::io::{self};
 use bytes::{Buf, BytesMut};
-use mio::net::TcpStream;
 use log::debug;
 
-use crate::client::Stream;
+use crate::stream::stream::Stream;
 
 
 
@@ -42,45 +41,6 @@ pub fn read_until(stream: &mut Stream, buffer: &mut BytesMut, until: &str) -> io
         Err(e) => Err(e),
     }
 }
-
-/// Writes data from the buffer to the stream until the buffer is empty
-/// 
-/// # Arguments
-/// 
-/// * `stream` - The TCP stream to write to
-/// * `buffer` - The buffer containing data to write
-/// 
-/// # Returns
-/// 
-/// * `Ok(true)` if all data was written
-/// * `Ok(false)` if more data needs to be written (WouldBlock)
-/// * `Err` if an error occurred during writing
-pub fn write_all(stream: &mut TcpStream, buffer: &mut BytesMut) -> io::Result<bool> {
-    if buffer.is_empty() {
-        return Ok(true);
-    }
-
-    match stream.write(buffer) {
-        Ok(0) => {
-            if stream.peer_addr().is_err() {
-                return Err(io::Error::new(
-                    io::ErrorKind::ConnectionAborted,
-                    "Connection closed",
-                ));
-            }
-            Ok(false)
-        }
-        Ok(n) => {
-            *buffer = BytesMut::from(&buffer[n..]);
-            Ok(buffer.is_empty())
-        }
-        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-            Ok(false)
-        }
-        Err(e) => Err(e),
-    }
-}
-
 
 
 pub fn write_all_nb(buf: &mut BytesMut, stream: &mut Stream) -> io::Result<bool> {

@@ -1,92 +1,50 @@
 use crate::client::{
-    handlers::BasicHandler, read_until, state::TestPhase, utils::ACCEPT_GETCHUNKS_STRING,
-    write_all_nb, MeasurementState, Stream, DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE,
+    handlers::BasicHandler, state::TestPhase, MeasurementState,
 };
+use crate::stream::stream::Stream;
 use anyhow::Result;
-use bytes::BytesMut;
 use log::{debug, trace};
 use mio::{Interest, Poll, Token};
 use std::io;
 
 pub struct GreetingHandler {
-    token: Token,
-    read_buffer: BytesMut,  // Buffer for reading responses
-    write_buffer: BytesMut, // Buffer for writing requests
 }
 
 impl GreetingHandler {
     pub fn new(token: Token) -> Result<Self> {
         Ok(Self {
-            token,
-            read_buffer: BytesMut::with_capacity(DEFAULT_READ_BUFFER_SIZE),
-            write_buffer: BytesMut::with_capacity(DEFAULT_WRITE_BUFFER_SIZE),
         })
     }
 }
 
 impl BasicHandler for GreetingHandler {
-    fn on_read(
-        &mut self,
-        stream: &mut Stream,
-        poll: &Poll,
-        measurement_state: &mut MeasurementState,
-    ) -> Result<()> {
+    fn on_read(&mut self, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
         match measurement_state.phase {
             TestPhase::GreetingReceiveGreeting => {
-                trace!(
-                    "[on_read] Receiving greeting {}",
-                    String::from_utf8_lossy(&self.read_buffer)
-                );
-                let mut a = read_until(stream, &mut self.read_buffer, "ACCEPT TOKEN QUIT\n")?;
-                while !a {
-                    a = read_until(stream, &mut self.read_buffer, "ACCEPT TOKEN QUIT\n")?;
-                    if a {
-                        break;
+                debug!("[on_read] GreetingReceiveGreeting");
+                match handle_greeting_receive_greeting(poll, measurement_state) {
+                    Ok(n) => {
+                        return Ok(());
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        return Err(anyhow::anyhow!("Error reading greeting: {}", e));
                     }
                 }
-                measurement_state.phase = TestPhase::GreetingSendToken;
-                stream.reregister(&poll, self.token, Interest::WRITABLE)?;
-                trace!("Greeting received 1111: {}", String::from_utf8_lossy(&self.read_buffer));
-                self.read_buffer.clear();
-                return Ok(());
             }
             TestPhase::GreetingReceiveResponse => {
-                trace!(
-                    "[on_read] Receiving response {}",
-                    String::from_utf8_lossy(&self.read_buffer)
-                );
-                let mut temp = vec![0; 1024 * 1024]; //TODO understand why 1024 is not enough
-
-                loop {
-                    match stream.read(&mut temp) {
-                        Ok(n) => {
-                            if n == 0 {
-                                return Err(anyhow::anyhow!("Error reading greeting: EOF"));
-                            }
-                            self.read_buffer.extend_from_slice(&temp[0..n]);
-                            if String::from_utf8_lossy(&self.read_buffer).contains(ACCEPT_GETCHUNKS_STRING) {
-                                measurement_state.phase = TestPhase::GreetingCompleted;
-                                stream.reregister(&poll, self.token, Interest::READABLE)?;
-                                //remove ok\n from buffer
-                                self.read_buffer.clear();
-                                return Ok(());
-                            }
-
-                            trace!(
-                                "Greeting received: {}",
-                                String::from_utf8_lossy(&self.read_buffer)
-                            );
-                        }
-                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                            trace!("Greeting received would block");
-                            stream.reregister(&poll, self.token, Interest::READABLE)?;
-
-                            return Ok(());
-                        }
-
-                        Err(e) => {
-                            return Err(anyhow::anyhow!("Error reading greeting: {}", e));
-                        }
+                debug!("[on_read] GreetingReceiveResponse");
+                match handle_greeting_receive_response(poll, measurement_state) {
+                    Ok(n) => {
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        return Err(anyhow::anyhow!("Error reading greeting: {}", e));
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        return Ok(());
                     }
                 }
             }
@@ -97,60 +55,175 @@ impl BasicHandler for GreetingHandler {
         }
     }
 
-    fn on_write(
-        &mut self,
-        stream: &mut Stream,
-        poll: &Poll,
-        measurement_state: &mut MeasurementState,
-    ) -> Result<()> {
+    fn on_write(&mut self, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
         match measurement_state.phase {
             TestPhase::GreetingSendConnectionType => {
                 debug!("[on_write] Sending connection type command");
-                if self.write_buffer.is_empty() {
-                    debug!("[on_write] Writing connection 1 type command");
-                    self.write_buffer.extend_from_slice(&stream.get_greeting());
-                }
-
-                match stream {
-                    Stream::WebSocketTls(stream) => {
-                        debug!("[on_write] WebSocketTls greeting sent",);
-
-                        measurement_state.phase = TestPhase::GreetingSendToken;
-                        stream.reregister(&poll, self.token, Interest::WRITABLE)?;
-                        self.read_buffer.clear();
+                match handle_greeting_send_connection_type(poll, measurement_state) {
+                    Ok(n) => {
+                        return Ok(());
                     }
-                    Stream::WebSocket(stream) => {
-                        debug!("[on_write] WebSocket greeting sent",);
-
-                        measurement_state.phase = TestPhase::GreetingSendToken;
-                        stream.reregister(&poll, self.token, Interest::WRITABLE)?;
-                        self.read_buffer.clear();
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        return Ok(());
                     }
-                    _ => {
-                        if write_all_nb(&mut self.write_buffer, stream)? {
-                            debug!("[on_write] Writing connection 2 type command");
-                            stream.reregister(&poll, self.token, Interest::READABLE)?;
-                            measurement_state.phase = TestPhase::GreetingReceiveGreeting;
-                        }
+                    Err(e) => {
+                        return Err(anyhow::anyhow!("Error sending connection type: {}", e));
                     }
                 }
             }
             TestPhase::GreetingSendToken => {
-                if self.write_buffer.is_empty() {
-                    debug!("[on_write] Sending token command");
-                    self.write_buffer
-                        .extend_from_slice(format!("TOKEN {}\n", self.token.0).as_bytes());
+                debug!("[on_write] GreetingSendToken");
+                match handle_greeting_send_token(poll, measurement_state) {
+                    Ok(n) => {
+                        return Ok(());
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        return Err(anyhow::anyhow!("Error sending token: {}", e));
+                    }
                 }
-                if write_all_nb(&mut self.write_buffer, stream)? {
-                    debug!("[on_write] Writing token command");
-                    stream.reregister(&poll, self.token, Interest::READABLE)?;
-                    measurement_state.phase = TestPhase::GreetingReceiveResponse;
-                    return Ok(());
-                }
-                stream.reregister(&poll, self.token, Interest::WRITABLE)?;
             }
             _ => {}
         }
         Ok(())
+    }
+}
+
+fn handle_greeting_send_connection_type(
+    poll: &Poll,
+    state: &mut MeasurementState,
+) -> Result<usize, std::io::Error> {
+    debug!("[handle_greeting_send_connection_type] Sending connection type command");
+    let greeting = state.stream.get_greeting();
+
+    if state.write_pos == 0 {
+        debug!("[on_write] Writing connection 1 type command");
+        state.write_buffer[0..greeting.len()].copy_from_slice(&greeting);
+    }
+
+    match &mut state.stream {
+        Stream::WebSocketTls(stream) => {
+            debug!("[on_write] WebSocketTls greeting sent",);
+            state.phase = TestPhase::GreetingSendToken;
+            stream
+                .reregister(&poll, state.token, Interest::WRITABLE)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            state.read_pos = 0;
+            return Ok(1);
+        }
+        Stream::WebSocket(stream) => {
+            debug!("[on_write] WebSocket greeting sent",);
+
+            state.phase = TestPhase::GreetingSendToken;
+            stream
+                .reregister(&poll, state.token, Interest::WRITABLE)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            state.read_pos = 0;
+            return Ok(1);
+        }
+        _ => loop {
+            let n = state
+                .stream
+                .write(&state.write_buffer[state.write_pos..state.write_pos + greeting.len()])?;
+            state.write_pos += n;
+            if state.write_pos == state.stream.get_greeting().len() {
+                state
+                    .stream
+                    .reregister(&poll, state.token, Interest::READABLE)?;
+                state.phase = TestPhase::GreetingReceiveGreeting;
+                state.write_pos = 0;
+                state.read_pos = 0;
+                return Ok(1);
+            }
+        },
+    }
+}
+
+fn handle_greeting_send_token(
+    poll: &Poll,
+    state: &mut MeasurementState,
+) -> Result<usize, std::io::Error> {
+    debug!("[handle_greeting_send_token] Sending token command");
+    let s = format!("TOKEN {}\n", state.token.0);
+
+    if state.write_pos == 0 {
+        debug!("[handle_greeting_send_token] Writing token command");
+        //TODO send uuid
+        state.write_buffer[state.write_pos..state.write_pos + s.len()]
+            .copy_from_slice(s.as_bytes());
+    }
+    loop {
+        let n = state
+            .stream
+            .write(&state.write_buffer[state.write_pos..state.write_pos + s.len()])?;
+        state.write_pos += n;
+        if state.write_pos == s.len() {
+            state.write_pos = 0;
+            state.read_pos = 0;
+            state
+                .stream
+                .reregister(&poll, state.token, Interest::READABLE)?;
+            state.phase = TestPhase::GreetingReceiveResponse;
+            return Ok(n);
+        }
+        state
+            .stream
+            .reregister(&poll, state.token, Interest::WRITABLE)?;
+        // return Ok(n);
+    }
+}
+
+pub fn handle_greeting_receive_greeting(
+    poll: &Poll,
+    state: &mut MeasurementState,
+) -> Result<usize, std::io::Error> {
+    trace!("handle_greeting_receive_greeting");
+    loop {
+        let n = state
+            .stream
+            .read(&mut state.read_buffer[state.read_pos..])?;
+        debug!("[handle_greeting_receive_greeting] read {} bytes", n);
+        state.read_pos += n;
+        let end = b"ACCEPT TOKEN QUIT\n";
+        let s =
+            String::from_utf8_lossy(&state.read_buffer[state.read_pos - end.len()..state.read_pos]);
+        debug!("[handle_greeting_receive_greeting] read {}", s);
+        if n > 0 && state.read_buffer[state.read_pos - end.len()..state.read_pos] == *end {
+            state.phase = TestPhase::GreetingSendToken;
+            debug!(
+                "Greeting received token: {}",
+                String::from_utf8_lossy(&state.read_buffer)
+            );
+            state.read_pos = 0;
+            state
+                .stream
+                .reregister(poll, state.token, Interest::WRITABLE)?;
+            return Ok(n);
+        }
+    }
+}
+
+pub fn handle_greeting_receive_response(
+    poll: &Poll,
+    state: &mut MeasurementState,
+) -> Result<usize, std::io::Error> {
+    trace!("handle_greeting_receive_response");
+    loop {
+        let n = state
+            .stream
+            .read(&mut state.read_buffer[state.read_pos..])?;
+        state.read_pos += n;
+        let end = b"ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n";
+        debug!("[handle_greeting_receive_response] read {}", String::from_utf8_lossy(&state.read_buffer));
+        if n > 0 && state.read_pos >= end.len() && state.read_buffer[state.read_pos - end.len()..state.read_pos] == *end {
+            state.phase = TestPhase::GreetingCompleted;
+            state
+                .stream
+                .reregister(poll, state.token, Interest::WRITABLE)?;
+            state.read_pos = 0;
+            return Ok(n);
+        }
     }
 }

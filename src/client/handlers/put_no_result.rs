@@ -9,7 +9,8 @@ use crate::client::globals::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE};
 use crate::client::handlers::BasicHandler;
 use crate::client::state::TestPhase;
 use crate::client::utils::{ACCEPT_GETCHUNKS_STRING, MAX_CHUNKS_BEFORE_SIZE_INCREASE};
-use crate::client::{MeasurementState, Stream};
+use crate::client::{MeasurementState};
+use crate::stream::stream::Stream;
 
 const TEST_DURATION_NS: u64 = 2_000_000_000; // 2 seconds
 const MIN_CHUNK_SIZE: u64 = 4096; // 4KB

@@ -51,6 +51,7 @@ pub fn handle_get_time_send_chunk(poll: &Poll, state: &mut TestState) -> io::Res
                 state.stream.reregister(poll, state.token, Interest::READABLE)?;
                 return Ok(n);
             }
+            return Ok(n);
         }
     }
 }

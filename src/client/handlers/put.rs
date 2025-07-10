@@ -9,7 +9,8 @@ use std::time::{Instant};
 use crate::client::handlers::BasicHandler;
 use crate::client::state::TestPhase;
 use crate::client::utils::ACCEPT_GETCHUNKS_STRING;
-use crate::client::{read_until, write_all_nb, MeasurementState, Stream};
+use crate::client::{read_until, write_all_nb, MeasurementState};
+use crate::stream::stream::Stream;
 
 const TEST_DURATION_NS: u64 = 7_000_000_000; // 7 seconds
 const MAX_CHUNK_SIZE: u64 = 4194304; // 4MB
@@ -166,7 +167,7 @@ impl BasicHandler for PutHandler {
                                         [self.read_buffer_temp.len() - accept_string_bytes.len()..];
                                     if last_bytes == accept_string_bytes {
                                         self.calculate_upload_speed();
-                                        measurement_state.read_buffer_temp =
+                                        measurement_state.read_buffer =
                                             self.read_buffer_temp.clone();
                                         self.read_buffer_temp.clear();
                                         measurement_state.phase = TestPhase::PutCompleted;

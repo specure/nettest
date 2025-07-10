@@ -9,10 +9,10 @@ use std::thread;
 use std::time::{Instant, Duration};
 use log::{debug, info, trace};
 
-use crate::client::Stream;
 use crate::config::constants::MIN_CHUNK_SIZE;
 use crate::mioserver::handlers::basic_handler::{handle_client_readable_data, handle_client_writable_data};
 use crate::mioserver::ServerTestPhase;
+use crate::stream::stream::Stream;
 
 pub struct WorkerThread {
     _thread: thread::JoinHandle<()>,

@@ -1,7 +1,8 @@
 use crate::client::handlers::BasicHandler;
 use crate::client::state::TestPhase;
 use crate::client::utils::ACCEPT_GETCHUNKS_STRING;
-use crate::client::{read_until, write_all_nb, MeasurementState, Stream};
+use crate::client::{write_all_nb, MeasurementState};
+use crate::stream::stream::Stream;
 use anyhow::Result;
 use bytes::BytesMut;
 use log::debug;
@@ -14,197 +15,214 @@ const PING_DURATION_NS: u64 = 1_000_000_000; // 1 second
 const PONG_RESPONSE: &[u8] = b"PONG\n";
 
 pub struct PingHandler {
-    token: Token,
-    test_start_time: Option<Instant>,
-    write_buffer: BytesMut,
-    time_result: Option<u64>,
-    ping_times: Vec<u64>,  // Store all ping times for median calculation
-    read_buffer: BytesMut, // Buffer for TIME response
 }
 
 impl PingHandler {
     pub fn new(token: Token) -> Result<Self> {
         Ok(Self {
-            token,
-            test_start_time: None,
-            write_buffer: BytesMut::with_capacity(1024),
-            time_result: None,
-            ping_times: Vec::with_capacity(MAX_PINGS as usize),
-            read_buffer: BytesMut::with_capacity(1024),
         })
     }
+    
+}
 
-    pub fn get_ping_command(&self) -> String {
-        "PING\n".to_string()
+impl BasicHandler for PingHandler {
+    fn on_read(&mut self, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+        match measurement_state.phase {
+            TestPhase::PingReceivePong => match handle_receive_pong(poll, measurement_state) {
+                Ok(n) => {
+                    return Ok(());
+                }
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    return Ok(());
+                }
+                Err(e) => {
+                    return Err(e.into());
+                }
+            },
+            TestPhase::PingReceiveTime => {
+                debug!("PingReceiveTime");
+                match handle_receive_time(poll, measurement_state) {
+                    Ok(n) => {
+                        return Ok(());
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        return Err(e.into());
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
-    pub fn get_ok_command(&self) -> String {
-        "OK\n".to_string()
+    fn on_write(&mut self, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
+        match measurement_state.phase {
+            TestPhase::PingSendPing => {
+                debug!("PingSendPing");
+                match handle_send_ping(poll, measurement_state) {
+                    Ok(n) => {
+                        return Ok(());
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        return Err(e.into());
+                    }
+                }
+            }
+            TestPhase::PingSendOk => match handle_send_ok(poll, measurement_state) {
+                Ok(n) => {
+                    return Ok(());
+                }
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    return Ok(());
+                }
+                Err(e) => {
+                    return Err(e.into());
+                }
+            },
+            _ => {}
+        }
+        Ok(())
     }
+}
 
-    pub fn get_median_latency(&self) -> Option<u64> {
-        let mut sorted_times = self.ping_times.clone();
-        sorted_times.sort_unstable();
-
-        let mid = sorted_times.len() / 2;
-        if sorted_times.len() % 2 == 0 {
-            Some((sorted_times[mid - 1] + sorted_times[mid]) / 2)
-        } else {
-            Some(sorted_times[mid])
+pub fn handle_send_ok(poll: &Poll, state: &mut MeasurementState) -> Result<usize, std::io::Error> {
+    debug!("PingSendOk");
+    if state.write_pos == 0 {
+        state.write_buffer[0..b"OK\n".len()].copy_from_slice(b"OK\n");
+    }
+    loop {
+        let n = state.stream.write(&state.write_buffer[state.write_pos..b"OK\n".len()])?;
+        state.write_pos += n;
+        if state.write_pos == b"OK\n".len() {
+            state.write_pos = 0;
+            state.read_pos = 0;
+            state.phase = TestPhase::PingReceiveTime;
+            state
+                .stream
+                .reregister(&poll, state.token, Interest::READABLE)?;
+            return Ok(n);
         }
     }
 }
 
-impl BasicHandler for PingHandler {
-    fn on_read(
-        &mut self,
-        stream: &mut Stream,
-        poll: &Poll,
-        measurement_state: &mut MeasurementState,
-    ) -> Result<()> {
-        match measurement_state.phase {
-            TestPhase::PingReceivePong => {
-                debug!("PingReceivePong");
-                let mut buf1 = vec![0u8; PONG_RESPONSE.len()];
-                match stream.read(&mut buf1) {
-                    Ok(n) if n > 0 => {
-                        measurement_state.phase = TestPhase::PingSendOk;
-                        stream.reregister(&poll, self.token, Interest::WRITABLE)?;
-                    }
-                    Ok(0) => {
-                        debug!("Connection closed by peer");
-                        return Err(io::Error::new(
-                            io::ErrorKind::ConnectionAborted,
-                            "Connection closed",
-                        )
-                        .into());
-                    }
-                    Ok(_) => {
-                        debug!("Read 0 bytes");
-                    }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        debug!("WouldBlock PingReceivePong");
-                        return Ok(());
-                    }
-                    Err(e) => return Err(e.into()),
-                }
-            }
-            TestPhase::PingReceiveTime => {
-                debug!("PingReceiveTime");
-                loop {
-                    let mut buffer = vec![0u8; 1024];
-                    match stream.read(&mut buffer) {
-                        Ok(n) if n > 0 => {
-                            //допииши в конец буфера
-                            self.read_buffer.extend_from_slice(
-                                &buffer[..n],
-                            );
-                            debug!(
-                                "PingReceiveTime: read_buffer: {}",
-                                String::from_utf8_lossy(&self.read_buffer)
-                            );
-                            let read_buffer_str = String::from_utf8_lossy(&self.read_buffer);
-                            if read_buffer_str
-                                .contains(ACCEPT_GETCHUNKS_STRING)
-                            {
-                                let elapsed = self.test_start_time.unwrap().elapsed();
-                                let buffer_str = String::from_utf8_lossy(&self.read_buffer);
-                                if let Some(time_start) = buffer_str.find("TIME ") {
-                                    if let Some(time_end) = buffer_str[time_start..].find('\n') {
-                                        let time_str =
-                                            &buffer_str[time_start + 5..time_start + time_end];
-
-                                        if let Ok(time_ns) = time_str.parse::<u64>() {
-                                            self.ping_times.push(time_ns);
-                                            let pings_sent = self.ping_times.len();
-
-                                            if elapsed.as_nanos() < PING_DURATION_NS as u128
-                                                && pings_sent < MAX_PINGS as usize
-                                            {
-                                                measurement_state.phase = TestPhase::PingSendPing;
-                                                stream.reregister(
-                                                    &poll,
-                                                    self.token,
-                                                    Interest::WRITABLE,
-                                                )?;
-                                                self.read_buffer.clear();
-                                            } else {
-                                                // Calculate final median latency
-                                                if let Some(median) = self.get_median_latency() {
-                                                    debug!("Final median latency: {} ns", median);
-                                                    self.time_result = Some(median);
-                                                    measurement_state.ping_median = Some(median);
-                                                }
-                                                measurement_state.phase = TestPhase::PingCompleted;
-                                                stream.reregister(
-                                                    &poll,
-                                                    self.token,
-                                                    Interest::WRITABLE,
-                                                )?;
-                                                self.read_buffer.clear();
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                          
-                        }
-                        Ok(_) => {
-                            return Ok(());
-                        }
-                        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                            debug!("PingReceiveTime: WouldBlock");
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            debug!("PingReceiveTime: Error: {}", e);
-                            return Err(e.into());
-                        }
-                    }
-                    
-                }
-            }
-            _ => {}
-        }
-        Ok(())
+pub fn handle_send_ping(
+    poll: &Poll,
+    state: &mut MeasurementState,
+) -> Result<usize, std::io::Error> {
+    debug!("PingSendPing");
+    if state.write_pos == 0 {
+        state.write_buffer[0..b"PING\n".len()].copy_from_slice(b"PING\n");
     }
-
-    fn on_write(
-        &mut self,
-        stream: &mut Stream,
-        poll: &Poll,
-        measurement_state: &mut MeasurementState,
-    ) -> Result<()> {
-        match measurement_state.phase {
-            TestPhase::PingSendPing => {
-                debug!("PingSendPing");
-                if self.write_buffer.is_empty() {
-                    self.write_buffer
-                        .extend_from_slice(self.get_ping_command().as_bytes());
-                }
-                if write_all_nb(&mut self.write_buffer, stream)? {
-                    if self.test_start_time.is_none() {
-                        self.test_start_time = Some(Instant::now());
-                    }
-                    measurement_state.phase = TestPhase::PingReceivePong;
-                    stream.reregister(&poll, self.token, Interest::READABLE)?;
-                    self.write_buffer.clear();
-                }
+    loop {
+        let n = state.stream.write(
+            &state.write_buffer[state.write_pos..b"PING\n".len()],
+        )?;
+        state.write_pos += n;
+        if state.write_pos == b"PING\n".len() {
+            if state.phase_start_time.is_none() {
+                state.phase_start_time = Some(Instant::now());
             }
-            TestPhase::PingSendOk => {
-                debug!("PingSendOk");
-                if self.write_buffer.is_empty() {
-                    self.write_buffer
-                        .extend_from_slice(self.get_ok_command().as_bytes());
-                }
-                if write_all_nb(&mut self.write_buffer, stream)? {
-                    measurement_state.phase = TestPhase::PingReceiveTime;
-                    stream.reregister(&poll, self.token, Interest::READABLE)?;
-                    self.write_buffer.clear();
-                }
-            }
-            _ => {}
+            state.phase = TestPhase::PingReceivePong;
+            state
+                .stream
+                .reregister(&poll, state.token, Interest::READABLE)?;
+            state.write_pos = 0;
+            state.read_pos = 0;
+            return Ok(n);
         }
-        Ok(())
+    }
+}
+
+pub fn handle_receive_pong(
+    poll: &Poll,
+    state: &mut MeasurementState,
+) -> Result<usize, std::io::Error> {
+    debug!("PingReceivePong");
+    loop {
+        let n = state
+            .stream
+            .read(&mut state.read_buffer[state.read_pos..PONG_RESPONSE.len()])?;
+        state.read_pos += n;
+        if state.read_pos == PONG_RESPONSE.len() {
+            state.read_pos = 0;
+            state.phase = TestPhase::PingSendOk;
+            state
+                .stream
+                .reregister(&poll, state.token, Interest::WRITABLE)?;
+            return Ok(n);
+        }
+    }
+}
+
+pub fn handle_receive_time(
+    poll: &Poll,
+    state: &mut MeasurementState,
+) -> Result<usize, std::io::Error> {
+    debug!("PingReceiveTime");
+    loop {
+        debug!("PingReceiveTime: {}", String::from_utf8_lossy(&state.read_buffer));
+        let n = state
+            .stream
+            .read(&mut state.read_buffer[state.read_pos..])?;
+        state.read_pos += n;
+        if state.read_pos >= ACCEPT_GETCHUNKS_STRING.len()
+            && state.read_buffer[state.read_pos - ACCEPT_GETCHUNKS_STRING.len()..state.read_pos]
+                == *ACCEPT_GETCHUNKS_STRING.as_bytes()
+        {
+            debug!("PingReceiveTime: {}", String::from_utf8_lossy(&state.read_buffer));
+            let elapsed = state.phase_start_time.unwrap().elapsed();
+            let buffer_str = String::from_utf8_lossy(&state.read_buffer);
+            if let Some(time_start) = buffer_str.find("TIME ") {
+                if let Some(time_end) = buffer_str[time_start..].find('\n') {
+                    let time_str = &buffer_str[time_start + 5..time_start + time_end];
+
+                    if let Ok(time_ns) = time_str.parse::<u64>() {
+                        state.ping_times.push(time_ns);
+                        let pings_sent = state.ping_times.len();
+
+                        if elapsed.as_nanos() < PING_DURATION_NS as u128
+                            && pings_sent < MAX_PINGS as usize
+                        {
+                            state.phase = TestPhase::PingSendPing;
+                            state
+                                .stream
+                                .reregister(&poll, state.token, Interest::WRITABLE)?;
+                            state.read_pos = 0;
+                            return Ok(n);
+                        } else {
+                            // Calculate final median latency
+                            if let Some(median) = get_median_latency(state) {
+                                state.time_result = Some(median);
+                                state.ping_median = Some(median);
+                            }
+                            state.phase = TestPhase::PingCompleted;
+                            state
+                                .stream
+                                .reregister(&poll, state.token, Interest::WRITABLE)?;
+                            state.read_pos = 0;
+                            return Ok(n);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub fn get_median_latency(state: &mut MeasurementState) -> Option<u64> {
+    let mut sorted_times = state.ping_times.clone();
+    sorted_times.sort_unstable();
+
+    let mid = sorted_times.len() / 2;
+    if sorted_times.len() % 2 == 0 {
+        Some((sorted_times[mid - 1] + sorted_times[mid]) / 2)
+    } else {
+        Some(sorted_times[mid])
     }
 }

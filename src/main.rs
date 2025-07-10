@@ -1,19 +1,16 @@
-use crate::server::server::Server;
-use crate::server::server_config::{parse_listen_address, RmbtServerConfig};
+use crate::tokio_server::server::Server;
+use crate::tokio_server::server_config::{parse_listen_address, RmbtServerConfig};
 use crate::mioserver::MioServer;
 use log::{debug, info};
 use std::error::Error as StdError;
 use std::net::SocketAddr;
 
 pub mod config;
-pub mod handlers;
 pub mod logger;
 pub mod mioserver;
-pub mod server;
+pub mod tokio_server;
 pub mod stream;
-pub mod utils;
-
-use crate::utils::random_buffer;
+use crate::tokio_server::utils::random_buffer;
 
 pub mod client;
 
@@ -62,8 +59,8 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
 
 
 
-        // env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("trace"))
-        //     .init();
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
+            .init();
 
         // let mut tls = false;
         // if args[2] == "-tls" {

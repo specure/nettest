@@ -7,8 +7,9 @@ use std::time::Instant;
 use std::{net::SocketAddr, path::Path, time::Duration};
 
 use crate::client::handlers::handler_factory::HandlerFactory;
-use crate::client::stream::Stream;
 use crate::client::utils::DEFAULT_READ_BUFFER_SIZE;
+use crate::config::constants::MIN_CHUNK_SIZE;
+use crate::stream::stream::Stream;
 
 const ONE_SECOND_NS: u128 = 1_000_000_000;
 
@@ -38,11 +39,11 @@ pub enum TestPhase {
     GetTimeReceiveTime,
     GetTimeCompleted,
 
-    PutNoResultSendCommand,
-    PutNoResultReceiveOk,
-    PutNoResultSendChunks,
-    PutNoResultReceiveTime,
-    PutNoResultCompleted,
+    // PutNoResultSendCommand,
+    // PutNoResultReceiveOk,
+    // PutNoResultSendChunks,
+    // PutNoResultReceiveTime,
+    // PutNoResultCompleted,
 
     PerfNoResultSendCommand,
     PerfNoResultReceiveOk,
@@ -52,25 +53,24 @@ pub enum TestPhase {
     PerfNoResultReceiveTime,
     PerfNoResultCompleted,
 
-    PutSendCommand,
-    PutReceiveOk,
-    PutSendChunks,
-    PutReceiveBytesTime,
-    PutReceiveTime,
-    PutQuit,
-    PutCompleted,
+//     PutSendCommand,
+//     PutReceiveOk,
+//     PutSendChunks,
+//     PutReceiveBytesTime,
+//     PutReceiveTime,
+//     PutQuit,
+//     PutCompleted,
 }
 
 pub struct TestState {
-    stream: Stream,
     poll: Poll,
     events: Events,
-    token: Token,
     measurement_state: MeasurementState,
     handler_factory: HandlerFactory,
 }
 
 pub struct MeasurementState {
+    pub token: Token,
     pub phase: TestPhase,
     pub buffer: BytesMut,
     pub upload_results_for_graph: Vec<(u64, u64)>,
@@ -83,10 +83,21 @@ pub struct MeasurementState {
     pub chunk_size: usize,
     pub ping_median: Option<u64>,
     pub phase_start_time: Option<Instant>,
-    pub read_buffer_temp: Vec<u8>,
+    pub read_buffer: [u8; 1024 * 8],
+    pub write_buffer: [u8; 1024 * 8],
+    pub read_pos: usize,
+    pub write_pos: usize,
     pub measurements: VecDeque<(u64, u64)>, // Хранит (t_k^(j), b_k^(j)) для каждого чанка\
     pub upload_measurements: VecDeque<(u64, u64)>, // Хранит (t_k^(j), b_k^(j)) для каждого чанка\
     pub failed: bool,
+    pub stream: Stream,
+    pub total_chunks: u32,
+    pub chunk_buffer: Vec<u8>,
+    pub cursor: usize,
+    pub ping_times: Vec<u64>,  // Store all ping times for median calculation
+    pub time_result: Option<u64>,
+    pub bytes_received: u64,
+    pub bytes_sent: u64,
 }
 
 impl TestState {
@@ -128,31 +139,42 @@ impl TestState {
             download_time: None,
             download_bytes: None,
             download_speed: None,
-            chunk_size: 0,
+            chunk_size: MIN_CHUNK_SIZE as usize,
             ping_median: None,
-            read_buffer_temp: vec![0u8; 1024 * 1024 * 10],
+            read_buffer: [0u8; 1024 * 8],
             measurements: VecDeque::new(),
             upload_measurements: VecDeque::new(),
             phase_start_time: None,
             failed: false,
+            token,
+            write_buffer: [0u8; 1024 * 8],
+            read_pos: 0,
+            write_pos: 0,
+            stream,
+            total_chunks: 1,
+            chunk_buffer: Vec::with_capacity(MIN_CHUNK_SIZE as usize),
+            cursor: 0,
+            ping_times: Vec::new(),
+            time_result: None,
+            bytes_received: 0,
+            bytes_sent: 0,
+
         };
 
         let handler_factory: HandlerFactory = HandlerFactory::new(token)?;
 
         Ok(Self {
-            stream,
             poll,
             events,
-            token,
             measurement_state,
             handler_factory,
         })
     }
 
     pub fn process_greeting(&mut self) -> Result<&mut TestState> {
-        self.stream.reregister(
+        self.measurement_state.stream.reregister(
             &mut self.poll,
-            self.token,
+            self.measurement_state.token,
             Interest::WRITABLE | Interest::READABLE,
         )?;
 
@@ -164,26 +186,26 @@ impl TestState {
         Ok(self)
     }
 
-    pub fn run_put_no_result(&mut self) -> Result<()> {
-        self.measurement_state.phase = TestPhase::PutNoResultSendCommand;
-        self.stream
-            .reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
-        self.process_phase(TestPhase::PutNoResultCompleted, ONE_SECOND_NS * 8)?;
-        Ok(())
-    }
+    // pub fn run_put_no_result(&mut self) -> Result<()> {
+    //     self.measurement_state.phase = TestPhase::PutNoResultSendCommand;
+    //     self.measurement_state.stream
+    //         .reregister(&mut self.poll, self.measurement_state.token, Interest::WRITABLE)?;
+    //     self.process_phase(TestPhase::PutNoResultCompleted, ONE_SECOND_NS * 8)?;
+    //     Ok(())
+    // }
 
     pub fn run_perf_test(&mut self) -> Result<()> {
         self.measurement_state.phase = TestPhase::PerfNoResultSendCommand;
-        self.stream
-            .reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
+        self.measurement_state.stream
+            .reregister(&mut self.poll, self.measurement_state.token, Interest::WRITABLE)?;
         self.process_phase(TestPhase::PerfNoResultCompleted, ONE_SECOND_NS * 12)?;
         Ok(())
     }
 
     pub fn run_ping(&mut self) -> Result<()> {
         self.measurement_state.phase = TestPhase::PingSendPing;
-        self.stream
-            .reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
+        self.measurement_state.stream
+            .reregister(&mut self.poll, self.measurement_state.token, Interest::WRITABLE)?;
         self.process_phase(TestPhase::PingCompleted, ONE_SECOND_NS * 3)?;
         Ok(())
     }
@@ -191,8 +213,8 @@ impl TestState {
     pub fn run_get_chunks(&mut self) -> Result<()> {
         debug!("Run get chunks");
         self.measurement_state.phase = TestPhase::GetChunksSendChunksCommand;
-        self.stream
-            .reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
+        self.measurement_state.stream
+            .reregister(&mut self.poll, self.measurement_state.token, Interest::WRITABLE)?;
         self.process_phase(TestPhase::GetChunksCompleted, ONE_SECOND_NS * 3)?;
         debug!("Run get chunks completed");
         Ok(())
@@ -200,20 +222,20 @@ impl TestState {
 
     pub fn run_get_time(&mut self) -> Result<()> {
         self.measurement_state.phase = TestPhase::GetTimeSendCommand;
-        self.stream
-            .reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
+        self.measurement_state.stream
+            .reregister(&mut self.poll, self.measurement_state.token, Interest::WRITABLE)?;
         self.process_phase(TestPhase::GetTimeCompleted, ONE_SECOND_NS * 12)?;
         Ok(())
     }
 
-    pub fn run_put(&mut self) -> Result<()> {
-        debug!("Run put");
-        self.measurement_state.phase = TestPhase::PutSendCommand;
-        self.stream
-            .reregister(&mut self.poll, self.token, Interest::WRITABLE)?;
-        self.process_phase(TestPhase::PutCompleted, ONE_SECOND_NS * 10)?;
-        Ok(())
-    }
+    // pub fn run_put(&mut self) -> Result<()> {
+    //     debug!("Run put");
+    //     self.measurement_state.phase = TestPhase::PutSendCommand;
+    //     self.measurement_state.stream
+    //         .reregister(&mut self.poll, self.measurement_state.token, Interest::WRITABLE)?;
+    //     self.process_phase(TestPhase::PutCompleted, ONE_SECOND_NS * 10)?;
+    //     Ok(())
+    // }
 
     fn process_phase(
         &mut self,
@@ -232,7 +254,6 @@ impl TestState {
             self.poll
                 .poll(&mut self.events, Some(Duration::from_secs(3)))?;
 
-            trace!("Poll iteration token {:?}", self.token);
 
             if self.events.is_empty() {
                 let time = self
@@ -243,6 +264,7 @@ impl TestState {
                     .as_nanos();
                 let now = Instant::now().elapsed().as_nanos();
                 if now - time > test_duration_ns {
+                    debug!("Test duration exceeded {:?} for token {:?}", self.measurement_state.phase, self.measurement_state.token);
                     self.measurement_state.failed = true;
                     break;
                 }
@@ -252,13 +274,11 @@ impl TestState {
             for event in &self.events {
                 // Handle read events after write to process any responses
                 if event.is_readable() {
-                    trace!("Readable event token {:?}", self.token);
                     if let Some(handler) = self
                         .handler_factory
                         .get_handler(&self.measurement_state.phase)
                     {
                         if let Err(e) = handler.on_read(
-                            &mut self.stream,
                             &self.poll,
                             &mut self.measurement_state,
                         ) {
@@ -272,13 +292,11 @@ impl TestState {
                 }
                 // Handle write events first to ensure data is sent
                 if event.is_writable() {
-                    trace!("Writable event token {:?}", self.token);
                     if let Some(handler) = self
                         .handler_factory
                         .get_handler(&self.measurement_state.phase)
                     {
                         if let Err(e) = handler.on_write(
-                            &mut self.stream,
                             &self.poll,
                             &mut self.measurement_state,
                         ) {

@@ -1,14 +1,14 @@
 use anyhow::Result;
 use mio::Token;
 
-use crate::client::{handlers::{BasicHandler, GetTimeHandler, PerfHandler, PingHandler}, state::TestPhase, GetChunksHandler, GreetingHandler, PutHandler, PutNoResultHandler};
+use crate::client::{handlers::{BasicHandler, GetTimeHandler, PerfHandler, PingHandler}, state::TestPhase, GetChunksHandler, GreetingHandler};
 
 pub struct HandlerFactory {
     greeting_handler: GreetingHandler,
     get_chunks_handler: GetChunksHandler,
     ping_handler: PingHandler,
-    put_no_result_handler: PutNoResultHandler,
-    put_handler: PutHandler,
+    // put_no_result_handler: PutNoResultHandler,
+    // put_handler: PutHandler,
     get_time_handler: GetTimeHandler,
     perf_handler: PerfHandler,
 }
@@ -19,8 +19,8 @@ impl HandlerFactory {
             greeting_handler: GreetingHandler::new(token)?,
             get_chunks_handler: GetChunksHandler::new(token)?,
             ping_handler: PingHandler::new(token)?,
-            put_no_result_handler: PutNoResultHandler::new(token)?,
-            put_handler: PutHandler::new(token)?,
+            // put_no_result_handler: PutNoResultHandler::new(token)?,
+            // put_handler: PutHandler::new(token)?,
             get_time_handler: GetTimeHandler::new(token)?,
             perf_handler: PerfHandler::new(token)?,
         })
@@ -60,19 +60,19 @@ impl HandlerFactory {
             TestPhase::PerfNoResultReceiveTime => Some(&mut self.perf_handler),
             TestPhase::PerfNoResultCompleted => None,
 
-            TestPhase::PutNoResultSendCommand => Some(&mut self.put_no_result_handler),
-            TestPhase::PutNoResultReceiveOk => Some(&mut self.put_no_result_handler),
-            TestPhase::PutNoResultSendChunks => Some(&mut self.put_no_result_handler),
-            TestPhase::PutNoResultReceiveTime => Some(&mut self.put_no_result_handler),
-            TestPhase::PutNoResultCompleted => None,
-            TestPhase::PutSendCommand => Some(&mut self.put_handler),
+            // TestPhase::PutNoResultSendCommand => Some(&mut self.put_no_result_handler),
+            // TestPhase::PutNoResultReceiveOk => Some(&mut self.put_no_result_handler),
+            // TestPhase::PutNoResultSendChunks => Some(&mut self.put_no_result_handler),
+            // TestPhase::PutNoResultReceiveTime => Some(&mut self.put_no_result_handler),
+            // TestPhase::PutNoResultCompleted => None,
+            // TestPhase::PutSendCommand => Some(&mut self.put_handler),
 
-            TestPhase::PutReceiveOk => Some(&mut self.put_handler),
-            TestPhase::PutSendChunks => Some(&mut self.put_handler),
-            TestPhase::PutReceiveTime => Some(&mut self.put_handler),
-            TestPhase::PutReceiveBytesTime => Some(&mut self.put_handler),
-            TestPhase::PutQuit => Some(&mut self.put_handler),
-            TestPhase::PutCompleted => None,
+            // TestPhase::PutReceiveOk => Some(&mut self.put_handler),
+            // TestPhase::PutSendChunks => Some(&mut self.put_handler),
+            // TestPhase::PutReceiveTime => Some(&mut self.put_handler),
+            // TestPhase::PutReceiveBytesTime => Some(&mut self.put_handler),
+            // TestPhase::PutQuit => Some(&mut self.put_handler),
+            // TestPhase::PutCompleted => None,
         }
     }
 }

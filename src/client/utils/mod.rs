@@ -1,6 +1,6 @@
 pub mod constants;
 pub mod utils;
-pub use utils::{read_until, write_all, write_all_nb};
+pub use utils::{read_until, write_all_nb};
 pub use constants::{
     DEFAULT_READ_BUFFER_SIZE,
     DEFAULT_WRITE_BUFFER_SIZE,
