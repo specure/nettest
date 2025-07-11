@@ -5,12 +5,6 @@ pub mod globals;
 pub mod graph;
 
 pub use state::{TestState, MeasurementState};
-pub use handlers::{
-    greeting::GreetingHandler,
-    get_chunks::GetChunksHandler,
-    // put::PutHandler,
-    // put_no_result::PutNoResultHandler,
-};
 pub use utils::{read_until, write_all_nb, DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_BUFFER_SIZE, RMBT_UPGRADE_REQUEST};
 
 
@@ -21,7 +15,6 @@ use prettytable::{ row, Table};
 use std::net::SocketAddr;
 use std::sync::{Arc, Barrier};
 use std::thread;
-use std::time::Duration;
 
 
 const GREEN: &str = "\x1b[32m";
@@ -91,60 +84,6 @@ pub async fn async_main(args: Vec<String>) -> anyhow::Result<()> {
     debug!("Addr : {}", addr);
     debug!("WebSocket mode: {}", use_websocket);
 
-    if perf_test {
-        let mut thread_handles = vec![];
-
-        for i in 0..thread_count {
-            thread_handles.push(thread::spawn(move || {
-                let mut state =
-                    TestState::new(addr, use_tls, use_websocket, i, None, None).unwrap();
-                state.process_greeting().unwrap();
-                state.run_perf_test().unwrap();
-                let speed = state.measurement_state().upload_speed.unwrap() * 8.0
-                    / (1024.0 * 1024.0 * 1024.0);
-                let mbps = state.measurement_state().upload_speed.unwrap() / (1024.0 * 1024.0);
-
-                if thread_count > 1 {
-                    print_test_result(
-                        format!("Performance Test {:?} Thread", i + 1).as_str(),
-                        "Completed (Gbit/s)",
-                        Some((0.0, speed, mbps)),
-                    );
-                }
-                (
-                    speed,
-                    state
-                        .measurement_state()
-                        .upload_measurements
-                        .iter()
-                        .cloned()
-                        .collect(),
-                )
-            }));
-        }
-        let res: Vec<(f64, Vec<(u64, u64)>)> = thread_handles
-            .into_iter()
-            .map(|h| h.join().unwrap())
-            .collect();
-
-        let speed = res.iter().map(|(s, _)| s).sum::<f64>();
-        let mbps = speed / 8.0 * 1024.0;
-
-        print_test_result(
-            "Performance Test (Sum)",
-            "Completed (Gbit/s)",
-            Some((0.0, speed, mbps)),
-        );
-
-        // Отрисовываем график для perf теста
-        if let Some((_, measurements)) = res.first() {
-            if !measurements.is_empty() {
-                draw_speed_graph(measurements, 60, 15);
-            }
-        }
-
-        return Ok(());
-    }
 
     let barrier = Arc::new(Barrier::new(thread_count));
     let mut thread_handles = vec![];
@@ -153,28 +92,29 @@ pub async fn async_main(args: Vec<String>) -> anyhow::Result<()> {
         let barrier = Arc::clone(&barrier);
         thread_handles.push(thread::spawn(move || {
             let mut state = TestState::new(addr, use_tls, use_websocket, i, None, None).unwrap();
-            state.process_greeting().unwrap();
-            barrier.wait();
-            state.run_get_chunks().unwrap();
-            if i == 0 {
-                print_result(
-                    "Pre Download",
-                    "Chunk Size (bytes)",
-                    Some(state.measurement_state().chunk_size),
-                );
+            let greeting = state.process_greeting();
+            match greeting {
+                Ok(_) => {
+                    debug!("Greeting:");
+                }
+                Err(e) => {
+                    println!("Greeting error: {:?} token: {}", e, i);
+                }
             }
             barrier.wait();
-            // if i == 0 {
-            //     state.run_ping().unwrap();
-            //     let median = state.measurement_state().ping_median.unwrap();
-            //     print_result("Ping Median", "Completed (ns)", Some(median as usize));
-            // }
+            state.run_get_chunks().unwrap();
+            barrier.wait();
+            if i == 0 {
+                state.run_ping().unwrap();
+                let median = state.measurement_state().ping_median.unwrap();
+                print_result("Ping Median", "Completed (ns)", Some(median as usize));
+            }
             barrier.wait();
             state.run_get_time().unwrap();
             barrier.wait();
-            // debug!("Thread {} completed barrier", i);
-            // state.run_perf_test().unwrap();
-            // println!("Upload speed: {}", state.measurement_state().upload_speed.unwrap());
+            debug!("Thread {} completed barrier", i);
+            state.run_perf_test().unwrap();
+            debug!("Upload speed: {}", state.measurement_state().upload_speed.unwrap());
             barrier.wait();
             let result: Measurement = Measurement {
                 thread_id: i,
@@ -191,14 +131,14 @@ pub async fn async_main(args: Vec<String>) -> anyhow::Result<()> {
         .map(|h| h.join().unwrap())
         .collect();
 
-    debug!("States: {:?}", states.len());
+    println!("States: {:?}", states.len());
     let state_refs: Vec<&Measurement> = states
         .iter()
         //TODO whar to do on failed threads?
         .filter(|s| !s.failed)
         .collect();
 
-    debug!("State refs: {:?}", state_refs.len());
+    println!("State refs: {:?}", state_refs.len());
 
     // Создаем копию для использования в нескольких функциях
     let state_refs_copy: Vec<&Measurement> = state_refs.clone();

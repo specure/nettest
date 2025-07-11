@@ -5,8 +5,11 @@ use mio::{Events, Interest, Poll, Token};
 use std::collections::VecDeque;
 use std::time::Instant;
 use std::{net::SocketAddr, path::Path, time::Duration};
+use std::io;
 
-use crate::client::handlers::handler_factory::HandlerFactory;
+use crate::client::handlers::basic_handler::{
+    handle_client_readable_data, handle_client_writable_data,
+};
 use crate::client::utils::DEFAULT_READ_BUFFER_SIZE;
 use crate::config::constants::MIN_CHUNK_SIZE;
 use crate::stream::stream::Stream;
@@ -44,29 +47,25 @@ pub enum TestPhase {
     // PutNoResultSendChunks,
     // PutNoResultReceiveTime,
     // PutNoResultCompleted,
-
-    PerfNoResultSendCommand,
-    PerfNoResultReceiveOk,
-    PerfNoResultSendChunks,
-    PerfNoResultSendLastChunk,
-
-    PerfNoResultReceiveTime,
-    PerfNoResultCompleted,
-
-//     PutSendCommand,
-//     PutReceiveOk,
-//     PutSendChunks,
-//     PutReceiveBytesTime,
-//     PutReceiveTime,
-//     PutQuit,
-//     PutCompleted,
+    PerfSendCommand,
+    PerfReceiveOk,
+    PerfSendChunks,
+    PerfSendLastChunk,
+    PerfReceiveTime,
+    PerfCompleted,
+    //     PutSendCommand,
+    //     PutReceiveOk,
+    //     PutSendChunks,
+    //     PutReceiveBytesTime,
+    //     PutReceiveTime,
+    //     PutQuit,
+    //     PutCompleted,
 }
 
 pub struct TestState {
     poll: Poll,
     events: Events,
     measurement_state: MeasurementState,
-    handler_factory: HandlerFactory,
 }
 
 pub struct MeasurementState {
@@ -94,7 +93,7 @@ pub struct MeasurementState {
     pub total_chunks: u32,
     pub chunk_buffer: Vec<u8>,
     pub cursor: usize,
-    pub ping_times: Vec<u64>,  // Store all ping times for median calculation
+    pub ping_times: Vec<u64>, // Store all ping times for median calculation
     pub time_result: Option<u64>,
     pub bytes_received: u64,
     pub bytes_sent: u64,
@@ -158,16 +157,13 @@ impl TestState {
             time_result: None,
             bytes_received: 0,
             bytes_sent: 0,
-
         };
 
-        let handler_factory: HandlerFactory = HandlerFactory::new(token)?;
 
         Ok(Self {
             poll,
             events,
             measurement_state,
-            handler_factory,
         })
     }
 
@@ -195,17 +191,23 @@ impl TestState {
     // }
 
     pub fn run_perf_test(&mut self) -> Result<()> {
-        self.measurement_state.phase = TestPhase::PerfNoResultSendCommand;
-        self.measurement_state.stream
-            .reregister(&mut self.poll, self.measurement_state.token, Interest::WRITABLE)?;
-        self.process_phase(TestPhase::PerfNoResultCompleted, ONE_SECOND_NS * 12)?;
+        self.measurement_state.phase = TestPhase::PerfSendCommand;
+        self.measurement_state.stream.reregister(
+            &mut self.poll,
+            self.measurement_state.token,
+            Interest::WRITABLE,
+        )?;
+        self.process_phase(TestPhase::PerfCompleted, ONE_SECOND_NS * 12)?;
         Ok(())
     }
 
     pub fn run_ping(&mut self) -> Result<()> {
         self.measurement_state.phase = TestPhase::PingSendPing;
-        self.measurement_state.stream
-            .reregister(&mut self.poll, self.measurement_state.token, Interest::WRITABLE)?;
+        self.measurement_state.stream.reregister(
+            &mut self.poll,
+            self.measurement_state.token,
+            Interest::WRITABLE,
+        )?;
         self.process_phase(TestPhase::PingCompleted, ONE_SECOND_NS * 3)?;
         Ok(())
     }
@@ -213,8 +215,11 @@ impl TestState {
     pub fn run_get_chunks(&mut self) -> Result<()> {
         debug!("Run get chunks");
         self.measurement_state.phase = TestPhase::GetChunksSendChunksCommand;
-        self.measurement_state.stream
-            .reregister(&mut self.poll, self.measurement_state.token, Interest::WRITABLE)?;
+        self.measurement_state.stream.reregister(
+            &mut self.poll,
+            self.measurement_state.token,
+            Interest::WRITABLE,
+        )?;
         self.process_phase(TestPhase::GetChunksCompleted, ONE_SECOND_NS * 3)?;
         debug!("Run get chunks completed");
         Ok(())
@@ -222,8 +227,11 @@ impl TestState {
 
     pub fn run_get_time(&mut self) -> Result<()> {
         self.measurement_state.phase = TestPhase::GetTimeSendCommand;
-        self.measurement_state.stream
-            .reregister(&mut self.poll, self.measurement_state.token, Interest::WRITABLE)?;
+        self.measurement_state.stream.reregister(
+            &mut self.poll,
+            self.measurement_state.token,
+            Interest::WRITABLE,
+        )?;
         self.process_phase(TestPhase::GetTimeCompleted, ONE_SECOND_NS * 12)?;
         Ok(())
     }
@@ -254,7 +262,6 @@ impl TestState {
             self.poll
                 .poll(&mut self.events, Some(Duration::from_secs(3)))?;
 
-
             if self.events.is_empty() {
                 let time = self
                     .measurement_state
@@ -264,48 +271,39 @@ impl TestState {
                     .as_nanos();
                 let now = Instant::now().elapsed().as_nanos();
                 if now - time > test_duration_ns {
-                    debug!("Test duration exceeded {:?} for token {:?}", self.measurement_state.phase, self.measurement_state.token);
+                    debug!(
+                        "Test duration exceeded {:?} for token {:?}",
+                        self.measurement_state.phase, self.measurement_state.token
+                    );
                     self.measurement_state.failed = true;
                     break;
                 }
             }
 
+            for event in self.events.iter() {
+
             // Process events in the current poll iteration
-            for event in &self.events {
-                // Handle read events after write to process any responses
-                if event.is_readable() {
-                    if let Some(handler) = self
-                        .handler_factory
-                        .get_handler(&self.measurement_state.phase)
-                    {
-                        if let Err(e) = handler.on_read(
-                            &self.poll,
-                            &mut self.measurement_state,
-                        ) {
-                            debug!(
-                                "Error in on_read for phase {:?}: {}",
-                                self.measurement_state.phase, e
-                            );
-                            return Err(e);
+            let mut should_remove: Result<usize, io::Error> = Ok(0);
+
+            if event.is_readable() {
+                should_remove = handle_client_readable_data(&mut self.measurement_state, &self.poll);
+            } else if event.is_writable() {
+                should_remove = handle_client_writable_data(&mut self.measurement_state, &self.poll);
+            }
+
+                match should_remove {
+                    Ok(n) => {
+                        if n == 0 {
+                            self.measurement_state.failed = true;
                         }
+                        // If n > 0, continue processing
                     }
-                }
-                // Handle write events first to ensure data is sent
-                if event.is_writable() {
-                    if let Some(handler) = self
-                        .handler_factory
-                        .get_handler(&self.measurement_state.phase)
-                    {
-                        if let Err(e) = handler.on_write(
-                            &self.poll,
-                            &mut self.measurement_state,
-                        ) {
-                            debug!(
-                                "Error in on_write for phase {:?}: {}",
-                                self.measurement_state.phase, e
-                            );
-                            return Err(e);
-                        }
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        continue;
+                    }
+                    Err(e) => {
+                        self.measurement_state.failed = true;
+                        break;
                     }
                 }
             }

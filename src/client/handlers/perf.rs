@@ -6,142 +6,23 @@ use std::io::{self};
 use std::time::Instant;
 
 use crate::client::globals::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE};
-use crate::client::handlers::BasicHandler;
 use crate::client::state::TestPhase;
 use crate::client::{write_all_nb, MeasurementState};
 
 const TEST_DURATION_NS: u64 = 7_000_000_000; // 3 seconds
 const MAX_CHUNK_SIZE: u64 = 4194304; // 2MB
 
-pub struct PerfHandler {
-    token: Token,
-    chunk_size: u64,
-    test_start_time: Option<Instant>,
-    bytes_sent: u64,
-    write_buffer: BytesMut,
-    read_buffer: BytesMut,
-    upload_speed: Option<f64>,
-}
-
-impl PerfHandler {
-    pub fn new(token: Token) -> Result<Self> {
-        Ok(Self {
-            token,
-            chunk_size: MAX_CHUNK_SIZE,
-            test_start_time: None,
-            bytes_sent: 0,
-            write_buffer: BytesMut::with_capacity(1024),
-            read_buffer: BytesMut::with_capacity(1024),
-            upload_speed: None,
-        })
-    }
-
-    pub fn get_put_no_result_command(&self) -> String {
-        format!("PUTNORESULT {}\n", self.chunk_size)
-    }
-}
-
-impl BasicHandler for PerfHandler {
-    fn on_read(&mut self, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
-        match measurement_state.phase {
-            TestPhase::PerfNoResultReceiveOk => {
-                match handle_perf_receive_ok(poll, measurement_state) {
-                    Ok(n) => {
-                        return Ok(());
-                    }
-                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        return Ok(());
-                    }
-                    Err(e) => {
-                        return Err(e.into());
-                    }
-                }
-            }
-            TestPhase::PerfNoResultReceiveTime => {
-                debug!("PerfNoResultReceiveTime token {:?}", self.token);
-                match handle_perf_receive_time(poll, measurement_state) {
-                    Ok(n) => {
-                        return Ok(());
-                    }
-                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        return Ok(());
-                    }
-                    Err(e) => {
-                        return Err(e.into());
-                    }
-                }
-            }
-            _ => {
-                debug!("PerfNoResult on_read phase: {:?}", measurement_state.phase);
-                return Ok(());
-            }
-        }
-    }
-
-    fn on_write(&mut self, poll: &Poll, measurement_state: &mut MeasurementState) -> Result<()> {
-        match measurement_state.phase {
-            TestPhase::PerfNoResultSendCommand => {
-                // debug!("PerfNoResultSendCommand");
-                match handle_perf_send_command(poll, measurement_state) {
-                    Ok(n) => {
-                        return Ok(());
-                    }
-                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        return Ok(());
-                    }
-                    Err(e) => {
-                        return Err(e.into());
-                    }
-                }
-            }
-            TestPhase::PerfNoResultSendChunks => {
-                // debug!("PerfNoResultSendChunks");
-                match handle_perf_send_chunks(poll, measurement_state) {
-                    Ok(n) => {
-                        return Ok(());
-                    }
-                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        return Ok(());
-                    }
-                    Err(e) => {
-                        return Err(e.into());
-                    }
-                }
-            }
-
-            TestPhase::PerfNoResultSendLastChunk => {
-                debug!("PerfNoResultSendLastChunk");
-                match handle_perf_send_last_chunk(poll, measurement_state) {
-                    Ok(n) => {
-                        return Ok(());
-                    }
-                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        return Ok(());
-                    }
-                    Err(e) => {
-                        return Err(e.into());
-                    }
-                }
-            }
-            _ => {
-                debug!("Perf on write phase: {:?}", measurement_state.phase);
-                return self.on_read(poll, measurement_state);
-            }
-        }
-    }
-}
-
 pub fn handle_perf_receive_ok(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
-    debug!("PerfNoResultReceiveOk");
+    debug!("handle_perf_receive_ok token {:?}", measurement_state.token);
     loop {
         let n = measurement_state
             .stream
             .read(&mut measurement_state.read_buffer[measurement_state.read_pos..b"OK\n".len()])?;
         if n == b"OK\n".len() {
-            measurement_state.phase = TestPhase::PerfNoResultSendChunks;
+            measurement_state.phase = TestPhase::PerfSendChunks;
             measurement_state.stream.reregister(
                 &poll,
                 measurement_state.token,
@@ -157,7 +38,7 @@ pub fn handle_perf_receive_time(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
-    debug!("PerfNoResultReceiveTime");
+    debug!("handle_perf_receive_time token {:?}", measurement_state.token);
     loop {
         let n = measurement_state
             .stream
@@ -166,9 +47,6 @@ pub fn handle_perf_receive_time(
 
         let line =
             String::from_utf8_lossy(&measurement_state.read_buffer[..measurement_state.read_pos]);
-        debug!("Response: {}", line);
-
-        // Ищем строку, которая начинается с TIME и заканчивается \n
         if let Some(time_line) = line.lines().find(|l| l.trim().starts_with("TIME")) {
             let time_ns = time_line
                 .split_whitespace()
@@ -180,7 +58,7 @@ pub fn handle_perf_receive_time(
             measurement_state.upload_speed = Some(speed_bps);
             measurement_state.upload_time = Some(time_ns);
             measurement_state.upload_bytes = Some(measurement_state.bytes_sent);
-            measurement_state.phase = TestPhase::PerfNoResultCompleted;
+            measurement_state.phase = TestPhase::PerfCompleted;
             measurement_state.stream.reregister(
                 &poll,
                 measurement_state.token,
@@ -196,7 +74,7 @@ pub fn handle_perf_send_command(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
-    debug!("PerfNoResultSendCommand");
+    debug!("handle_perf_send_command token {:?}", measurement_state.token);
 
     let command = format!("PUTNORESULT {}\n", measurement_state.chunk_size);
     if measurement_state.write_pos == 0 {
@@ -208,7 +86,7 @@ pub fn handle_perf_send_command(
             .write(&mut measurement_state.write_buffer[measurement_state.write_pos..command.len()])?;
         measurement_state.write_pos += n;
         if measurement_state.write_pos == command.len() {
-            measurement_state.phase = TestPhase::PerfNoResultReceiveOk;
+            measurement_state.phase = TestPhase::PerfReceiveOk;
             measurement_state.stream.reregister(
                 &poll,
                 measurement_state.token,
@@ -225,7 +103,7 @@ pub fn handle_perf_send_chunks(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
-    debug!("PerfNoResultSendChunks");
+    debug!("handle_perf_send_chunks token {:?}", measurement_state.token);
     if measurement_state.phase_start_time.is_none() {
         measurement_state.phase_start_time = Some(Instant::now());
     }
@@ -248,8 +126,7 @@ pub fn handle_perf_send_chunks(
                     .push_back((tt as u64, measurement_state.bytes_sent));
 
                 if is_last {
-                    debug!("Go to PerfNoResultSendLastChunk");
-                    measurement_state.phase = TestPhase::PerfNoResultSendLastChunk;
+                    measurement_state.phase = TestPhase::PerfSendLastChunk;
                     measurement_state.stream.reregister(
                         &poll,
                         measurement_state.token,
@@ -270,7 +147,7 @@ pub fn handle_perf_send_last_chunk(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
-    debug!("PerfNoResultSendLastChunk");
+    debug!("handle_perf_send_last_chunk token {:?}", measurement_state.token);
     let current_pos = measurement_state.bytes_sent & (measurement_state.chunk_size as u64 - 1);
     let buffer = CHUNK_TERMINATION_STORAGE
         .get(&(measurement_state.chunk_size as u64))
@@ -283,7 +160,7 @@ pub fn handle_perf_send_last_chunk(
         measurement_state.bytes_sent += n as u64;
         remaining = &remaining[n..];
         if remaining.is_empty() {
-            measurement_state.phase = TestPhase::PerfNoResultReceiveTime;
+            measurement_state.phase = TestPhase::PerfReceiveTime;
             measurement_state.stream.reregister(
                 &poll,
                 measurement_state.token,

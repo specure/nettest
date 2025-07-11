@@ -123,7 +123,8 @@ impl Worker {
                 
                 self.connections.insert(token, TestState {
                     token,
-                    stream: Stream::new_rustls_server(stream, None, None).unwrap(),
+                    // stream: Stream::new_rustls_server(stream, None, None).unwrap(),
+                    stream: Stream::Tcp(stream),
                     measurement_state: ServerTestPhase::GreetingReceiveConnectionType,
                     read_buffer: [0; 1024 * 8],
                     write_buffer: [0; 1024 * 8],
