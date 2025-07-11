@@ -1,6 +1,6 @@
 use anyhow::Result;
 use bytes::BytesMut;
-use log::{debug, trace};
+use log::{debug};
 use mio::{Events, Interest, Poll, Token};
 use std::collections::VecDeque;
 use std::time::Instant;
@@ -10,7 +10,7 @@ use std::io;
 use crate::client::handlers::basic_handler::{
     handle_client_readable_data, handle_client_writable_data,
 };
-use crate::client::utils::DEFAULT_READ_BUFFER_SIZE;
+use crate::client::constants::DEFAULT_READ_BUFFER_SIZE;
 use crate::config::constants::MIN_CHUNK_SIZE;
 use crate::stream::stream::Stream;
 
@@ -128,7 +128,7 @@ impl TestState {
 
         stream.register(&mut poll, token, Interest::READABLE | Interest::WRITABLE)?;
 
-        let mut measurement_state = MeasurementState {
+        let measurement_state = MeasurementState {
             buffer: BytesMut::with_capacity(DEFAULT_READ_BUFFER_SIZE),
             phase: TestPhase::GreetingSendConnectionType,
             upload_results_for_graph: Vec::new(),
@@ -182,14 +182,6 @@ impl TestState {
         Ok(self)
     }
 
-    // pub fn run_put_no_result(&mut self) -> Result<()> {
-    //     self.measurement_state.phase = TestPhase::PutNoResultSendCommand;
-    //     self.measurement_state.stream
-    //         .reregister(&mut self.poll, self.measurement_state.token, Interest::WRITABLE)?;
-    //     self.process_phase(TestPhase::PutNoResultCompleted, ONE_SECOND_NS * 8)?;
-    //     Ok(())
-    // }
-
     pub fn run_perf_test(&mut self) -> Result<()> {
         self.measurement_state.phase = TestPhase::PerfSendCommand;
         self.measurement_state.stream.reregister(
@@ -236,19 +228,8 @@ impl TestState {
         Ok(())
     }
 
-    // pub fn run_put(&mut self) -> Result<()> {
-    //     debug!("Run put");
-    //     self.measurement_state.phase = TestPhase::PutSendCommand;
-    //     self.measurement_state.stream
-    //         .reregister(&mut self.poll, self.measurement_state.token, Interest::WRITABLE)?;
-    //     self.process_phase(TestPhase::PutCompleted, ONE_SECOND_NS * 10)?;
-    //     Ok(())
-    // }
-
     fn process_phase(
         &mut self,
-        // mut measurement_state: MeasurementState,
-        // handler_factory: &mut HandlerFactory,
         phase: TestPhase,
         test_duration_ns: u128,
     ) -> Result<()> {
@@ -316,7 +297,4 @@ impl TestState {
         &self.measurement_state
     }
 
-    pub fn measurement_state_mut(&mut self) -> &mut MeasurementState {
-        &mut self.measurement_state
-    }
 }

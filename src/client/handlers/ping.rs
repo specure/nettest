@@ -1,6 +1,6 @@
 use crate::client::state::TestPhase;
-use crate::client::utils::ACCEPT_GETCHUNKS_STRING;
-use crate::client::{ MeasurementState};
+use crate::client::constants::ACCEPT_GETCHUNKS_STRING;
+use crate::client::state::MeasurementState;
 use anyhow::Result;
 use log::debug;
 use mio::{Interest, Poll};

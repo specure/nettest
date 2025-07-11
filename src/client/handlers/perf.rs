@@ -1,16 +1,12 @@
 use anyhow::Result;
-use bytes::BytesMut;
-use log::{debug, trace};
-use mio::{Interest, Poll, Token};
-use std::io::{self};
+use log::{debug};
+use mio::{Interest, Poll};
 use std::time::Instant;
 
 use crate::client::globals::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE};
-use crate::client::state::TestPhase;
-use crate::client::{write_all_nb, MeasurementState};
+use crate::client::state::{MeasurementState, TestPhase};
 
 const TEST_DURATION_NS: u64 = 7_000_000_000; // 3 seconds
-const MAX_CHUNK_SIZE: u64 = 4194304; // 2MB
 
 pub fn handle_perf_receive_ok(
     poll: &Poll,
@@ -38,7 +34,6 @@ pub fn handle_perf_receive_time(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
-    debug!("handle_perf_receive_time token {:?}", measurement_state.token);
     loop {
         let n = measurement_state
             .stream
@@ -74,8 +69,6 @@ pub fn handle_perf_send_command(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
-    debug!("handle_perf_send_command token {:?}", measurement_state.token);
-
     let command = format!("PUTNORESULT {}\n", measurement_state.chunk_size);
     if measurement_state.write_pos == 0 {
         measurement_state.write_buffer[..command.len()].copy_from_slice(command.as_bytes());

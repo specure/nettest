@@ -7,8 +7,7 @@ use crate::client::handlers::greeting::{handle_greeting_receive_greeting, handle
 use crate::client::handlers::get_time::{handle_get_time_receive_chunk, handle_get_time_receive_time, handle_get_time_send_command, handle_get_time_send_ok};
 use crate::client::handlers::perf::{handle_perf_receive_ok, handle_perf_receive_time, handle_perf_send_chunks, handle_perf_send_command, handle_perf_send_last_chunk};
 use crate::client::handlers::ping::{handle_ping_receive_pong, handle_ping_receive_time, handle_ping_send_ok, handle_ping_send_ping};
-use crate::client::state::TestPhase;
-use crate::{client::MeasurementState};
+use crate::client::state::{MeasurementState, TestPhase};
 
 
 pub fn handle_client_readable_data(state: &mut MeasurementState, poll: &Poll) -> io::Result<usize> {

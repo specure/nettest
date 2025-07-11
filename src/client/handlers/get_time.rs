@@ -3,12 +3,10 @@ use log::{debug};
 use mio::{Interest, Poll};
 use std::time::Instant;
 
-use crate::client::state::TestPhase;
-use crate::client::utils::ACCEPT_GETCHUNKS_STRING;
-use crate::client::{ MeasurementState};
+use crate::client::state::{MeasurementState, TestPhase};
+use crate::client::constants::ACCEPT_GETCHUNKS_STRING;
 
 const TEST_DURATION_NS: u64 = 7_000_000_000; // 7 seconds
-const MAX_CHUNK_SIZE: u32 = 4194304; // 4MB
 
 
 pub fn handle_get_time_send_ok(

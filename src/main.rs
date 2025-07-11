@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
     //if first -c or -s skip it
     if args[1] == "-c" {
         args = args.iter().skip(1).map(|s| s.clone()).collect();
-        client::async_main(args).await?;
+        client::client::async_main(args).await?;
         return Ok(());
     } else if args[1] == "-s" {
         println!("args: {:?}", args);

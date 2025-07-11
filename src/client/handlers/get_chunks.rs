@@ -1,9 +1,9 @@
 use crate::client::state::TestPhase;
-use crate::client::utils::{
+use crate::client::constants::{
     ACCEPT_GETCHUNKS_STRING, MAX_CHUNKS_BEFORE_SIZE_INCREASE, MAX_CHUNK_SIZE, OK_COMMAND,
     PRE_DOWNLOAD_DURATION_NS,
 };
-use crate::client::MeasurementState;
+use crate::client::state::MeasurementState;
 use anyhow::Result;
 use log::debug;
 use mio::{Interest, Poll};
@@ -56,7 +56,6 @@ pub fn handle_get_chunks_send_chunks_command(
         state.token
     );
     let command = format!("GETCHUNKS {} {}\n", state.total_chunks, state.chunk_size);
-    debug!("Command: {}", command);
     if state.write_pos == 0 {
         state.write_buffer[0..command.len()].copy_from_slice(command.as_bytes());
     }

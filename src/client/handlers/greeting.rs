@@ -1,4 +1,4 @@
-use crate::client::{state::TestPhase, MeasurementState};
+use crate::client::{state::{MeasurementState, TestPhase}};
 use crate::stream::stream::Stream;
 use anyhow::Result;
 use log::{debug};

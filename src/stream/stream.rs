@@ -4,7 +4,7 @@ use std::io::{self, Read, Write};
 use std::net::SocketAddr;
 use std::path::Path;
 
-use crate::client::RMBT_UPGRADE_REQUEST;
+use crate::client::constants::RMBT_UPGRADE_REQUEST;
 use crate::stream::{
     websocket::WebSocketClient,
     websocket_tls_openssl::WebSocketTlsClient,
