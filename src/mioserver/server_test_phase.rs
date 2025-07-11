@@ -27,7 +27,6 @@ pub enum ServerTestPhase {
     PutNoResultReceiveChunk,
     PutNoResultSendTime,
 
-
     PutSendOk,
     PutReceiveChunk,
     PutSendTime,

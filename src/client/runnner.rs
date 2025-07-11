@@ -3,8 +3,9 @@ use std::{
     thread,
 };
 
-use log::debug;
 use std::sync::Mutex;
+
+use log::debug;
 
 use crate::client::{
     client::{
@@ -39,7 +40,7 @@ pub fn run_threads(
             match greeting {
                 Ok(_) => {}
                 Err(e) => {
-                    println!("Greeting error: {:?} token: {}", e, i);
+                    debug!("Greeting error: {:?} token: {}", e, i);
                 }
             }
             barrier.wait();
