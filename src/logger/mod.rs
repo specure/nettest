@@ -80,9 +80,9 @@ extern "C" fn handle_sighup(_: c_int) {
     if let Some(logger) = LOGGER.lock().ok().and_then(|l| l.as_ref().cloned()) {
         let log_path = if cfg!(target_os = "macos") {
             let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/root".to_string());
-            Path::new(&home).join("Library/Logs/rmbt/rmbt_server.log")
+            Path::new(&home).join("Library/Logs/rmbt/nettest.log")
         } else {
-            Path::new("/var/log/rmbt/rmbt_server.log").to_path_buf()
+            Path::new("/var/log/rmbt/nettest.log").to_path_buf()
         };
         let _ = logger.reopen_log_file(&log_path);
     }
@@ -105,11 +105,10 @@ pub fn init_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Error +
         if !pid_dir.exists() {
             std::fs::create_dir_all(pid_dir)?;
         }
-        let pid_path = pid_dir.join("rmbt.pid");
+        let pid_path = pid_dir.join("nettest.pid");
         std::fs::write(&pid_path, pid.to_string())?;
         log::info!("PID file location: {}", pid_path.display());
-        // On Linux/Unix, use /var/log/rmbt
-        Path::new("/var/log/rmbt").to_path_buf()
+        Path::new("/var/log/nettest").to_path_buf()
     };
 
     // Create directory and all parent directories if they don't exist
@@ -118,7 +117,7 @@ pub fn init_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Error +
     }
 
     // Ensure we have write permissions
-    let log_path = log_dir.join("rmbt_server.log");
+    let log_path = log_dir.join("nettest.log");
 
     // Try to create the log file with proper permissions
     let log_file = OpenOptions::new()

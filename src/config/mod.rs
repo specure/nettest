@@ -10,7 +10,7 @@ pub enum App {
 }
 
 #[derive(Debug, Clone)]
-pub struct Config {
+pub struct FileConfig {
     pub app: App,
     pub server_tcp_port: String,
     pub server_tls_port: Option<String>,
@@ -26,28 +26,10 @@ pub struct Config {
     pub client_thread_count: usize,
     pub protocol_version: Option<u32>, //TODO None for latest, Some(3) for v0.3
     pub logger: LevelFilter,
+    pub secret_key: Option<String>,
 }
 
-impl Config {
-    pub fn set_protocol_version(&mut self, version: &str) -> Result<(), String> {
-        if self.protocol_version.is_some() {
-            return Err("Only one protocol version is allowed".to_string());
-        }
-
-        match version {
-            "0.3" => {
-                self.protocol_version = Some(3);
-                Ok(())
-            }
-            _ => Err(format!(
-                "Unsupported version for backwards compatibility: {}",
-                version
-            )),
-        }
-    }
-}
-
-impl Default for Config {
+impl Default for FileConfig {
     fn default() -> Self {
         Self {
             app: App::Server,
@@ -65,6 +47,7 @@ impl Default for Config {
             client_use_tls: false,
             client_use_websocket: false,
             client_thread_count: 5,
+            secret_key: None,
         }
     }
 }

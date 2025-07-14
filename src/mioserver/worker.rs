@@ -1,9 +1,9 @@
 use bytes::BytesMut;
 use log::{debug, info, trace};
-use mio::net::TcpStream;
 use mio::{Events, Interest, Poll, Token, Waker};
 use std::collections::{HashMap, VecDeque};
 use std::io::{self};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -12,7 +12,7 @@ use crate::config::constants::MIN_CHUNK_SIZE;
 use crate::mioserver::handlers::basic_handler::{
     handle_client_readable_data, handle_client_writable_data,
 };
-use crate::mioserver::server::TestState;
+use crate::mioserver::server::{ConnectionType, TestState};
 use crate::mioserver::ServerTestPhase;
 use crate::stream::stream::Stream;
 
@@ -25,16 +25,18 @@ struct Worker {
     poll: Poll,
     connections: HashMap<Token, TestState>,
     events: Events,
-    worker_queue: Arc<(Mutex<VecDeque<TcpStream>>, Waker)>, // Очередь только для этого воркера
+    worker_queue: Arc<(Mutex<VecDeque<ConnectionType>>, Waker)>, // Очередь только для этого воркера
     worker_connection_counts: Arc<Mutex<Vec<usize>>>,
+    server_config: crate::mioserver::server::ServerConfig,
     next_token: usize,
 }
 
 impl WorkerThread {
     pub fn new(
         id: usize,
-        worker_queue: Arc<(Mutex<VecDeque<TcpStream>>, Waker)>,
+        worker_queue: Arc<(Mutex<VecDeque<ConnectionType>>, Waker)>,
         worker_connection_counts: Arc<Mutex<Vec<usize>>>,
+        server_config: crate::mioserver::server::ServerConfig,
     ) -> io::Result<Self> {
         println!("Worker {} new", id);
 
@@ -42,8 +44,9 @@ impl WorkerThread {
             .stack_size(8 * 1024 * 1024) // 8MB stack
             .spawn(move || {
                 println!("Worker {}: starting", id);
-                let mut worker = Worker::new(id, worker_queue, worker_connection_counts)
-                    .expect("Failed to create worker");
+                let mut worker =
+                    Worker::new(id, worker_queue, worker_connection_counts, server_config)
+                        .expect("Failed to create worker");
                 if let Err(e) = worker.run() {
                     info!("Worker {} error: {}", id, e);
                 }
@@ -56,8 +59,9 @@ impl WorkerThread {
 impl Worker {
     fn new(
         id: usize,
-        worker_queue: Arc<(Mutex<VecDeque<TcpStream>>, Waker)>,
+        worker_queue: Arc<(Mutex<VecDeque<ConnectionType>>, Waker)>,
         worker_connection_counts: Arc<Mutex<Vec<usize>>>,
+        server_config: crate::mioserver::server::ServerConfig,
     ) -> io::Result<Self> {
         let poll = Poll::new()?;
         let events = Events::with_capacity(1024);
@@ -70,13 +74,14 @@ impl Worker {
             events,
             worker_queue,
             worker_connection_counts,
+            server_config,
             next_token: 1,
         })
     }
 
     fn run(&mut self) -> io::Result<()> {
         loop {
-            let maybe_stream = {
+            let maybe_connection = {
                 let (lock, _) = &*self.worker_queue;
                 let mut guard = lock.lock().unwrap();
                 let queue_size = guard.len();
@@ -89,7 +94,19 @@ impl Worker {
                 guard.pop_front()
             };
 
-            if let Some(mut stream) = maybe_stream {
+            if let Some(connection) = maybe_connection {
+                let mut stream = match connection {
+                    ConnectionType::Tcp(stream) => Stream::Tcp(stream),
+                    ConnectionType::Tls(stream) => {
+                        let stream = Stream::new_rustls_server(
+                            stream,
+                            self.server_config.cert_path.clone().unwrap(),
+                            self.server_config.key_path.clone().unwrap(),
+                        )
+                        .unwrap();
+                        stream
+                    }
+                };
                 println!("Worker {}: processing new connection", self.id);
                 debug!("Worker {}: received new connection", self.id);
 
@@ -97,11 +114,7 @@ impl Worker {
                 self.next_token += 1;
 
                 // Регистрируем новое соединение
-                if let Err(e) =
-                    self.poll
-                        .registry()
-                        .register(&mut stream, token, Interest::READABLE)
-                {
+                if let Err(e) = stream.register(&self.poll, token, Interest::READABLE) {
                     info!("Worker {}: Failed to register connection: {}", self.id, e);
                     continue;
                 }
@@ -111,7 +124,7 @@ impl Worker {
                     TestState {
                         token,
                         // stream: Stream::new_rustls_server(stream, None, None).unwrap(),
-                        stream: Stream::Tcp(stream),
+                        stream: stream,
                         measurement_state: ServerTestPhase::GreetingReceiveConnectionType,
                         read_buffer: [0; 1024 * 8],
                         write_buffer: [0; 1024 * 8],

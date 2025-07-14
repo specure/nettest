@@ -51,7 +51,7 @@ impl Stream {
         Ok(Self::Rustls(stream))
     }
 
-    pub fn new_rustls_server(stream: TcpStream, cert_path: Option<&Path>, key_path: Option<&Path>) -> Result<Self> {
+    pub fn new_rustls_server(stream: TcpStream, cert_path: String, key_path: String) -> Result<Self> {
         let stream = RustlsServerStream::new(stream, cert_path, key_path)?;
         Ok(Self::RustlsServer(stream))
     }

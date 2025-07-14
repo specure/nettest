@@ -1,19 +1,10 @@
 
 use log::LevelFilter;
 
-use crate::config::{App, Config};
-
-pub fn parse_cli_args(args: Vec<String>) -> Result<Config, String> {
-    let mut config = read_config_file();
+use crate::config::{App, FileConfig};
 
 
-    Ok(config)
-}
-
-
-
-
-fn read_config_file() -> Config {
+pub fn read_config_file() -> FileConfig {
     use std::fs;
     use std::path::PathBuf;
 
@@ -64,8 +55,8 @@ fn read_config_file() -> Config {
     parse_config_content(&config_content)
 }
 
-fn parse_config_content(content: &str) -> Config {
-    let mut config = Config::default();
+fn parse_config_content(content: &str) -> FileConfig {
+    let mut config = FileConfig::default();
 
     for line in content.lines() {
         let line = line.trim();

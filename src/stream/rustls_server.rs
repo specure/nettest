@@ -20,14 +20,14 @@ pub struct RustlsServerStream {
 impl RustlsServerStream {
     pub fn new(
         stream: TcpStream,
-        cert_path: Option<&Path>,
-        key_path: Option<&Path>,
+        cert_path: String,
+        key_path: String,
     ) -> Result<Self> {
         stream.set_nodelay(true)?;
 
         let config = if let (cert_path, key_path) = (cert_path, key_path) {
-            let certs = load_certs(Path::new("fullchain1.pem"))?;
-            let key = load_private_key(Path::new("privkey1.pem"))?;
+            let certs = load_certs(Path::new(&cert_path))?;
+            let key = load_private_key(Path::new(&key_path))?;
 
             let config = ServerConfig::builder()
                 .with_no_client_auth()

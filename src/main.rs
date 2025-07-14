@@ -1,4 +1,4 @@
-use crate::config::parser::parse_cli_args;
+use crate::config::parser::{ read_config_file};
 use crate::mioserver::MioServer;
 use crate::tokio_server::server_config::RmbtServerConfig;
 use std::error::Error as StdError;
@@ -15,9 +15,8 @@ pub mod client;
 async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
     let mut args: Vec<String> = std::env::args().collect();
 
-    let mut config = parse_cli_args(args.clone())?;
+    let config = read_config_file();
 
-    // if first -c or -s skip it
     if args[1] == "-c" {
         args = args.iter().skip(1).map(|s| s.clone()).collect();
         client::client::client_run(args, config).await?;
@@ -26,8 +25,11 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         println!("args: {:?}", args);
         args = args.iter().skip(1).map(|s| s.clone()).collect();
 
-        let mut mio_server = MioServer::new(config)?;
+        let mut mio_server = MioServer::new(args, config)?;
         mio_server.run()?;
+    } else {
+        print_help();
+        return Err("Invalid argument".into());
     }
 
     //     debug!("starting...");
@@ -76,10 +78,8 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
 }
 
 fn print_help() {
-    println!("Usage: -c <server_address> : to run client");
-    println!("Usage: -s : to run server");
-    println!("Usage: -m : to run MIO TCP server on port 5005");
-
+    println!("Usage: nettest -c <server_address> : to run nettest measurement client");
+    println!("Usage: nettest -s : to run nettest measurement server");
     println!("Usage: nettest -c -h | --help  to print client help");
     println!("Usage: nettest -s -h | --help to print server help");
 }

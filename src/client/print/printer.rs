@@ -86,14 +86,3 @@ pub fn print_result(phase: &str, status: &str, speed: Option<usize>) {
     println!("{}", table);
 }
 
-pub fn print_help() {
-    println!("Usage: nettest -c <server_address> [-t<num_threads>] [-ws] [-tls] ");
-    println!("By default, nettest will connect to server on port :5005 for TCP or :443 fot TLS");
-    println!("Usage: nettest -c 127.0.0.1 -ws -tls -t5");
-    println!("-ws - use websocket");
-    println!("-tls - use tls");
-    println!("-log - `RUST_LOG=debug ./nettest 127.0.0.1  -t5 -tls -log`");
-    println!("-t<num_threads> - number of threads");
-    println!("-help - print help");
-    println!("-h - print help");
-}

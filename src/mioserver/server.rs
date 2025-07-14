@@ -1,5 +1,5 @@
 use bytes::BytesMut;
-use log::debug;
+use log::{debug, LevelFilter};
 use mio::net::{TcpListener, TcpStream};
 use mio::{Poll, Token, Waker};
 use std::collections::VecDeque;
@@ -9,16 +9,25 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Instant;
 
-use crate::config::Config;
+#[derive(Debug)]
+pub enum ConnectionType {
+    Tcp(TcpStream),
+    Tls(TcpStream), // Пока что тот же TcpStream, но с флагом TLS
+}
+
+use crate::config::FileConfig;
+use crate::mioserver::parser::parse_args;
 use crate::mioserver::worker::WorkerThread;
 use crate::mioserver::ServerTestPhase;
 use crate::stream::stream::Stream;
 use crate::tokio_server::server_config::parse_listen_address;
 
 pub struct MioServer {
-    listener: TcpListener,
+    tcp_listener: TcpListener,
+    tls_listener: Option<TcpListener>,
+    server_config: crate::mioserver::server::ServerConfig,
     _worker_threads: Vec<WorkerThread>,
-    worker_queues: Vec<Arc<(Mutex<VecDeque<TcpStream>>, Waker)>>, // Отдельная очередь для каждого воркера
+    worker_queues: Vec<Arc<(Mutex<VecDeque<ConnectionType>>, Waker)>>, // Отдельная очередь для каждого воркера
     worker_connection_counts: Arc<Mutex<Vec<usize>>>, // Счетчики соединений для каждого воркера
 }
 
@@ -42,17 +51,50 @@ pub struct TestState {
     pub chunk: Option<BytesMut>,
     pub terminal_chunk: Option<BytesMut>,
 }
+
+#[derive(Clone)]
+pub struct ServerConfig {
+    pub tcp_address: SocketAddr,
+    pub tls_address: SocketAddr,
+    pub cert_path: Option<String>,
+    pub key_path: Option<String>,
+    pub num_workers: Option<usize>,
+    pub user: Option<String>,
+    pub daemon: bool,
+    pub version: Option<String>,
+    pub secret_key: Option<String>,
+    pub log_level: Option<LevelFilter>,
+}
+
 impl MioServer {
-    pub fn new(config: Config) -> io::Result<Self> {
-        let addr: SocketAddr = parse_listen_address(&config.server_tcp_port).unwrap();
-        let listener = TcpListener::bind(addr)?;
+    pub fn new(args: Vec<String>, config: FileConfig) -> io::Result<Self> {
+        let server_config = crate::mioserver::parser::parse_args(args, config.clone())
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
+        let tcp_listener = TcpListener::bind(server_config.tcp_address)?;
+
+        let tls_listener = if server_config.cert_path.is_some() && server_config.key_path.is_some() {
+            let tls_addr: SocketAddr = parse_listen_address(&server_config.tls_address.to_string()).unwrap();
+            match TcpListener::bind(tls_addr) {
+                Ok(listener) => {
+                    debug!("MIO TLS Server will listen on {}", tls_addr);
+                    Some(listener)
+                }
+                Err(e) => {
+                    debug!("Failed to bind TLS listener: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         let logical = num_cpus::get();
         let mut worker_queues = Vec::new();
         for i in 0..logical {
             let poll = Poll::new()?;
             let queue = Arc::new((
-                Mutex::new(VecDeque::new()),
+                Mutex::new(VecDeque::<ConnectionType>::new()),
                 Waker::new(poll.registry(), Token(i + 1))?,
             ));
             worker_queues.push(queue);
@@ -67,17 +109,16 @@ impl MioServer {
                 i,
                 worker_queues[i].clone(),
                 worker_connection_counts.clone(),
+                server_config.clone(),
             )?;
             worker_threads.push(worker);
         }
 
-        debug!(
-            "MIO TCP Server started on {} with {} worker threads",
-            addr, logical
-        );
 
         Ok(Self {
-            listener,
+            tcp_listener,
+            tls_listener,
+            server_config,
             _worker_threads: worker_threads,
             worker_queues,
             worker_connection_counts,
@@ -86,53 +127,88 @@ impl MioServer {
 
     pub fn run(&mut self) -> io::Result<()> {
         loop {
-            match self.listener.accept() {
+            // Принимаем TCP соединения
+            match self.tcp_listener.accept() {
                 Ok((stream, _addr)) => {
                     if let Err(e) = stream.set_nodelay(true) {
                         debug!("Failed to set TCP_NODELAY: {}", e);
                     }
-
-                    let (selected_worker, _current_counts) = {
-                        let counts = self.worker_connection_counts.lock().unwrap();
-                        let counts_vec: Vec<usize> = counts.clone();
-                        let min_count = counts.iter().min().unwrap_or(&0);
-                        let selected = counts
-                            .iter()
-                            .position(|&count| count == *min_count)
-                            .unwrap_or(0);
-                        (selected, counts_vec)
-                    };
-
-                    {
-                        let mut counts = self.worker_connection_counts.lock().unwrap();
-                        counts[selected_worker] += 1;
-                        println!(
-                            "Worker {}: connection count increased to {}",
-                            selected_worker, counts[selected_worker]
-                        );
-                    }
-
-                    let (lock, waker) = &*self.worker_queues[selected_worker];
-                    {
-                        let mut queue = lock.lock().unwrap();
-                        queue.push_back(stream);
-                    }
-                    waker.wake()?;
-
-                    debug!(
-                        "Connection added to worker {} queue and worker woken",
-                        selected_worker
-                    );
+                    self.handle_connection(stream, false)?;
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    thread::sleep(std::time::Duration::from_millis(10));
+                    // Продолжаем
                 }
                 Err(e) => {
-                    debug!("Error accepting connection: {}", e);
+                    debug!("Error accepting TCP connection: {}", e);
                     return Err(e);
                 }
             }
+
+            // Принимаем TLS соединения если есть listener
+            if let Some(ref mut tls_listener) = self.tls_listener {
+                match tls_listener.accept() {
+                    Ok((stream, _addr)) => {
+                        if let Err(e) = stream.set_nodelay(true) {
+                            debug!("Failed to set TCP_NODELAY: {}", e);
+                        }
+                        self.handle_connection(stream, true)?;
+                    }
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        // Продолжаем
+                    }
+                    Err(e) => {
+                        debug!("Error accepting TLS connection: {}", e);
+                        return Err(e);
+                    }
+                }
+            }
+
+            thread::sleep(std::time::Duration::from_millis(10));
         }
+    }
+
+    fn handle_connection(&mut self, stream: TcpStream, is_tls: bool) -> io::Result<()> {
+        let (selected_worker, _current_counts) = {
+            let counts = self.worker_connection_counts.lock().unwrap();
+            let counts_vec: Vec<usize> = counts.clone();
+            let min_count = counts.iter().min().unwrap_or(&0);
+            let selected = counts
+                .iter()
+                .position(|&count| count == *min_count)
+                .unwrap_or(0);
+            (selected, counts_vec)
+        };
+
+        {
+            let mut counts = self.worker_connection_counts.lock().unwrap();
+            counts[selected_worker] += 1;
+            println!(
+                "Worker {}: {} connection count increased to {}",
+                selected_worker, 
+                if is_tls { "TLS" } else { "TCP" },
+                counts[selected_worker]
+            );
+        }
+
+        let (lock, waker) = &*self.worker_queues[selected_worker];
+        {
+            let mut queue = lock.lock().unwrap();
+            let connection = if is_tls {
+                ConnectionType::Tls(stream)
+            } else {
+                ConnectionType::Tcp(stream)
+            };
+            queue.push_back(connection);
+        }
+        waker.wake()?;
+
+        debug!(
+            "{} connection added to worker {} queue and worker woken",
+            if is_tls { "TLS" } else { "TCP" },
+            selected_worker
+        );
+
+        Ok(())
     }
 }
 

@@ -1,9 +1,9 @@
-use crate::client::args_parser::parse_args;
-use crate::client::print::graph_service::{GraphService};
-use crate::client::print::printer::{print_help, print_test_header};
+use crate::client::args_parser::{parse_args, print_help};
+use crate::client::print::graph_service::GraphService;
+use crate::client::print::printer::print_test_header;
 use crate::client::runnner::run_threads;
-use crate::config::Config;
-use log::{debug, info, LevelFilter};
+use crate::config::FileConfig;
+use log::{info, LevelFilter};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
@@ -40,7 +40,7 @@ pub struct ClientConfig {
     pub tls_port: u16,
 }
 
-pub async fn client_run(args: Vec<String>, dafault_config: Config) -> anyhow::Result<()> {
+pub async fn client_run(args: Vec<String>, dafault_config: FileConfig) -> anyhow::Result<()> {
     info!("Starting measurement client...");
 
     print_test_header();
@@ -51,15 +51,12 @@ pub async fn client_run(args: Vec<String>, dafault_config: Config) -> anyhow::Re
 
     let config = parse_args(args, dafault_config)?;
 
-
     let stats: Arc<Mutex<SharedStats>> = Arc::new(Mutex::new(SharedStats::default()));
 
     let state_refs = run_threads(config.clone(), stats)?;
-
 
     if config.graphs {
         GraphService::print_graph(&state_refs);
     }
     Ok(())
 }
-

@@ -73,14 +73,9 @@ pub fn handle_get_time_receive_chunk(
     state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
     loop {
-        debug!(
-            "token {:?} started loop read_pos: {}",
-            state.token, state.read_pos
-        );
         let n = state
             .stream
             .read(&mut state.chunk_buffer[state.read_pos..])?;
-        debug!("token {:?} read {} bytes", state.token, n);
         state.read_pos += n;
         state.bytes_received += n as u64;
         if state.read_pos == state.chunk_size {
