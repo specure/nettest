@@ -12,6 +12,7 @@ use crate::stream::{
     rustls::RustlsStream,
     rustls_server::RustlsServerStream,
 };
+use crate::tokio_server::utils::websocket::Handshake;
 
 #[derive(Debug)]
 pub enum Stream {
@@ -40,6 +41,26 @@ impl Stream {
             Stream::RustlsServer(_) => "RustlsServer",
         }
     }
+
+    pub fn upgrade_to_websocket(self) -> Result<Stream> {
+        match self {
+            Stream::Tcp(stream) => {
+                let stream = WebSocketClient::new_server(stream)?;
+                Ok(Stream::WebSocket(stream))
+            }
+            _ => Ok(self),
+        }
+    }
+
+    pub fn finish_server_handshake(&mut self, handshake: Handshake) -> Result<()> {
+        match self {
+            Stream::WebSocket(stream) => stream.finish_server_handshake(handshake),
+            _ => Ok(()),
+        }
+    }
+
+
+
 
     pub fn new_websocket(addr: SocketAddr) -> Result<Self> {
         let ws_client = WebSocketClient::new(addr)?;

@@ -1,7 +1,7 @@
 use std::io;
 
 use anyhow::Result;
-use log::trace;
+use log::{debug, trace};
 use mio::{Interest, Poll};
 
 use crate::{client::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE}, config::constants::CHUNK_SIZE, mioserver::{server::TestState, ServerTestPhase}};
@@ -32,18 +32,17 @@ pub fn handle_greeting_accep_token_read(
     }
 }
 
+
 pub fn handle_greeting_send_accept_token(
     poll: &Poll,
     state: &mut TestState,
 ) -> Result<usize, std::io::Error> {
-    trace!("handle_greeting_send_accept_token");
+    debug!("handle_greeting_send_accept_token");
     let version = b"RMBTv1.5.0\n";
     let accept = b"ACCEPT TOKEN QUIT\n";
 
     if state.write_pos == 0 {
-        // Копируем version в начало буфера
         state.write_buffer[..version.len()].copy_from_slice(version);
-        // Копируем accept после version
         let len = version.len() + accept.len();
         trace!("len {}", len);
         state.write_buffer[version.len()..len].copy_from_slice(accept);

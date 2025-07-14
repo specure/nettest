@@ -72,6 +72,7 @@ pub fn handle_get_time_receive_chunk(
     poll: &Poll,
     state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
+    debug!("handle_get_time_receive_chunk token {:?}", state.token);
     loop {
         let n = state
             .stream

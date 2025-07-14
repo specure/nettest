@@ -1,6 +1,10 @@
+use log::{debug, info};
+
 use crate::config::parser::{ read_config_file};
 use crate::mioserver::MioServer;
+use crate::tokio_server::server::Server;
 use crate::tokio_server::server_config::RmbtServerConfig;
+use crate::tokio_server::utils::random_buffer;
 use std::error::Error as StdError;
 
 pub mod config;
@@ -28,32 +32,33 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         let mut mio_server = MioServer::new(args, config)?;
         mio_server.run()?;
     } else {
-        print_help();
-        return Err("Invalid argument".into());
-    }
 
-    //     debug!("starting...");
-    //     if config.debug {
-    //         debug!("debug logging on");
-    //     }
-    //     debug!("Random buffer initialising!!!!!!!");
+        args = args.iter().skip(1).map(|s| s.clone()).collect();
+        let config = match RmbtServerConfig::from_args(args) {
+            Ok(config) => config,
+            Err(e) => {
+                eprintln!("Failed to parse configuration: {}", e);
+                return Err(e);
+            }
+        };       
 
-    //     random_buffer::init_random_buffer();
-    //     let buf = random_buffer::get_random_buffer();
-    //     debug!("First 10 bytes: {:?}", &buf[..10]);
-    //     debug!("Last 10 bytes: {:?}", &buf[buf.len() - 10..]);
 
-    //     let (server, _shutdown_tx) = match Server::new(config) {
-    //         Ok(server) => server,
-    //         Err(e) => {
-    //             // error!("Failed to initialize server: {}", e);
-    //             return Err(e);
-    //         }
-    //     };
+        random_buffer::init_random_buffer();
+        let buf = random_buffer::get_random_buffer();
+        debug!("First 10 bytes: {:?}", &buf[..10]);
+        debug!("Last 10 bytes: {:?}", &buf[buf.len() - 10..]);
 
-    //     info!("Starting server...");
-    //     server.run().await?;
-    //     info!("Server stopped");
+        let (server, _shutdown_tx) = match Server::new(config) {
+            Ok(server) => server,
+            Err(e) => {
+                // error!("Failed to initialize server: {}", e);
+                return Err(e);
+            }
+        };
+
+        info!("Starting server...");
+        server.run().await?;
+        info!("Server stopped");
     // } else if args[1] == "-m" {
 
     //     // env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
@@ -74,7 +79,9 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
     //     return Err("Invalid argument".into());
     // }
 
+    }
     Ok(())
+
 }
 
 fn print_help() {

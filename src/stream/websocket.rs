@@ -8,6 +8,8 @@ use std::net::SocketAddr;
 use tungstenite::protocol::WebSocketConfig;
 use tungstenite::{protocol::WebSocket, Message};
 
+use crate::tokio_server::utils::websocket::{generate_handshake_response, Handshake};
+
 
 const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
@@ -21,6 +23,23 @@ pub struct WebSocketClient {
 impl WebSocketClient {
     pub fn get_greeting(&mut self) -> Vec<u8> {
         self.handshake_rrequest.clone()
+    }
+
+    pub fn finish_server_handshake(&mut self, handshake: Handshake) -> Result<()> {
+        let response = generate_handshake_response(&handshake).unwrap();
+        self.write_all(response.as_bytes()).unwrap();
+        Ok(())
+    }
+
+
+    pub fn new_server(stream: TcpStream) -> Result<Self> {
+        let ws = WebSocket::from_raw_socket(stream, tungstenite::protocol::Role::Server, None);
+        
+        Ok(Self {
+            ws,
+            handshake_rrequest: vec![],
+            flushed: true,
+        })
     }
 
     pub fn new(addr: SocketAddr) -> Result<Self> {
@@ -222,13 +241,11 @@ impl Read for WebSocketClient {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self.ws.read() {
             Ok(Message::Binary(data)) => {
-                debug!("WebSocket binary: {} bytes", data.len());
                 let len = data.len().min(buf.len());
                 buf[..len].copy_from_slice(&data[..len]);
                 Ok(len)
             }
             Ok(Message::Text(text)) => {
-                debug!("WebSocket text: {} bytes", text.len());
                 let bytes = text.as_bytes();
                 let len = bytes.len().min(buf.len());
                 buf[..len].copy_from_slice(&bytes[..len]);
@@ -257,7 +274,6 @@ impl Read for WebSocketClient {
 impl Write for WebSocketClient {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if self.flushed {
-            debug!("WebSocket write");
             let message = Message::Binary(buf.to_vec().into());
 
             match self.ws.write(message) {
@@ -270,12 +286,10 @@ impl Write for WebSocketClient {
                         tungstenite::Error::Io(io_err)
                             if io_err.kind() == std::io::ErrorKind::WouldBlock =>
                         {
-                            debug!("WouldBlock WRITE!!!! {}", io_err.to_string());
                             self.flushed = false;
                             Err(io::Error::new(io::ErrorKind::WouldBlock, "WouldBlock"))
                         }
                         _ =>  {
-                            debug!("WebSocket write error: {}", e);
                             return Err(io::Error::new(io::ErrorKind::Other, e));
                         },
                     }
@@ -283,7 +297,6 @@ impl Write for WebSocketClient {
             }
         }
         else {
-            debug!("WebSocket flush");
             match self.ws.flush() {
                 Ok(_) => {
                     self.flushed = true;
@@ -299,7 +312,6 @@ impl Write for WebSocketClient {
                            return  Err(io::Error::new(io::ErrorKind::WouldBlock, "WouldBlock"))
                         }
                         _ =>  {
-                            debug!("WebSocket flush error: {}", e);
                             return Err(io::Error::new(io::ErrorKind::Other, e));
                         }
                     }
@@ -335,8 +347,8 @@ impl Write for WebSocketClient {
     fn flush(&mut self) -> io::Result<()> {
         match self.ws.flush() {
             Ok(_) => {
-                self.flushed = true;
                 debug!("WebSocket flush success");
+                self.flushed = true;
                 // let a = self.ws.close(None);
                 return Ok(());
             }

@@ -300,24 +300,20 @@ impl Read for WebSocketTlsClient {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self.ws.read() {
             Ok(Message::Binary(data)) => {
-                debug!("WebSocket binary: {} bytes", data.len());
                 let len = data.len().min(buf.len());
                 buf[..len].copy_from_slice(&data[..len]);
                 Ok(len)
             }
             Ok(Message::Text(text)) => {
-                debug!("WebSocket text: {} bytes", text.len());
                 let bytes = text.as_bytes();
                 let len = bytes.len().min(buf.len());
                 buf[..len].copy_from_slice(&bytes[..len]);
                 Ok(len)
             }
             Ok(Message::Close(_)) => {
-                debug!("WebSocket close message");
                 Ok(0)
             }
             Ok(_) => {
-                debug!("WebSocket other message");
                 Ok(0)
             }
             Err(e) => match e {
@@ -335,7 +331,6 @@ impl Read for WebSocketTlsClient {
 impl Write for WebSocketTlsClient {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if self.flushed {
-            debug!("WebSocket write");
             let message = Message::Binary(buf.to_vec().into());
 
             match self.ws.write(message) {
@@ -347,7 +342,6 @@ impl Write for WebSocketTlsClient {
                     tungstenite::Error::Io(io_err)
                         if io_err.kind() == std::io::ErrorKind::WouldBlock =>
                     {
-                        debug!("WouldBlock WRITE!!!! {}", io_err.to_string());
                         self.flushed = false;
                         Err(io::Error::new(io::ErrorKind::WouldBlock, "WouldBlock"))
                     }
@@ -358,7 +352,6 @@ impl Write for WebSocketTlsClient {
                 },
             }
         } else {
-            debug!("WebSocket flush");
             match self.ws.flush() {
                 Ok(_) => {
                     self.flushed = true;

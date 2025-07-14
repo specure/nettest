@@ -1,9 +1,9 @@
 use bytes::BytesMut;
 use log::{debug, info, trace};
 use mio::{Events, Interest, Poll, Token, Waker};
+use regex::Regex;
 use std::collections::{HashMap, VecDeque};
 use std::io::{self};
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -15,6 +15,7 @@ use crate::mioserver::handlers::basic_handler::{
 use crate::mioserver::server::{ConnectionType, TestState};
 use crate::mioserver::ServerTestPhase;
 use crate::stream::stream::Stream;
+use crate::tokio_server::utils::websocket::Handshake;
 
 pub struct WorkerThread {
     _thread: thread::JoinHandle<()>,
@@ -119,13 +120,15 @@ impl Worker {
                     continue;
                 }
 
+                stream = self.handle_greeting_receive_connection_type(stream, token)?;
+
                 self.connections.insert(
                     token,
                     TestState {
                         token,
                         // stream: Stream::new_rustls_server(stream, None, None).unwrap(),
                         stream: stream,
-                        measurement_state: ServerTestPhase::GreetingReceiveConnectionType,
+                        measurement_state: ServerTestPhase::GreetingSendAcceptToken,
                         read_buffer: [0; 1024 * 8],
                         write_buffer: [0; 1024 * 8],
                         read_bytes: BytesMut::new(),
@@ -144,12 +147,6 @@ impl Worker {
                     },
                 );
 
-                // Счетчик уже увеличен при назначении соединения этому воркеру
-                println!(
-                    "Worker {}: processing assigned connection (count already updated)",
-                    self.id
-                );
-
                 debug!(
                     "Worker {} registered new connection with token {:?} (total connections: {})",
                     self.id,
@@ -158,11 +155,9 @@ impl Worker {
                 );
             }
 
-            // Обрабатываем все активные соединения
             if !self.connections.is_empty() {
                 self.process_all_connections()?;
             } else {
-                // Нет соединений, спим
                 thread::sleep(Duration::from_millis(50));
             }
         }
@@ -238,5 +233,53 @@ impl Worker {
         }
 
         Ok(())
+    }
+
+    fn handle_greeting_receive_connection_type(
+        &mut self,
+        mut stream: Stream,
+        token: Token,
+    ) -> io::Result<Stream> {
+        let mut buffer = vec![0; 1024];
+        let mut result = BytesMut::new();
+        let mut loop_flag = false;
+
+        while !loop_flag {
+            self.poll.poll(&mut self.events, None)?;
+            for event in self.events.iter() {
+                if event.is_readable() {
+                    match stream.read(&mut buffer) {
+                        Ok(n) => {
+                            result.extend_from_slice(&buffer[..n]);
+                            if result.len() >= 4
+                                && result[result.len() - 4..result.len()]
+                                    == [b'\r', b'\n', b'\r', b'\n']
+                            {
+                                let request = String::from_utf8_lossy(&result);
+                                let ws_regex = Regex::new(r"(?i)upgrade:\s*websocket").unwrap();
+
+                                let is_websocket = ws_regex.is_match(&request);
+                                if is_websocket {
+                                    stream = stream.upgrade_to_websocket().unwrap();
+                                    let handshake = Handshake::parse(&request).unwrap();
+                                    stream.finish_server_handshake(handshake).unwrap();
+                                }
+
+                                stream.reregister(&self.poll, token, Interest::WRITABLE)?;
+
+                                loop_flag = true;
+                            }
+                        }
+                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                            continue;
+                        }
+                        Err(e) => {
+                            return Err(e);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(stream)
     }
 }
