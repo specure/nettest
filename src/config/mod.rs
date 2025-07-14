@@ -1,20 +1,31 @@
-pub mod constants;
-pub mod settings;
+use log::LevelFilter;
 
+pub mod constants;
+pub mod parser;
+
+#[derive(Debug, Clone)]
+pub enum App {
+    Server,
+    Client,
+}
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub listen_address: String,
-    pub tls_listen_address: Option<String>,
+    pub app: App,
+    pub server_tcp_port: String,
+    pub server_tls_port: Option<String>,
     pub cert_path: Option<String>,
     pub key_path: Option<String>,
-    pub num_threads: usize,
+    pub server_workers: Option<usize>,
     pub user: Option<String>,
-    pub group: Option<String>,
     pub daemonize: bool,
-    pub debug: bool,
     pub use_websocket: bool,
-    pub protocol_version: Option<u32>, //TODO None for latest, Some(3) for v0.3 
+    pub use_tls: bool,
+    pub client_use_tls: bool,
+    pub client_use_websocket: bool,
+    pub client_thread_count: usize,
+    pub protocol_version: Option<u32>, //TODO None for latest, Some(3) for v0.3
+    pub logger: LevelFilter,
 }
 
 impl Config {
@@ -28,7 +39,10 @@ impl Config {
                 self.protocol_version = Some(3);
                 Ok(())
             }
-            _ => Err(format!("Unsupported version for backwards compatibility: {}", version))
+            _ => Err(format!(
+                "Unsupported version for backwards compatibility: {}",
+                version
+            )),
         }
     }
 }
@@ -36,17 +50,21 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            listen_address: "0.0.0.0:8080".to_string(),
-            tls_listen_address: None,
+            app: App::Server,
+            server_tcp_port: "5005".to_string(),
+            server_tls_port: None,
             cert_path: None,
             key_path: None,
-            num_threads: 4,
+            server_workers: None,
             user: None,
-            group: None,
             daemonize: false,
-            debug: false,
             use_websocket: false,
-            protocol_version: None, // Default to latest version
+            use_tls: false,
+            protocol_version: None, 
+            logger: LevelFilter::Off,
+            client_use_tls: false,
+            client_use_websocket: false,
+            client_thread_count: 5,
         }
     }
-} 
+}

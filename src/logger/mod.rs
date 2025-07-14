@@ -97,7 +97,7 @@ pub fn init_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Error +
     let log_dir = if cfg!(target_os = "macos") {
         // On macOS, use ~/Library/Logs/rmbt
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/root".to_string());
-        Path::new(&home).join("Library/Logs/rmbt")
+        Path::new(&home).join("Library/Logs/nettest")
     } else {
         // Create PID file
         let pid = std::process::id();

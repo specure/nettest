@@ -9,9 +9,11 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Instant;
 
+use crate::config::Config;
 use crate::mioserver::worker::WorkerThread;
 use crate::mioserver::ServerTestPhase;
 use crate::stream::stream::Stream;
+use crate::tokio_server::server_config::parse_listen_address;
 
 pub struct MioServer {
     listener: TcpListener,
@@ -41,7 +43,8 @@ pub struct TestState {
     pub terminal_chunk: Option<BytesMut>,
 }
 impl MioServer {
-    pub fn new(addr: SocketAddr) -> io::Result<Self> {
+    pub fn new(config: Config) -> io::Result<Self> {
+        let addr: SocketAddr = parse_listen_address(&config.server_tcp_port).unwrap();
         let listener = TcpListener::bind(addr)?;
 
         let logical = num_cpus::get();

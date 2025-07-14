@@ -42,24 +42,12 @@ pub enum TestPhase {
     GetTimeReceiveTime,
     GetTimeCompleted,
 
-    // PutNoResultSendCommand,
-    // PutNoResultReceiveOk,
-    // PutNoResultSendChunks,
-    // PutNoResultReceiveTime,
-    // PutNoResultCompleted,
     PerfSendCommand,
     PerfReceiveOk,
     PerfSendChunks,
     PerfSendLastChunk,
     PerfReceiveTime,
     PerfCompleted,
-    //     PutSendCommand,
-    //     PutReceiveOk,
-    //     PutSendChunks,
-    //     PutReceiveBytesTime,
-    //     PutReceiveTime,
-    //     PutQuit,
-    //     PutCompleted,
 }
 
 pub struct TestState {
@@ -115,8 +103,6 @@ impl TestState {
         let mut stream = if use_tls && use_websocket {
             Stream::new_websocket_tls(addr)?
         } else if use_tls {
-            // Stream::new_openssl_sys(addr)?
-            // Stream::new_openssl(addr)?
             Stream::new_rustls(addr, cert_path, key_path)?
         } else {
             if use_websocket {
