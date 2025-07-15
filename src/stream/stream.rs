@@ -11,6 +11,8 @@ use crate::stream::{
     openssl::OpenSslStream,
     rustls::RustlsStream,
     rustls_server::RustlsServerStream,
+    websocket_rustls_server::WebSocketRustlsServerStream,
+    
 };
 use crate::tokio_server::utils::websocket::Handshake;
 
@@ -22,6 +24,7 @@ pub enum Stream {
     Rustls(RustlsStream),
     RustlsServer(RustlsServerStream),
     WebSocketTls(WebSocketTlsClient),
+    WebSocketRustlsServer(WebSocketRustlsServerStream),
 }
 
 impl Stream {
@@ -39,6 +42,7 @@ impl Stream {
             Stream::Rustls(_) => "Rustls",
             Stream::WebSocketTls(_) => "WebSocketTls",
             Stream::RustlsServer(_) => "RustlsServer",
+            Stream::WebSocketRustlsServer(_) => "WebSocketRustlsServer",
         }
     }
 
@@ -48,6 +52,10 @@ impl Stream {
                 let stream = WebSocketClient::new_server(stream)?;
                 Ok(Stream::WebSocket(stream))
             }
+            Stream::RustlsServer(stream) => {
+                let stream = WebSocketRustlsServerStream::from_rustls_server_stream(stream)?;
+                Ok(Stream::WebSocketRustlsServer(stream))
+            }
             _ => Ok(self),
         }
     }
@@ -55,6 +63,7 @@ impl Stream {
     pub fn finish_server_handshake(&mut self, handshake: Handshake) -> Result<()> {
         match self {
             Stream::WebSocket(stream) => stream.finish_server_handshake(handshake),
+            Stream::WebSocketRustlsServer(stream) => stream.finish_server_handshake(handshake),
             _ => Ok(()),
         }
     }
@@ -85,6 +94,7 @@ impl Stream {
             Stream::Rustls(_) => Ok(()),
             Stream::WebSocketTls(stream) => stream.close(),
             Stream::RustlsServer(_) => Ok(()),
+            Stream::WebSocketRustlsServer(_) => Ok(()),
         }
     }
 
@@ -96,6 +106,7 @@ impl Stream {
             Stream::Rustls(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
             Stream::WebSocketTls(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
             Stream::RustlsServer(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
+            Stream::WebSocketRustlsServer(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
         }
     }
 
@@ -122,6 +133,7 @@ impl Stream {
             Stream::Rustls(stream) => stream.read(buf),
             Stream::WebSocketTls(stream) => stream.read(buf),
             Stream::RustlsServer(stream) => stream.read(buf),
+            Stream::WebSocketRustlsServer(stream) => stream.read(buf),
         }
     }
 
@@ -133,6 +145,7 @@ impl Stream {
             Stream::Rustls(stream) => stream.write(buf),
             Stream::WebSocketTls(stream) => stream.write(buf),
             Stream::RustlsServer(stream) => stream.write(buf),
+            Stream::WebSocketRustlsServer(stream) => stream.write(buf),
         }
     }
 
@@ -156,6 +169,9 @@ impl Stream {
             Stream::RustlsServer(stream) => {
                 stream.register(poll, token, interest)?;
             }
+            Stream::WebSocketRustlsServer(stream) => {
+                stream.register(poll, token, interest)?;
+            }
         }
         Ok(())
     }
@@ -168,6 +184,7 @@ impl Stream {
             Stream::Rustls(stream) => stream.flush(),
             Stream::WebSocketTls(stream) => stream.flush(),
             Stream::RustlsServer(stream) => stream.flush(),
+            Stream::WebSocketRustlsServer(stream) => stream.flush(),
         }
     }
 
@@ -194,6 +211,10 @@ impl Stream {
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
             }
             Stream::RustlsServer(stream) => {
+                stream.reregister(poll, token, interest)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            }
+            Stream::WebSocketRustlsServer(stream) => {
                 stream.reregister(poll, token, interest)
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
             }

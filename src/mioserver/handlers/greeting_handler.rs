@@ -54,16 +54,18 @@ pub fn handle_greeting_send_accept_token(
             return Err(io::Error::new(io::ErrorKind::WouldBlock, "Would block"));
         }
         state.write_pos += n;
-        trace!("Wrote handle_greeting_send_accept_token {}", n);
+        debug!("Wrote handle_greeting_send_accept_token {}", n);
         if state.write_pos == (version.len() + accept.len()) {
             state.write_pos = 0;
             state.read_pos = 0;
             state.measurement_state = ServerTestPhase::GreetingReceiveToken;
-            state.stream.reregister(poll, state.token, Interest::READABLE)?;
+            state.stream.reregister(poll, state.token, Interest::READABLE | Interest::WRITABLE)?;
+            state.stream.flush()?;
             return Ok(n);
         }
     }
 }
+
 
 pub fn handle_greeting_receive_token(
     poll: &Poll,

@@ -15,6 +15,7 @@ pub struct RustlsServerStream {
     pub stream: TcpStream,
     handshake_done: bool,
     pub finished: bool,
+    pub temp_buf: Vec<u8>,
 }
 
 impl RustlsServerStream {
@@ -49,11 +50,22 @@ impl RustlsServerStream {
             stream,
             handshake_done: false,
             finished: true,
+            temp_buf: vec![],
         })
     }
 
     pub fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         // trace!("Reading from RustlsStream");
+        if self.temp_buf.len() > buf.len() {
+
+            let to_copy = buf.len().min(self.temp_buf.len());
+            buf[..to_copy].copy_from_slice(&self.temp_buf[..to_copy]);
+            self.temp_buf.drain(..to_copy);
+            debug!("Left {} bytes in temp_buf", self.temp_buf.len());
+            return Ok(to_copy);
+        } 
+
+
 
         // Read TLS data
         match self.conn.read_tls(&mut self.stream) {
@@ -63,6 +75,15 @@ impl RustlsServerStream {
                 if self.conn.wants_write() {
                     self.conn.write_tls(&mut self.stream)?;
                 }
+                debug!("WouldBlock 1");
+                if self.temp_buf.len() > 0 {
+
+                    let to_copy = buf.len().min(self.temp_buf.len());
+                    buf[..to_copy].copy_from_slice(&self.temp_buf[..to_copy]);
+                    self.temp_buf.drain(..to_copy);
+                    debug!("Left {} bytes in temp_buf", self.temp_buf.len());
+                    return Ok(to_copy);
+                }  
                 return Err(io::Error::new(
                     io::ErrorKind::WouldBlock,
                     "TLS read would block",
@@ -77,7 +98,6 @@ impl RustlsServerStream {
                 return Ok(0);
             }
             Ok(n) => {
-                trace!("Read {} bytes from TLS stream", n);
             }
         }
 
@@ -94,6 +114,8 @@ impl RustlsServerStream {
             }
         };
 
+    
+
         // If we need to write handshake data, do it
         if !self.handshake_done {
             while self.conn.wants_write() {
@@ -105,15 +127,52 @@ impl RustlsServerStream {
         }
 
         // Read any new plaintext
-        if io_state.plaintext_bytes_to_read() > 0 {
-            let n = self.conn.reader().read(buf)?;
-            trace!("Read {} bytes of new data", n);
-            return Ok(n);
+        // let mut total_read = 0;
+        // while io_state.plaintext_bytes_to_read() > 0  {
+        //     match self.conn.reader().read(&mut buf[total_read..]) {
+        //         Ok(0) => break,
+        //         Ok(n) => {
+        //             debug!("Read {} bytes of new data", n);
+        //             total_read += n;
+        //         }
+        //         Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
+        //         Err(e) => return Err(e),
+        //     }
+        // }
+
+        // let mut temp_buf = Vec::new();
+        let mut chunk = [0u8; 8192];
+            
+
+        loop {
+            match self.conn.reader().read(&mut chunk) {
+                Ok(0) => {
+                    break;
+                },
+                Ok(n) => {
+                    self.temp_buf.extend_from_slice(&chunk[..n]);
+                }
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    break;
+                },
+                Err(e) => return Err(e),
+            }
+        }
+
+        let to_copy = buf.len().min(self.temp_buf.len());
+        buf[..to_copy].copy_from_slice(&self.temp_buf[..to_copy]);
+
+
+
+
+        if to_copy > 0 {
+            self.temp_buf.drain(..to_copy);
+            debug!("Temp buf len: {}", self.temp_buf.len());
+            return Ok(to_copy);
         }
 
         // If we need to read more data, try again
         if self.conn.wants_read() {
-            trace!("Need to read more data");
             return self.read(buf);
         }
 
@@ -227,7 +286,7 @@ impl RustlsServerStream {
     }
 }
 
-fn load_certs(cert_path: &Path) -> Result<Vec<CertificateDer<'static>>, Error> {
+pub fn load_certs(cert_path: &Path) -> Result<Vec<CertificateDer<'static>>, Error> {
     let cert_path = cert_path.to_str().unwrap();
     debug!("Loading certificates from {}", cert_path);
     let certfile = fs::read(cert_path)?;
@@ -238,7 +297,7 @@ fn load_certs(cert_path: &Path) -> Result<Vec<CertificateDer<'static>>, Error> {
     Ok(certs)
 }
 
-fn load_private_key(key_path: &Path) -> Result<PrivateKeyDer<'static>, Error> {
+pub fn load_private_key(key_path: &Path) -> Result<PrivateKeyDer<'static>, Error> {
     let key_path = key_path.to_str().unwrap();
     debug!("Loading private key from {}", key_path);
     let keyfile = fs::read(key_path)?;
@@ -252,5 +311,22 @@ fn load_private_key(key_path: &Path) -> Result<PrivateKeyDer<'static>, Error> {
     } else {
         debug!("No private keys found in key file");
         Err(Error::msg("No private keys found in key file"))
+    }
+}
+
+
+impl Read for RustlsServerStream {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.read(buf)
+    }
+}
+
+impl Write for RustlsServerStream {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.flush()
     }
 }

@@ -187,8 +187,6 @@ impl WebSocketClient {
             return Err(anyhow::anyhow!("Invalid Sec-WebSocket-Accept key"));
         }
 
-        info!("WebSocket handshake completed successfully");
-
         // Create WebSocket with the established connection
         let config = WebSocketConfig::default();
         // config.max_write_buffer_size = MAX_CHUNK_SIZE as usize;

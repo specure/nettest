@@ -1,14 +1,17 @@
 use anyhow::Result;
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use log::trace;
 use log::{debug, info};
 use mio::{net::TcpStream, Interest, Poll, Token};
-use sha1::{Digest, Sha1};
+use openssl::ssl::SslVerifyMode;
 use openssl::ssl::{Ssl, SslContext, SslMethod, SslMode, SslOptions, SslStream};
+use sha1::{Digest, Sha1};
+use std::io::{self, Read, Write};
+use std::net::SocketAddr;
 use tungstenite::protocol::WebSocketConfig;
 use tungstenite::Message;
 use tungstenite::WebSocket;
-use std::io::{self, Read, Write};
-use std::net::SocketAddr;
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+
 const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 #[derive(Debug)]
@@ -23,9 +26,30 @@ impl WebSocketTlsClient {
         self.handshake_rrequest.clone()
     }
 
-    pub fn new(addr: SocketAddr,stream: TcpStream, hostname: &str) -> Result<Self> {
-       
+    pub fn server_new(stream: TcpStream, cert_path: String, key_path: String) -> Result<Self> {
+        let mut ctx = SslContext::builder(SslMethod::tls_server())?;
+        ctx.set_verify(SslVerifyMode::NONE);
+        ctx.set_mode(SslMode::RELEASE_BUFFERS);
+        ctx.set_options(SslOptions::NO_COMPRESSION);
+        ctx.set_ciphersuites("TLS_AES_128_GCM_SHA256")?;
 
+        // Установка сертификатов и ключей
+        ctx.set_certificate_file(&cert_path, openssl::ssl::SslFiletype::PEM)?;
+        ctx.set_private_key_file(&key_path, openssl::ssl::SslFiletype::PEM)?;
+
+        let ssl = Ssl::new(&ctx.build())?;
+        let stream = SslStream::new(ssl, stream)?;
+
+        // Хендшейк TLS вы должны завершить позже (например: stream.accept() или stream.do_handshake())
+
+        Ok(Self {
+            ws: WebSocket::from_raw_socket(stream, tungstenite::protocol::Role::Server, None),
+            handshake_rrequest: Vec::new(),
+            flushed: false,
+        })
+    }
+
+    pub fn new(addr: SocketAddr, stream: TcpStream, hostname: &str) -> Result<Self> {
         debug!("Connecting to WebSocket server at {}", addr);
         debug!("Creating SSL context");
         let mut ctx = SslContext::builder(SslMethod::tls_client())?;
@@ -111,7 +135,6 @@ impl WebSocketTlsClient {
         // Generate WebSocket key
         let key = BASE64.encode(b"dGhlIHNhbXBsZSBub25jZQ==");
 
-
         debug!("WebSocket key: {}", key);
 
         // Create WebSocket handshake request
@@ -168,12 +191,20 @@ impl WebSocketTlsClient {
 
         // Read handshake response
         let mut response = Vec::new();
-        let mut buffer = [0u8; 1024];
-            poll.poll(&mut events, None)?;
+        let mut buffer = [0u8; 2048];
+
+        let mut current_pos = 0;
 
         loop {
-            poll.poll(&mut events, None)?;
+            debug!("polling");
+            
+            if let Ok(_) = poll.poll(&mut events, None) {
+                debug!("polled");
+            } else {
+                debug!("poll error");
+            }
 
+            debug!("polled");
             let connection_ready = true;
 
             // for event in events.iter() {
@@ -182,15 +213,16 @@ impl WebSocketTlsClient {
             //     }
             // }
 
+            debug!("connection_ready: {}", connection_ready);
             if connection_ready {
-                match stream.read(&mut buffer) {
-                
+                match stream.read(&mut buffer[current_pos..]) {
                     Ok(n) => {
                         if n == 0 {
                             debug!("Connection closed during handshake");
                             return Err(anyhow::anyhow!("Connection closed during handshake"));
                         }
-                        response.extend_from_slice(&buffer[..n]);
+                        response.extend_from_slice(&buffer[current_pos..current_pos + n]);
+                        current_pos += n;
 
                         let line = String::from_utf8_lossy(&buffer);
 
@@ -199,15 +231,22 @@ impl WebSocketTlsClient {
                             String::from_utf8_lossy(&buffer)
                         );
 
-                        if line.contains("RMBT") {
+                        if line.contains("Sec-WebSocket-Accept:") {
                             debug!(
                                 "WebSocket handshake response FOUND: {}",
                                 String::from_utf8_lossy(&response)
                             );
                             break;
                         } else {
-                            poll.registry()
-                            .reregister(stream.get_mut(), Token(0), Interest::READABLE)?;
+                            debug!(
+                                "WebSocket handshake response: {}",
+                                String::from_utf8_lossy(&response)
+                            );
+                            poll.registry().reregister(
+                                stream.get_mut(),
+                                Token(0),
+                                Interest::READABLE,
+                            )?;
                             debug!(
                                 "WebSocket handshake response: {}",
                                 String::from_utf8_lossy(&response)
@@ -216,6 +255,11 @@ impl WebSocketTlsClient {
                     }
                     Err(e) => {
                         if e.to_string().contains("WouldBlock") {
+                            poll.registry().reregister(
+                                stream.get_mut(),
+                                Token(0),
+                                Interest::READABLE,
+                            )?;
                             break;
                         }
                     }
@@ -249,8 +293,6 @@ impl WebSocketTlsClient {
             return Err(anyhow::anyhow!("Invalid Sec-WebSocket-Accept key"));
         }
 
-        info!("WebSocket handshake completed successfully");
-
         // Create WebSocket with the established connection
         let config = WebSocketConfig::default();
         // config.max_write_buffer_size = MAX_CHUNK_SIZE as usize;
@@ -277,7 +319,6 @@ impl WebSocketTlsClient {
             .close(None)
             .map_err(|e| anyhow::anyhow!("WebSocket close error: {}", e))
     }
-
 
     pub fn get_mut(&mut self) -> &mut TcpStream {
         self.ws.get_mut().get_mut()
@@ -310,12 +351,8 @@ impl Read for WebSocketTlsClient {
                 buf[..len].copy_from_slice(&bytes[..len]);
                 Ok(len)
             }
-            Ok(Message::Close(_)) => {
-                Ok(0)
-            }
-            Ok(_) => {
-                Ok(0)
-            }
+            Ok(Message::Close(_)) => Ok(0),
+            Ok(_) => Ok(0),
             Err(e) => match e {
                 tungstenite::Error::Io(io_err)
                     if io_err.kind() == std::io::ErrorKind::WouldBlock =>

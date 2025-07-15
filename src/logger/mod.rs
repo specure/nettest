@@ -142,9 +142,5 @@ pub fn init_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Error +
     log::set_boxed_logger(Box::new(logger))?;
     log::set_max_level(level);
 
-    // Log initial message to verify logger is working
-    log::info!("Logger initialized with level: {:?}", level);
-    log::info!("Log file location: {}", log_path.display());
-
     Ok(())
 }

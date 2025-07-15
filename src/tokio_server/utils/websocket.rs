@@ -69,6 +69,7 @@ pub fn generate_handshake_response(handshake: &Handshake) -> Result<String, Box<
          Connection: Upgrade\r\n\
          Sec-WebSocket-Accept: {}\r\n\
          \r\n",
-        accept_key
+        accept_key,
+        
     ))
 } 

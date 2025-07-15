@@ -1,6 +1,6 @@
 use std::{io, time::Instant};
 
-use log::trace;
+use log::{debug, trace};
 use mio::{Interest, Poll};
 
 use crate::mioserver::{server::TestState, ServerTestPhase};
@@ -26,7 +26,7 @@ pub fn handle_put_no_result_send_ok(poll: &Poll, state: &mut TestState) -> io::R
 
             state
                 .stream
-                .reregister(poll, state.token, Interest::READABLE)?;
+                .reregister(poll, state.token, Interest::READABLE | Interest::WRITABLE)?;
             return Ok(n);
         }
     }
@@ -36,20 +36,27 @@ pub fn handle_put_no_result_receive_chunk(
     poll: &Poll,
     state: &mut TestState,
 ) -> io::Result<(usize)> {
-    trace!("handle_put_no_result_receive_chunk");
+    debug!("handle_put_no_result_receive_chunk");
     loop {
         let n = state
             .stream
             .read(&mut state.chunk_buffer[state.read_pos..])?;
         state.read_pos += n;
+        debug!("Read {} bytes", state.read_pos);
         if state.read_pos == state.chunk_size {
+            debug!("Chunk size reached");
             if state.chunk_buffer[state.read_pos - 1] == 0xFF {
+                debug!("Last byte is 0xFF");
                 state.time_ns = Some(state.clock.unwrap().elapsed().as_nanos());
                 state.measurement_state = ServerTestPhase::PutNoResultSendTime;
                 state
                     .stream
-                    .reregister(poll, state.token, Interest::WRITABLE)?;
+                    .reregister(poll, state.token, Interest::WRITABLE )?;
                 return Ok(n);
+            } else {
+                if state.chunk_buffer[state.read_pos - 1] != 0x00 {
+                    return Err(io::Error::new(io::ErrorKind::Other, "Invalid chunk"));
+                }
             }
             state.read_pos = 0;
         }

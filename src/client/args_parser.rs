@@ -15,7 +15,6 @@ pub fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result<Clien
         tls_port: default_config.server_tls_port.unwrap_or("443".to_string()).parse().unwrap(),
     };
 
-    println!("default_config: {:?}", args);
 
     let mut i = 0;
     while i < args.len() {
@@ -29,7 +28,6 @@ pub fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result<Clien
             "-c" => {
                 i += 1;
                 if i < args.len() {
-                    println!("server: {:?}", args[i]);
                     config.server = args[i].clone();
                 } else {
                     return Err(anyhow::anyhow!("Server address is required"));
@@ -78,7 +76,6 @@ pub fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result<Clien
     }
 
     if config.log.is_some() {
-        println!("log: {:?}", config.log.unwrap());
         logger::init_logger(config.log.unwrap()).unwrap();
     }
 

@@ -106,6 +106,7 @@ impl Worker {
                         )
                         .unwrap();
                         stream
+                    
                     }
                 };
                 println!("Worker {}: processing new connection", self.id);
@@ -259,6 +260,7 @@ impl Worker {
                                 let ws_regex = Regex::new(r"(?i)upgrade:\s*websocket").unwrap();
 
                                 let is_websocket = ws_regex.is_match(&request);
+                                debug!("Worker {}: is_websocket: {}", self.id, is_websocket);
                                 if is_websocket {
                                     stream = stream.upgrade_to_websocket().unwrap();
                                     let handshake = Handshake::parse(&request).unwrap();

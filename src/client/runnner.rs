@@ -28,15 +28,20 @@ pub fn run_threads(
         format!("{}:{}", config.server, config.tls_port).parse::<SocketAddr>()?
     };
 
-    println!("Running {:?} ", config);
-
 
     for i in 0..config.thread_count {
         let barrier = Arc::clone(&barrier);
         let stats = Arc::clone(&stats);
         thread_handles.push(thread::spawn(move || {
-            let mut state =
-                TestState::new(addr, config.use_tls, config.use_websocket, i, None, None).unwrap();
+
+            let mut state = match TestState::new(addr, config.use_tls, config.use_websocket, i, None, None) {
+                Ok(state) => state,
+                Err(e) => {
+                    debug!("TestState error: {:?} token: {}", e, i);
+                    return Err(e);
+                }
+            };
+
             let greeting = state.process_greeting();
             match greeting {
                 Ok(_) => {}
@@ -122,13 +127,15 @@ pub fn run_threads(
                     .cloned()
                     .collect(),
             };
-            result
+            Ok(result)
         }));
     }
 
     let states: Vec<Measurement> = thread_handles
         .into_iter()
         .map(|h| h.join().unwrap())
+        .filter(|s| s.is_ok())
+        .map(|s| s.unwrap())
         .collect();
 
     let state_refs: Vec<Measurement> = states
