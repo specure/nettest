@@ -53,6 +53,7 @@ impl RustlsServerStream {
             temp_buf: vec![],
         })
     }
+    
 
     pub fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         // trace!("Reading from RustlsStream");
@@ -77,7 +78,6 @@ impl RustlsServerStream {
                 }
                 debug!("WouldBlock 1");
                 if self.temp_buf.len() > 0 {
-
                     let to_copy = buf.len().min(self.temp_buf.len());
                     buf[..to_copy].copy_from_slice(&self.temp_buf[..to_copy]);
                     self.temp_buf.drain(..to_copy);
@@ -98,14 +98,17 @@ impl RustlsServerStream {
                 return Ok(0);
             }
             Ok(n) => {
+                trace!("Read  {} bytes from TLS", n);
             }
         }
+
+        trace!("Temp buf len: {}", self.temp_buf.len());
 
         // Process any new TLS messages
         // debug!("Processing new packets");
         let io_state = match self.conn.process_new_packets() {
             Ok(state) => {
-                // debug!("Processed new packets {:?}", state.plaintext_bytes_to_read());
+                debug!("Processed new packets {:?}", state.plaintext_bytes_to_read());
                 state
             }
             Err(e) => {
@@ -113,6 +116,7 @@ impl RustlsServerStream {
                 return Err(io::Error::new(io::ErrorKind::Other, e));
             }
         };
+
 
     
 
@@ -126,33 +130,23 @@ impl RustlsServerStream {
             self.handshake_done = true;
         }
 
-        // Read any new plaintext
-        // let mut total_read = 0;
-        // while io_state.plaintext_bytes_to_read() > 0  {
-        //     match self.conn.reader().read(&mut buf[total_read..]) {
-        //         Ok(0) => break,
-        //         Ok(n) => {
-        //             debug!("Read {} bytes of new data", n);
-        //             total_read += n;
-        //         }
-        //         Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
-        //         Err(e) => return Err(e),
-        //     }
-        // }
 
-        // let mut temp_buf = Vec::new();
-        let mut chunk = [0u8; 8192];
+        
+        let mut chunk = [0u8; 8192 * 10];
             
 
         loop {
             match self.conn.reader().read(&mut chunk) {
                 Ok(0) => {
+                    trace!("EOF");
                     break;
                 },
                 Ok(n) => {
                     self.temp_buf.extend_from_slice(&chunk[..n]);
+                    trace!("Extending temp buf by {} bytes", n);
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    trace!("WouldBlock nothing to read from conn");
                     break;
                 },
                 Err(e) => return Err(e),
@@ -160,24 +154,26 @@ impl RustlsServerStream {
         }
 
         let to_copy = buf.len().min(self.temp_buf.len());
+
         buf[..to_copy].copy_from_slice(&self.temp_buf[..to_copy]);
 
-
-
-
+        trace!("To copy: {} from temp buf len: {}", to_copy, self.temp_buf.len());
         if to_copy > 0 {
             self.temp_buf.drain(..to_copy);
-            debug!("Temp buf len: {}", self.temp_buf.len());
+            trace!("Temp buf len after drain : {}", self.temp_buf.len());
             return Ok(to_copy);
         }
 
+        trace!("No data to copy");
         // If we need to read more data, try again
         if self.conn.wants_read() {
+            trace!("Wants read");
             return self.read(buf);
         }
 
         // Принудительно отправляем данные для очистки буфера
         if self.conn.wants_write() {
+            trace!("Wants write");
             self.conn.write_tls(&mut self.stream)?;
         }
 
@@ -205,7 +201,7 @@ impl RustlsServerStream {
                     ));
                 }
                 Err(e) => {
-                    debug!("TLS buffer flush error: {:?}", e);
+                    info!("TLS buffer flush error: {:?}", e);
                     return Err(e);
                 }
             }

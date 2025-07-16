@@ -16,12 +16,10 @@ pub enum ConnectionType {
 }
 
 use crate::config::FileConfig;
-use crate::mioserver::parser::parse_args;
 use crate::mioserver::worker::WorkerThread;
 use crate::mioserver::ServerTestPhase;
 use crate::stream::stream::Stream;
 use crate::tokio_server::server_config::parse_listen_address;
-use crate::tokio_server::utils::websocket::Handshake;
 
 pub struct MioServer {
     tcp_listener: TcpListener,
@@ -48,9 +46,11 @@ pub struct TestState {
     pub clock: Option<Instant>,
     pub time_ns: Option<u128>,
     pub duration: u64,
+    pub put_duration: Option<u128>,
     pub chunk_buffer: Vec<u8>,
     pub chunk: Option<BytesMut>,
     pub terminal_chunk: Option<BytesMut>,
+    pub bytes_received: VecDeque<(u64, u64)>
 }
 
 #[derive(Clone)]

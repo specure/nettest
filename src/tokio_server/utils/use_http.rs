@@ -9,7 +9,7 @@ use tokio::net::TcpStream;
 use tokio_rustls::TlsAcceptor;
 
 pub const MAX_LINE_LENGTH: usize = 1024;
-const RMBT_UPGRADE: &str = "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: RMBT\r\n\r\n";
+pub const RMBT_UPGRADE: &str = "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: RMBT\r\n\r\n";
 
 
 pub async fn define_stream(

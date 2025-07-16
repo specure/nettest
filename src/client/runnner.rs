@@ -59,36 +59,36 @@ pub fn run_threads(
                 );
             }
 
-            barrier.wait();
+            // barrier.wait();
 
-            if i == 0 {
-                state.run_ping().unwrap();
-                let median = state.measurement_state().ping_median.unwrap();
-                print_result("Ping Median", "Completed (ns)", Some(median as usize));
-            }
-            barrier.wait();
+            // if i == 0 {
+            //     state.run_ping().unwrap();
+            //     let median = state.measurement_state().ping_median.unwrap();
+            //     print_result("Ping Median", "Completed (ns)", Some(median as usize));
+            // }
+            // barrier.wait();
 
-            state.run_get_time().unwrap();
-            {
-                let mut stats = stats.lock().unwrap();
-                stats.download_measurements.push(
-                    state
-                        .measurement_state()
-                        .measurements
-                        .iter()
-                        .cloned()
-                        .collect(),
-                );
-            } 
+            // state.run_get_time().unwrap();
+            // {
+            //     let mut stats = stats.lock().unwrap();
+            //     stats.download_measurements.push(
+            //         state
+            //             .measurement_state()
+            //             .measurements
+            //             .iter()
+            //             .cloned()
+            //             .collect(),
+            //     );
+            // } 
 
-            barrier.wait();
+            // barrier.wait();
 
-            if i == 0 {
-                let stats_guard = stats.lock().unwrap();
-                calculate_download_speed_from_stats(&stats_guard.download_measurements);
-            }
+            // if i == 0 {
+            //     let stats_guard = stats.lock().unwrap();
+            //     calculate_download_speed_from_stats(&stats_guard.download_measurements);
+            // }
 
-            barrier.wait();
+
 
             state.run_perf_test().unwrap();
             {

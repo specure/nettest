@@ -37,8 +37,10 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
     debug!("handle_receive_command");
     loop {
         trace!("handle_receive_command read_pos: {}", state.read_pos);
-        let n = state.stream.read(&mut state.read_buffer[0..])?;
-        state.read_pos = n;
+        let n = state
+            .stream
+            .read(&mut state.read_buffer[state.read_pos..])?;
+        state.read_pos += n;
         if n == 0 {
             return Ok(n);
         }
@@ -143,13 +145,19 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
                     return Err(io::Error::new(io::ErrorKind::Other, "Invalid command"));
                 }
 
-                match parts[1].parse::<usize>() {
-                    Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => {
-                        state.chunk_size = size;
+                println!("PUTNORESULT command: {}", command_str);
+
+                if parts.len() == 2 {
+                    match parts[1].parse::<usize>() {
+                        Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => {
+                            state.chunk_size = size;
+                        }
+                        _ => {
+                            trace!("Invalid chunk size");
+                        }
                     }
-                    _ => {
-                        state.chunk_size = MIN_CHUNK_SIZE;
-                    }
+                } else {
+                    state.chunk_size = MIN_CHUNK_SIZE;
                 }
                 state.read_pos = 0;
                 state.measurement_state = ServerTestPhase::PutNoResultSendOk;
@@ -159,10 +167,12 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
                 return Ok(n);
             }
 
-            if command_str.starts_with("PUT") {
+            if command_str.starts_with("PUTTIMERESULT") {
+                state.read_pos = 0;
+                state.measurement_state = ServerTestPhase::PutTimeResultSendOk;
                 let parts: Vec<&str> = command_str.split_whitespace().collect();
 
-                if parts.len() > 2 {
+                if parts.len() > 3 {
                     return Err(io::Error::new(io::ErrorKind::Other, "Invalid command"));
                 }
 
@@ -173,6 +183,42 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
                     _ => {
                         state.chunk_size = MIN_CHUNK_SIZE;
                     }
+                }
+
+                match parts[2].parse::<u64>() {
+                    Ok(duration) => {
+                        state.put_duration = Some(duration as u128);
+                    }
+                    _ => {
+                        state.put_duration = None;
+                    }
+                }
+
+                state
+                    .stream
+                    .reregister(poll, state.token, Interest::WRITABLE)?;
+
+                return Ok(n);
+            }
+
+            if command_str.starts_with("PUT") {
+                let parts: Vec<&str> = command_str.split_whitespace().collect();
+
+                if parts.len() > 2 {
+                    return Err(io::Error::new(io::ErrorKind::Other, "Invalid command"));
+                }
+
+                if parts.len() == 2 {
+                    match parts[1].parse::<usize>() {
+                        Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => {
+                            state.chunk_size = size;
+                        }
+                        _ => {
+                            state.chunk_size = MIN_CHUNK_SIZE;
+                        }
+                    }
+                } else {
+                    state.chunk_size = MIN_CHUNK_SIZE;
                 }
                 state.read_pos = 0;
                 state.measurement_state = ServerTestPhase::PutSendOk;

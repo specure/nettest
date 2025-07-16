@@ -14,7 +14,7 @@ use crate::client::constants::DEFAULT_READ_BUFFER_SIZE;
 use crate::config::constants::MIN_CHUNK_SIZE;
 use crate::stream::stream::Stream;
 
-const ONE_SECOND_NS: u128 = 1_000_000_000;
+pub const ONE_SECOND_NS: u128 = 1_000_000_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TestPhase {

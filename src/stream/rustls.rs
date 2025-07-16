@@ -15,6 +15,7 @@ pub struct RustlsStream {
     pub conn: ClientConnection,
     pub stream: TcpStream,
     handshake_done: bool,
+    pub finished: bool,
 }
 
 impl RustlsStream {
@@ -63,6 +64,7 @@ impl RustlsStream {
             conn,
             stream,
             handshake_done: false,
+            finished: true,
         })
     }
 
@@ -151,16 +153,24 @@ impl RustlsStream {
             match self.conn.write_tls(&mut self.stream) {
                 Ok(_) => {}
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    trace!("TLS buffer flush would block");
                     return Err(io::Error::new(
                         io::ErrorKind::WouldBlock,
                         "TLS write would block",
                     ));
                 }
                 Err(e) => {
+                    info!("TLS buffer flush error: {:?}", e);
                     return Err(e);
                 }
             }
         }
+
+        if !self.finished {
+            total_written += 1;
+            self.finished = true;
+        }
+
 
         // Теперь пробуем записать новые данные
         while total_written < buf.len() {
@@ -171,30 +181,34 @@ impl RustlsStream {
                     // Пытаемся отправить данные в сеть
                     while self.conn.wants_write() {
                         match self.conn.write_tls(&mut self.stream) {
-                            Ok(_) => {
+                            Ok(s) => {
                                 continue;
                             }
                             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                                break;
+                                self.finished = false;
+                                return Ok(total_written - 1);
                             }
                             Err(e) => {
+                                debug!("Network write error: {:?}", e);
                                 return Err(e);
                             }
                         }
                     }
                 }
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    trace!("TLS buffer write would block");
+                    debug!("TLS buffer write would block");
                     return Err(io::Error::new(
                         io::ErrorKind::WouldBlock,
                         "TLS write would block",
                     ));
                 }
                 Err(e) => {
+                    debug!("TLS buffer write error: {:?}", e);
                     return Err(e);
                 }
             }
         }
+
 
         Ok(total_written)
     }

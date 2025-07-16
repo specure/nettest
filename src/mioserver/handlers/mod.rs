@@ -6,3 +6,4 @@ pub mod ping;
 pub mod gettime;
 pub mod putnoresult;
 pub mod put;
+pub mod puttimeresult;

@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use crate::client::constants::RMBT_UPGRADE_REQUEST;
 use crate::config::constants::MIN_CHUNK_SIZE;
 use crate::mioserver::handlers::basic_handler::{
     handle_client_readable_data, handle_client_writable_data,
@@ -15,6 +16,7 @@ use crate::mioserver::handlers::basic_handler::{
 use crate::mioserver::server::{ConnectionType, TestState};
 use crate::mioserver::ServerTestPhase;
 use crate::stream::stream::Stream;
+use crate::tokio_server::utils::use_http::RMBT_UPGRADE;
 use crate::tokio_server::utils::websocket::Handshake;
 
 pub struct WorkerThread {
@@ -106,7 +108,6 @@ impl Worker {
                         )
                         .unwrap();
                         stream
-                    
                     }
                 };
                 println!("Worker {}: processing new connection", self.id);
@@ -145,6 +146,8 @@ impl Worker {
                         total_bytes: 0,
                         chunk: None,
                         terminal_chunk: None,
+                        put_duration: None,
+                        bytes_received: VecDeque::new(),
                     },
                 );
 
@@ -161,15 +164,14 @@ impl Worker {
             } else {
                 thread::sleep(Duration::from_millis(50));
             }
-            
         }
     }
 
     fn process_all_connections(&mut self) -> io::Result<()> {
-        if let Err(e) = self.poll.poll(
-            &mut self.events,
-            Some(std::time::Duration::from_millis(1)),
-        ) {
+        if let Err(e) = self
+            .poll
+            .poll(&mut self.events, Some(std::time::Duration::from_millis(10)))
+        {
             info!("Worker {}: Poll error: {}", self.id, e);
             return Err(e);
         }
@@ -210,8 +212,8 @@ impl Worker {
                     }
                     Err(e) => {
                         info!(
-                            "Worker {}: Error handling client data for token {:?} with error {:?}",
-                            self.id, event_token, e
+                            "Worker {}: Error handling client data for token {:?} with error {:?} and measurement state {:?}",
+                            self.id, event_token, e, state.measurement_state
                         );
                         connections_to_remove.push(event_token);
                     }
@@ -266,6 +268,10 @@ impl Worker {
                                     stream = stream.upgrade_to_websocket().unwrap();
                                     let handshake = Handshake::parse(&request).unwrap();
                                     stream.finish_server_handshake(handshake).unwrap();
+                                } else {
+                                    //TODO maybe loop
+                                    stream.write(RMBT_UPGRADE.as_bytes())?;
+                                    stream.flush()?;
                                 }
 
                                 stream.reregister(&self.poll, token, Interest::WRITABLE)?;

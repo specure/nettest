@@ -1,12 +1,12 @@
 use anyhow::Result;
-use log::{debug, info, warn};
+use log::{debug, info};
 use mio::{Interest, Poll};
 use std::time::Instant;
 
 use crate::client::globals::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE};
 use crate::client::state::{MeasurementState, TestPhase};
 
-const TEST_DURATION_NS: u64 = 7_000_000_000; // 3 seconds
+const TEST_DURATION_NS: u64 = 7; 
 
 pub fn handle_perf_receive_ok(
     poll: &Poll,
