@@ -172,9 +172,6 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
                 state.measurement_state = ServerTestPhase::PutTimeResultSendOk;
                 let parts: Vec<&str> = command_str.split_whitespace().collect();
 
-                if parts.len() > 3 {
-                    return Err(io::Error::new(io::ErrorKind::Other, "Invalid command"));
-                }
 
                 match parts[1].parse::<usize>() {
                     Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => {
@@ -185,14 +182,6 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
                     }
                 }
 
-                match parts[2].parse::<u64>() {
-                    Ok(duration) => {
-                        state.put_duration = Some(duration as u128);
-                    }
-                    _ => {
-                        state.put_duration = None;
-                    }
-                }
 
                 state
                     .stream

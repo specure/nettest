@@ -1,4 +1,4 @@
-use crate::mioserver::{handlers::{common::{handle_main_command_receive, handle_main_command_send}, getchunks::{handle_get_chunks_receive_ok, handle_get_chunks_send_chunks, handle_get_chunks_send_chunks_last, handle_get_chunks_send_ok, handle_get_chunks_send_time}, gettime::{handle_get_time_receive_ok, handle_get_time_send_chunk, handle_get_time_send_time, handle_perf_send_last_chunk}, greeting_handler::{handle_greeting_accep_token_read, handle_greeting_receive_token, handle_greeting_send_accept_token, handle_greeting_send_chunksize, handle_greeting_send_ok, handle_greeting_send_version}, ping::{handle_ping_receive_ok, handle_ping_send_time, handle_pong_send}, put::{handle_put_receive_chunk, handle_put_send_bytes, handle_put_send_ok, handle_put_send_time}, putnoresult::{handle_put_no_result_receive_chunk, handle_put_no_result_send_ok, handle_put_no_result_send_time}}, server::TestState, ServerTestPhase};
+use crate::mioserver::{handlers::{common::{handle_main_command_receive, handle_main_command_send}, getchunks::{handle_get_chunks_receive_ok, handle_get_chunks_send_chunks, handle_get_chunks_send_chunks_last, handle_get_chunks_send_ok, handle_get_chunks_send_time}, gettime::{handle_get_time_receive_ok, handle_get_time_send_chunk, handle_get_time_send_time, handle_perf_send_last_chunk}, greeting_handler::{handle_greeting_accep_token_read, handle_greeting_receive_token, handle_greeting_send_accept_token, handle_greeting_send_chunksize, handle_greeting_send_ok, handle_greeting_send_version}, ping::{handle_ping_receive_ok, handle_ping_send_time, handle_pong_send}, put::{handle_put_receive_chunk, handle_put_send_bytes, handle_put_send_ok, handle_put_send_time}, putnoresult::{handle_put_no_result_receive_chunk, handle_put_no_result_send_ok, handle_put_no_result_send_time}, puttimeresult::{handle_put_time_result_receive_chunk, handle_put_time_result_send_ok, handle_put_time_result_send_time}}, server::TestState, ServerTestPhase};
 use mio::Poll;
 use std::io;
 use log::{debug};
@@ -20,6 +20,9 @@ pub fn handle_client_readable_data(state: &mut TestState, poll: &Poll) -> io::Re
         ServerTestPhase::PutNoResultReceiveChunk => handle_put_no_result_receive_chunk(poll, state),
 
         ServerTestPhase::PutReceiveChunk => handle_put_receive_chunk(poll, state),
+
+        ServerTestPhase::PutTimeResultReceiveChunk => handle_put_time_result_receive_chunk(poll, state),
+        
         
         _ => {
             debug!("Unknown measurement state: {:?}", state.measurement_state);
@@ -58,6 +61,9 @@ pub fn handle_client_writable_data(state: &mut TestState, poll: &Poll) -> io::Re
         ServerTestPhase::PutSendOk => handle_put_send_ok(poll, state),
         ServerTestPhase::PutSendTime => handle_put_send_time(poll, state),
         ServerTestPhase::PutSendBytes => handle_put_send_bytes(poll, state),
+
+        ServerTestPhase::PutTimeResultSendOk => handle_put_time_result_send_ok(poll, state),
+        ServerTestPhase::PutTimeResultSendTimeResult => handle_put_time_result_send_time(poll, state),
 
         _ => {
             debug!("Unknown measurement state: {:?}", state.measurement_state);

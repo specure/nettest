@@ -8,7 +8,7 @@ use crate::client::state::{MeasurementState, TestPhase};
 
 const TEST_DURATION_NS: u64 = 7_000_000_000; 
 
-pub fn handle_perf_receive_ok(
+pub fn handle_put_time_result_receive_ok(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
@@ -30,29 +30,56 @@ pub fn handle_perf_receive_ok(
     }
 }
 
-pub fn handle_perf_receive_time(
+pub fn handle_put_time_result_receive_time(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
+    debug!("handle_put_time_result_receive_time token {:?}", measurement_state.token);
     loop {
         let n = measurement_state
             .stream
             .read(&mut measurement_state.read_buffer[measurement_state.read_pos..])?;
-        measurement_state.read_pos += n;
+        measurement_state.time_result_buffer.extend_from_slice(&measurement_state.read_buffer[..n]);
 
-        let line =
-            String::from_utf8_lossy(&measurement_state.read_buffer[..measurement_state.read_pos]);
-        if let Some(time_line) = line.lines().find(|l| l.trim().starts_with("TIME")) {
-            let time_ns = time_line
-                .split_whitespace()
-                .nth(1)
-                .and_then(|s| s.parse::<u64>().ok())
-                .unwrap();
-            // let speed_bps =
-            //     calculate_upload_speed(measurement_state.bytes_sent, time_ns);
-            // measurement_state.upload_speed = Some(calculate_upload_speed(measurement_state.bytes_sent, time_ns));
-            measurement_state.upload_time = Some(time_ns);
-            measurement_state.upload_bytes = Some(measurement_state.bytes_sent);
+        let time_line = String::from_utf8_lossy(&measurement_state.time_result_buffer);
+        debug!("Time result buffer: {}", time_line.len());
+        
+        if time_line.ends_with("\n") {
+            // Проверяем, является ли это TIMERESULT сообщением
+            if time_line.starts_with("TIMERESULT ") {
+                let data_part = &time_line[11..]; // Убираем "TIMERESULT "
+                debug!("Parsing TIMERESULT data: {}", data_part.trim());
+                
+                // Парсим пары (time bytes) из TIMERESULT сообщения
+                let pairs: Vec<(u64, u64)> = data_part
+                    .split("; ")
+                    .filter_map(|pair| {
+                        let pair = pair.trim_start_matches('(').trim_end_matches(')');
+                        let parts: Vec<&str> = pair.split_whitespace().collect();
+                        if parts.len() == 2 {
+                            let time = parts[0].parse::<u64>().ok()?;
+                            let bytes = parts[1].parse::<u64>().ok()?;
+                            Some((time, bytes))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                
+                debug!("Parsed {} time-bytes pairs: {:?}", pairs.len(), pairs);
+                
+                // Добавляем все пары в upload_measurements
+                for (time, bytes) in &pairs {
+                    measurement_state.upload_measurements.push_back((*time, *bytes));
+                }
+                
+                // Устанавливаем итоговые результаты (последняя пара)
+                if let Some((last_time, last_bytes)) = pairs.last() {
+                    measurement_state.upload_time = Some(*last_time);
+                    measurement_state.upload_bytes = Some(*last_bytes);
+                }
+            } 
+            
             measurement_state.phase = TestPhase::PerfCompleted;
             measurement_state.stream.reregister(
                 &poll,
@@ -60,16 +87,17 @@ pub fn handle_perf_receive_time(
                 Interest::WRITABLE,
             )?;
             measurement_state.read_pos = 0;
+            measurement_state.time_result_buffer.clear();
             return Ok(n);
         }
     }
 }
 
-pub fn handle_perf_send_command(
+pub fn handle_put_time_result_send_command(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
-    let command = format!("PUTNORESULT {}\n", measurement_state.chunk_size);
+    let command = format!("PUTTIMERESULT {}\n", measurement_state.chunk_size);
     if measurement_state.write_pos == 0 {
         measurement_state.write_buffer[..command.len()].copy_from_slice(command.as_bytes());
     }
@@ -92,7 +120,7 @@ pub fn handle_perf_send_command(
     }
 }
 
-pub fn handle_perf_send_chunks(
+pub fn handle_put_time_result_send_chunks(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
@@ -119,9 +147,6 @@ pub fn handle_perf_send_chunks(
             if measurement_state.write_pos == measurement_state.chunk_size  {
                 let tt = start_time.elapsed().as_nanos();
                 let is_last = tt >= TEST_DURATION_NS as u128;
-                measurement_state
-                    .upload_measurements
-                    .push_back((tt as u64, measurement_state.bytes_sent));
 
                 if is_last {
                     measurement_state.phase = TestPhase::PerfSendLastChunk;
@@ -142,7 +167,7 @@ pub fn handle_perf_send_chunks(
     }
 }
 
-pub fn handle_perf_send_last_chunk(
+pub fn handle_put_time_result_send_last_chunk(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {

@@ -4,7 +4,7 @@ use anyhow::Result;
 use log::{debug, trace};
 use mio::{Interest, Poll};
 
-use crate::{client::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE}, config::constants::CHUNK_SIZE, mioserver::{server::TestState, ServerTestPhase}};
+use crate::{client::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RMBT_UPGRADE_REQUEST}, config::constants::CHUNK_SIZE, mioserver::{server::TestState, ServerTestPhase}, tokio_server::utils::use_http::RMBT_UPGRADE};
 
 pub fn handle_greeting_accep_token_read(
     poll: &Poll,
@@ -38,7 +38,10 @@ pub fn handle_greeting_send_version(
     state: &mut TestState,
 ) -> Result<usize, std::io::Error> {
     debug!("handle_greeting_send_version");
+
     let version = "RMBTv1.5.0\n";
+
+    debug!("handle_greeting_send_version version: {}", version);
 
     if state.write_pos == 0 {
         state.write_buffer[..version.len()].copy_from_slice(version.as_bytes());

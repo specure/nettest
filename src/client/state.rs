@@ -1,6 +1,6 @@
 use anyhow::Result;
 use bytes::BytesMut;
-use log::{debug, trace};
+use log::{debug, info, trace};
 use mio::{Events, Interest, Poll, Token};
 use std::collections::VecDeque;
 use std::time::Instant;
@@ -86,6 +86,7 @@ pub struct MeasurementState {
     pub time_result: Option<u64>,
     pub bytes_received: u64,
     pub bytes_sent: u64,
+    pub time_result_buffer: Vec<u8>,
 }
 
 impl TestState {
@@ -144,6 +145,7 @@ impl TestState {
             time_result: None,
             bytes_received: 0,
             bytes_sent: 0,
+            time_result_buffer: Vec::new(),
         };
 
 
@@ -239,7 +241,7 @@ impl TestState {
                     .as_nanos();
                 let now = Instant::now().elapsed().as_nanos();
                 if now - time > test_duration_ns {
-                    debug!(
+                    info!(
                         "Test duration exceeded {:?} for token {:?}",
                         self.measurement_state.phase, self.measurement_state.token
                     );

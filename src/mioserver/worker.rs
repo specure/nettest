@@ -244,6 +244,7 @@ impl Worker {
         mut stream: Stream,
         token: Token,
     ) -> io::Result<Stream> {
+        debug!("Worker {}: handle_greeting_receive_connection_type", self.id);
         let mut buffer = vec![0; 1024];
         let mut result = BytesMut::new();
         let mut loop_flag = false;
@@ -270,10 +271,18 @@ impl Worker {
                                     stream.finish_server_handshake(handshake).unwrap();
                                 } else {
                                     //TODO maybe loop
-                                    stream.write(RMBT_UPGRADE.as_bytes())?;
-                                    stream.flush()?;
+                                    debug!("Worker {}: writing upgrade response", self.id);
+                                    match stream.write(RMBT_UPGRADE.as_bytes()) {
+                                        Ok(n) => {
+                                            debug!("Worker {}: wrote {} bytes", self.id, n);
+                                        }
+                                        Err(e) => {
+                                            debug!("Worker {}: error writing upgrade response: {}", self.id, e);
+                                        }
+                                    }
                                 }
 
+                                debug!("Worker {}: reregistering stream", self.id);
                                 stream.reregister(&self.poll, token, Interest::WRITABLE)?;
 
                                 loop_flag = true;

@@ -1,5 +1,5 @@
 use bytes::BytesMut;
-use log::{debug, LevelFilter};
+use log::{debug, info, LevelFilter};
 use mio::net::{TcpListener, TcpStream};
 use mio::{Poll, Token, Waker};
 use std::collections::VecDeque;
@@ -183,7 +183,7 @@ impl MioServer {
         {
             let mut counts = self.worker_connection_counts.lock().unwrap();
             counts[selected_worker] += 1;
-            println!(
+            info!(
                 "Worker {}: {} connection count increased to {}",
                 selected_worker, 
                 if is_tls { "TLS" } else { "TCP" },
