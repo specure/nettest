@@ -10,7 +10,7 @@ pub fn handle_greeting_accep_token_read(
     poll: &Poll,
     state: &mut TestState,
 ) -> Result<usize, std::io::Error> {
-    trace!("handle_greeting_accep_token_read");
+    debug!("handle_greeting_accep_token_read");
     loop {
         let n = state
             .stream
@@ -33,45 +33,74 @@ pub fn handle_greeting_accep_token_read(
 }
 
 
-pub fn handle_greeting_send_accept_token(
+pub fn handle_greeting_send_version(
     poll: &Poll,
     state: &mut TestState,
 ) -> Result<usize, std::io::Error> {
-    debug!("handle_greeting_send_accept_token");
-    let version = b"RMBTv1.5.0\n";
-    let accept = b"ACCEPT TOKEN QUIT\n";
+    debug!("handle_greeting_send_version");
+    let version = "RMBTv1.5.0\n";
 
     if state.write_pos == 0 {
-        state.write_buffer[..version.len()].copy_from_slice(version);
-        let len = version.len() + accept.len();
-        trace!("len {}", len);
-        state.write_buffer[version.len()..len].copy_from_slice(accept);
+        state.write_buffer[..version.len()].copy_from_slice(version.as_bytes());
     }
 
     loop {
-        let n = state.stream.write(&state.write_buffer[state.write_pos..(version.len() + accept.len())])?;
+        let n = state.stream.write(&state.write_buffer[state.write_pos..(version.as_bytes().len())])?;
         if n == 0 {
-            return Err(io::Error::new(io::ErrorKind::WouldBlock, "Would block"));
+            return Err(io::Error::new(io::ErrorKind::Other, "EOF"));
         }
         state.write_pos += n;
-        debug!("Wrote handle_greeting_send_accept_token {}", n);
-        if state.write_pos == (version.len() + accept.len()) {
+        debug!("Wrote handle_greeting_send_version {}", n);
+        if state.write_pos == (version.as_bytes().len()) {
             state.write_pos = 0;
             state.read_pos = 0;
-            state.measurement_state = ServerTestPhase::GreetingReceiveToken;
-            state.stream.reregister(poll, state.token, Interest::READABLE | Interest::WRITABLE)?;
             state.stream.flush()?;
+            state.measurement_state = ServerTestPhase::GreetingSendAcceptToken;
+            state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
             return Ok(n);
         }
     }
 }
 
 
+pub fn handle_greeting_send_accept_token(
+    poll: &Poll,
+    state: &mut TestState,
+) -> Result<usize, std::io::Error> {
+    debug!("handle_greeting_send_accept_token");
+    let accept = "ACCEPT TOKEN QUIT\n".as_bytes();
+
+    if state.write_pos == 0 {
+        state.write_buffer[..accept.len()].copy_from_slice(accept);
+    }
+
+    loop {
+        let n = state.stream.write(&state.write_buffer[state.write_pos..(accept.len())])?;
+        if n == 0 {
+            return Err(io::Error::new(io::ErrorKind::Other, "EOF"));
+        }
+        state.write_pos += n;
+        debug!("Wrote handle_greeting_send_accept_token {}", n);
+        if state.write_pos == (accept.len()) {
+            state.write_pos = 0;
+            state.read_pos = 0;
+            state.stream.flush()?;
+
+            state.measurement_state = ServerTestPhase::GreetingReceiveToken;
+
+            state.stream.reregister(poll, state.token, Interest::READABLE )?;
+            return Ok(n);
+        }
+    }
+}
+
+
+
 pub fn handle_greeting_receive_token(
     poll: &Poll,
     state: &mut TestState,
 ) -> Result<usize, std::io::Error> {
-    trace!("handle_greeting_receive_token");
+    debug!("handle_greeting_receive_token");
     loop {
         let n = state
             .stream
@@ -94,7 +123,7 @@ pub fn handle_greeting_send_ok(
     poll: &Poll,
     state: &mut TestState,
 ) -> Result<usize, std::io::Error> {
-    trace!("handle_greeting_send_ok");
+    debug!("handle_greeting_send_ok");
     let ok = b"OK\n";
 
     if state.write_pos == 0 {
@@ -114,7 +143,7 @@ pub fn handle_greeting_send_ok(
 
 pub fn handle_greeting_send_chunksize( poll: &Poll,
     state: &mut TestState,) -> Result<usize, std::io::Error> {
-    trace!("handle_greeting_send_ok");
+    debug!("handle_greeting_send_ok");
     let chunk_size_msg = format!("CHUNKSIZE {} {} {}\n", CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE); //todo compare version
 
     if state.write_pos == 0 {

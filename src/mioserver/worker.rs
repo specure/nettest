@@ -129,7 +129,7 @@ impl Worker {
                         token,
                         // stream: Stream::new_rustls_server(stream, None, None).unwrap(),
                         stream: stream,
-                        measurement_state: ServerTestPhase::GreetingSendAcceptToken,
+                        measurement_state: ServerTestPhase::GreetingSendVersion,
                         read_buffer: [0; 1024 * 8],
                         write_buffer: [0; 1024 * 8],
                         read_bytes: BytesMut::new(),
@@ -161,13 +161,14 @@ impl Worker {
             } else {
                 thread::sleep(Duration::from_millis(50));
             }
+            
         }
     }
 
     fn process_all_connections(&mut self) -> io::Result<()> {
         if let Err(e) = self.poll.poll(
             &mut self.events,
-            Some(std::time::Duration::from_millis(100)),
+            Some(std::time::Duration::from_millis(1)),
         ) {
             info!("Worker {}: Poll error: {}", self.id, e);
             return Err(e);

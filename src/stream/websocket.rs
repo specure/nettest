@@ -8,6 +8,7 @@ use std::net::SocketAddr;
 use tungstenite::protocol::WebSocketConfig;
 use tungstenite::{protocol::WebSocket, Message};
 
+use crate::config::constants::CHUNK_SIZE;
 use crate::tokio_server::utils::websocket::{generate_handshake_response, Handshake};
 
 
@@ -187,11 +188,13 @@ impl WebSocketClient {
             return Err(anyhow::anyhow!("Invalid Sec-WebSocket-Accept key"));
         }
 
+        poll.registry().deregister(&mut stream)?;
         // Create WebSocket with the established connection
         let config = WebSocketConfig::default();
         // config.max_write_buffer_size = MAX_CHUNK_SIZE as usize;
         let ws =
             WebSocket::from_raw_socket(stream, tungstenite::protocol::Role::Client, Some(config));
+
 
         Ok(Self {
             ws,
@@ -272,8 +275,14 @@ impl Read for WebSocketClient {
 impl Write for WebSocketClient {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if self.flushed {
-            let message = Message::Binary(buf.to_vec().into());
-
+            let message = if buf.len() < 2 || buf.len() > (CHUNK_SIZE - 3) {
+                debug!("Writing binary {} bytes", buf.len());
+                tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())
+            } else {
+                tokio_tungstenite::tungstenite::Message::Text(
+                    String::from_utf8_lossy(buf).to_string(),
+                )
+            };
             match self.ws.write(message) {
                 Ok(_) =>  {
                     self.flushed = false;

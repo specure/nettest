@@ -32,6 +32,7 @@ impl ConnectionHandler {
             // error!("Failed to send greeting: {}", e);
             return Err(e);
         }
+        
         debug!("Greeting sent");
 
 

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::{debug};
+use log::{debug, info, warn};
 use mio::{Interest, Poll};
 use std::time::Instant;
 
@@ -48,9 +48,9 @@ pub fn handle_perf_receive_time(
                 .nth(1)
                 .and_then(|s| s.parse::<u64>().ok())
                 .unwrap();
-            let speed_bps =
-                calculate_upload_speed(measurement_state.bytes_sent, time_ns);
-            measurement_state.upload_speed = Some(speed_bps);
+            // let speed_bps =
+            //     calculate_upload_speed(measurement_state.bytes_sent, time_ns);
+            // measurement_state.upload_speed = Some(calculate_upload_speed(measurement_state.bytes_sent, time_ns));
             measurement_state.upload_time = Some(time_ns);
             measurement_state.upload_bytes = Some(measurement_state.bytes_sent);
             measurement_state.phase = TestPhase::PerfCompleted;
@@ -96,22 +96,27 @@ pub fn handle_perf_send_chunks(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
-    debug!("handle_perf_send_chunks token {:?}", measurement_state.token);
+    // debug!("handle_perf_send_chunks token {:?}", measurement_state.token);
     if measurement_state.phase_start_time.is_none() {
+        measurement_state.write_pos = 0;
         measurement_state.phase_start_time = Some(Instant::now());
     }
     if let Some(start_time) = measurement_state.phase_start_time {
-        let current_pos = measurement_state.bytes_sent & (measurement_state.chunk_size as u64 - 1);
         let buffer = CHUNK_STORAGE
             .get(&(measurement_state.chunk_size as u64))
             .unwrap();
-        let mut remaining: &[u8] = &buffer[current_pos as usize..];
         loop {
             // Write from current position
-            let written = measurement_state.stream.write(remaining)?;
+            let written = measurement_state.stream.write( &buffer[measurement_state.write_pos..])?;
+            if written == 0 {
+                info!("No data to write");
+                return Ok(0);
+            }
             measurement_state.bytes_sent += written as u64;
-            remaining = &remaining[written..];
-            if remaining.is_empty() {
+            measurement_state.write_pos += written;
+
+            // debug!("Sent {} bytes token {:?}", measurement_state.bytes_sent, measurement_state.token);
+            if measurement_state.write_pos == measurement_state.chunk_size  {
                 let tt = start_time.elapsed().as_nanos();
                 let is_last = tt >= TEST_DURATION_NS as u128;
                 measurement_state
@@ -125,9 +130,10 @@ pub fn handle_perf_send_chunks(
                         measurement_state.token,
                         Interest::WRITABLE,
                     )?;
+                    measurement_state.write_pos = 0;
                     return Ok(written);
                 } else {
-                    remaining = &buffer;
+                    measurement_state.write_pos = 0;
                 }
             }
         }
@@ -140,24 +146,22 @@ pub fn handle_perf_send_last_chunk(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
-    debug!("handle_perf_send_last_chunk token {:?}", measurement_state.token);
-    let current_pos = measurement_state.bytes_sent & (measurement_state.chunk_size as u64 - 1);
+    // debug!("handle_perf_send_last_chunk token {:?}", measurement_state.token);
     let buffer = CHUNK_TERMINATION_STORAGE
         .get(&(measurement_state.chunk_size as u64))
         .unwrap();
-    let mut remaining = &buffer[current_pos as usize..];
 
     loop {
         // Write from current position
-        let n = measurement_state.stream.write(remaining)?;
+        let n = measurement_state.stream.write(&buffer[measurement_state.write_pos..])?;
         measurement_state.bytes_sent += n as u64;
-        remaining = &remaining[n..];
-        if remaining.is_empty() {
+        measurement_state.write_pos += n;
+        if measurement_state.write_pos == measurement_state.chunk_size {
             measurement_state.phase = TestPhase::PerfReceiveTime;
             measurement_state.stream.reregister(
                 &poll,
                 measurement_state.token,
-                Interest::READABLE | Interest::WRITABLE,
+                Interest::READABLE,
             )?;
             return Ok(n);
         }

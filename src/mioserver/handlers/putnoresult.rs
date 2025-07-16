@@ -6,7 +6,7 @@ use mio::{Interest, Poll};
 use crate::mioserver::{server::TestState, ServerTestPhase};
 
 pub fn handle_put_no_result_send_ok(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
-    trace!("handle_put_no_result_send_ok");
+    debug!("handle_put_no_result_send_ok");
     let command = b"OK\n";
     
     if state.write_pos == 0 {
@@ -14,8 +14,12 @@ pub fn handle_put_no_result_send_ok(poll: &Poll, state: &mut TestState) -> io::R
         state.write_pos = 0;
     }
     loop {
-        let n = state.stream.write(&state.write_buffer[0..command.len()])?;
+        let n = state.stream.write(&state.write_buffer[state.write_pos..command.len()])?;
+        if n == 0 {
+            return Err(io::Error::new(io::ErrorKind::Other, "EOF"));
+        }
         state.write_pos += n;
+
         if state.write_pos == command.len() {
             state.write_pos = 0;
             state.measurement_state = ServerTestPhase::PutNoResultReceiveChunk;
@@ -26,7 +30,7 @@ pub fn handle_put_no_result_send_ok(poll: &Poll, state: &mut TestState) -> io::R
 
             state
                 .stream
-                .reregister(poll, state.token, Interest::READABLE | Interest::WRITABLE)?;
+                .reregister(poll, state.token, Interest::READABLE)?;
             return Ok(n);
         }
     }
@@ -41,14 +45,19 @@ pub fn handle_put_no_result_receive_chunk(
         let n = state
             .stream
             .read(&mut state.chunk_buffer[state.read_pos..])?;
+        if n == 0 {
+            debug!("EOF");
+            return Err(io::Error::new(io::ErrorKind::Other, "EOF"));
+        }
         state.read_pos += n;
-        debug!("Read {} bytes", state.read_pos);
+        trace!("Read {} bytes", state.read_pos);
         if state.read_pos == state.chunk_size {
-            debug!("Chunk size reached");
+            trace!("Chunk size reached");
             if state.chunk_buffer[state.read_pos - 1] == 0xFF {
-                debug!("Last byte is 0xFF");
+                trace!("Last byte is 0xFF");
                 state.time_ns = Some(state.clock.unwrap().elapsed().as_nanos());
                 state.measurement_state = ServerTestPhase::PutNoResultSendTime;
+                state.read_pos = 0;
                 state
                     .stream
                     .reregister(poll, state.token, Interest::WRITABLE )?;
@@ -64,9 +73,8 @@ pub fn handle_put_no_result_receive_chunk(
 }
 
 pub fn handle_put_no_result_send_time(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
-    trace!("handle_put_no_result_send_time");
+    debug!("handle_put_no_result_send_time");
     let command = format!("TIME {}\n", state.time_ns.unwrap());
-    trace!("command: {}", command);
     if state.write_pos == 0 {
         state.write_buffer[0..command.len()].copy_from_slice(command.as_bytes());
         state.write_pos = 0;
@@ -74,7 +82,10 @@ pub fn handle_put_no_result_send_time(poll: &Poll, state: &mut TestState) -> io:
     let command_len = command.len();
 
     loop {
-        let n = state.stream.write(&state.write_buffer[0..command_len])?;
+        let n = state.stream.write(&state.write_buffer[state.write_pos..command_len])?;
+        if n == 0 {
+            return Err(io::Error::new(io::ErrorKind::Other, "EOF"));
+        }
         state.write_pos += n;
         if state.write_pos == command_len {
             trace!("command sent");

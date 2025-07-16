@@ -1,5 +1,5 @@
 use std::time::{ Instant};
-use log::{debug};
+use log::{debug, trace};
 use crate::config::constants::{CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE, RESP_OK, RESP_ERR, RESP_TIME};
 use crate::tokio_server::stream::Stream;
 
@@ -48,12 +48,12 @@ pub async fn handle_put(
                 }
             }
         }
-        debug!("Read {} bytes", bytes_read);
+        trace!("Read {} bytes", bytes_read);
 
         // Check if we got a complete chunk
         if bytes_read == chunk_size {
 
-            debug!("Read {} bytes 2", bytes_read);
+            trace!("Read {} bytes 2", bytes_read);
             total_bytes += bytes_read;
             
             // Check the last byte of the chunk for terminator
@@ -61,7 +61,7 @@ pub async fn handle_put(
             // Send intermediate TIME response if needed
             let current_time_ns = start_time.elapsed().as_nanos() as i64;
             // if last_time_ns == -1  {
-                debug!("Sending intermediate TIME response");
+                trace!("Sending intermediate TIME response");
                 let time_response = format!("{} {} BYTES {}\n", RESP_TIME, current_time_ns, total_bytes);
                 if let Err(_) = stream.write_all(time_response.as_bytes()).await {
                     // error!("Failed to send intermediate TIME response: {}", e);

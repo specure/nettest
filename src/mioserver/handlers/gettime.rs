@@ -47,7 +47,6 @@ pub fn handle_get_time_send_chunk(poll: &Poll, state: &mut TestState) -> io::Res
                 )?;
                 return Ok(n);
             }
-            return Ok(n);
         }
     }
 }

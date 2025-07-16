@@ -12,6 +12,8 @@ use tungstenite::protocol::WebSocketConfig;
 use tungstenite::Message;
 use tungstenite::WebSocket;
 
+use crate::config::constants::CHUNK_SIZE;
+
 const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 #[derive(Debug)]
@@ -368,8 +370,14 @@ impl Read for WebSocketTlsClient {
 impl Write for WebSocketTlsClient {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if self.flushed {
-            let message = Message::Binary(buf.to_vec().into());
-
+            let message = if buf.len() < 2 || buf.len() > (CHUNK_SIZE - 3) {
+                debug!("Writing binary {} bytes", buf.len());
+                tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())
+            } else {
+                tokio_tungstenite::tungstenite::Message::Text(
+                    String::from_utf8_lossy(buf).to_string(),
+                )
+            };
             match self.ws.write(message) {
                 Ok(_) => {
                     self.flushed = false;

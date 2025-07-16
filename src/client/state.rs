@@ -1,6 +1,6 @@
 use anyhow::Result;
 use bytes::BytesMut;
-use log::{debug};
+use log::{debug, trace};
 use mio::{Events, Interest, Poll, Token};
 use std::collections::VecDeque;
 use std::time::Instant;
@@ -56,6 +56,7 @@ pub struct TestState {
     measurement_state: MeasurementState,
 }
 
+#[derive(Debug)]
 pub struct MeasurementState {
     pub token: Token,
     pub phase: TestPhase,
@@ -261,14 +262,17 @@ impl TestState {
                 match should_remove {
                     Ok(n) => {
                         if n == 0 {
+                            trace!("No data to read");
                             self.measurement_state.failed = true;
                         }
                         // If n > 0, continue processing
                     }
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        trace!("WouldBlock");
                         continue;
                     }
                     Err(e) => {
+                        trace!("Error: {:?}", e);
                         self.measurement_state.failed = true;
                         break;
                     }

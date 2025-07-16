@@ -5,8 +5,7 @@ use std::io::{self, Read, Write};
 use tungstenite::{Message, WebSocket};
 
 use crate::{
-    stream::rustls_server::RustlsServerStream,
-    tokio_server::utils::websocket::{generate_handshake_response, Handshake},
+    config::constants::CHUNK_SIZE, stream::rustls_server::RustlsServerStream, tokio_server::utils::websocket::{generate_handshake_response, Handshake}
 };
 
 #[derive(Debug)]
@@ -29,7 +28,7 @@ impl WebSocketRustlsServerStream {
 
         Ok(Self {
             ws,
-            flushed: false,
+            flushed: true,
             buffer: vec![],
         })
     }
@@ -108,7 +107,15 @@ impl Read for WebSocketRustlsServerStream {
 impl Write for WebSocketRustlsServerStream {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if self.flushed {
-            let message = Message::Binary(buf.to_vec().into());
+            let message = if buf.len() < 2 || buf.len() > (CHUNK_SIZE - 3) {
+                debug!("Writing binary {} bytes", buf.len());
+                tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())
+            } else {
+                tokio_tungstenite::tungstenite::Message::Text(
+                    String::from_utf8_lossy(buf).to_string(),
+                )
+            };
+
 
             match self.ws.write(message) {
                 Ok(_) => {
@@ -156,7 +163,7 @@ impl Write for WebSocketRustlsServerStream {
         match self.ws.flush() {
             Ok(_) => {
                 self.flushed = true;
-                debug!("WebSocket flush success");
+                debug!("WebSocket 222 flush success");
                 // let a = self.ws.close(None);
                 return Ok(());
             }

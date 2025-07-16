@@ -1,6 +1,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServerTestPhase {
     GreetingReceiveConnectionType,
+    GreetingSendVersion,
     GreetingSendAcceptToken,
     GreetingReceiveToken,
     GreetingSendOk,
@@ -13,6 +14,7 @@ pub enum ServerTestPhase {
     GetChunkSendOk,
     GetChunkSendChunk,
     GetChunksReceiveOK,
+    GetChunksSendChunksLast,
     GetChunksSendTime,
 
     PongSend,
@@ -20,7 +22,7 @@ pub enum ServerTestPhase {
     PingSendTime,
 
     GetTimeSendChunk,
-    
+
     GetTimeSendLastChunk,
 
     GetTimeReceiveOk,
