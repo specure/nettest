@@ -6,7 +6,7 @@ use std::time::Instant;
 use crate::client::state::{MeasurementState, TestPhase};
 use crate::client::constants::ACCEPT_GETCHUNKS_STRING;
 
-const TEST_DURATION_NS: u64 = 7_000_000_000; // 7 seconds
+const TEST_DURATION_NS: u64 = 10_000_000_000; // 7 seconds
 
 
 pub fn handle_get_time_send_ok(
