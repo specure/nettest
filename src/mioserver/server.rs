@@ -90,7 +90,7 @@ impl MioServer {
             None
         };
 
-        let logical = 5;
+        let logical = num_cpus::get();
         let mut worker_queues = Vec::new();
         for i in 0..logical {
             let poll = Poll::new()?;
