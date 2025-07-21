@@ -36,7 +36,8 @@ Download the latest builds from GitHub:
 - **Latest Artifacts**: [Download Latest](https://github.com/specure/nettest/actions/runs/latest/artifacts)
 
 #### Option 2: GitHub Releases
-- **All Platforms**: [Releases Page](https://github.com/specure/nettest/releases)
+- **Latest Release**: [Latest Release](https://github.com/specure/nettest/releases/latest)
+- **All Releases**: [Releases Page](https://github.com/specure/nettest/releases)
 
 > **Note**: 
 > 1. **Manual Build**: Go to Actions → Manual Release → Run workflow → Enter version (e.g., 1.0.0)

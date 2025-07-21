@@ -17,7 +17,7 @@ jobs:
   build-x86_64:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
     
     steps:
@@ -83,11 +83,20 @@ jobs:
       with:
         name: nettest-${{ github.event.inputs.version }}-linux-x86_64
         path: package/nettest-${{ github.event.inputs.version }}-linux-x86_64.tar.gz
+        
+    - name: Upload to GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: latest
+        name: Nettest Static Binary x86_64
+        files: target/x86_64-unknown-linux-gnu/release/nettest
+        token: ${{ secrets.GITHUB_TOKEN }}
+        overwrite: true
 
   build-arm64:
     runs-on: ubuntu-24.04-arm
     permissions:
-      contents: read
+      contents: write
       packages: write
     
     steps:
@@ -152,6 +161,15 @@ jobs:
       with:
         name: nettest-${{ github.event.inputs.version }}-linux-aarch64
         path: package/nettest-${{ github.event.inputs.version }}-linux-aarch64.tar.gz
+        
+    - name: Upload to GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: latest
+        name: Nettest Static Binary ARM64
+        files: target/release/nettest
+        token: ${{ secrets.GITHUB_TOKEN }}
+        overwrite: true
 
   create-release:
     needs: [build-x86_64, build-arm64]
