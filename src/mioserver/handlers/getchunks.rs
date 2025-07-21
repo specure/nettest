@@ -1,5 +1,6 @@
 use log::{debug, trace};
 use mio::{Interest, Poll};
+use serde_json::de;
 use std::{io, time::Instant};
 
 use crate::{
@@ -8,7 +9,7 @@ use crate::{
 };
 
 pub fn handle_get_chunks_send_ok(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
-    debug!("handle_get_chunks_send_ok");
+    debug!("handle_get_chunks_send_ok token {:?}", state.token);
     if state.write_pos == 0 {
         let ok: &'static [u8; 3] = b"OK\n";
         state.write_buffer[..ok.len()].copy_from_slice(ok);
@@ -30,7 +31,7 @@ pub fn handle_get_chunks_send_ok(poll: &Poll, state: &mut TestState) -> io::Resu
 }
 
 pub fn handle_get_chunks_send_chunks(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
-    debug!("handle_get_chunks_send_chunks");
+    debug!("handle_get_chunks_send_chunks token {:?}", state.token);
     let chunk_size = state.chunk_size;
     let chunk_num = state.num_chunks;
     if state.clock.is_none() {
@@ -45,7 +46,7 @@ pub fn handle_get_chunks_send_chunks(poll: &Poll, state: &mut TestState) -> io::
         return Ok(1);
     }
     loop {
-        trace!("Sending chunk: {}", state.processed_chunks);
+        debug!("Sending chunk: {} token {:?}", state.processed_chunks, state.token);
 
         let n = state.stream.write(&chunk[state.write_pos..])?;
         if n == 0 {
@@ -53,11 +54,11 @@ pub fn handle_get_chunks_send_chunks(poll: &Poll, state: &mut TestState) -> io::
         }
         state.write_pos += n;
         if state.write_pos == chunk.len() {
-            trace!("Sent chunk: {}", state.processed_chunks);
+            debug!("Sent chunk: {} token {:?}", state.processed_chunks, state.token);
             state.processed_chunks += 1;
             state.write_pos = 0;
             if state.processed_chunks == chunk_num - 1 {
-                trace!("Last chunk transferred");
+                debug!("Last chunk transferred token {:?}", state.token);
                 state.measurement_state = ServerTestPhase::GetChunksSendChunksLast;
                  state
                     .stream
@@ -71,7 +72,7 @@ pub fn handle_get_chunks_send_chunks(poll: &Poll, state: &mut TestState) -> io::
 }
 
 pub fn handle_get_chunks_send_chunks_last(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
-    debug!("handle_get_chunks_send_chunks_last");
+    debug!("handle_get_chunks_send_chunks_last token {:?}", state.token);
     let chunk_size = state.chunk_size;
     let chunk = CHUNK_TERMINATION_STORAGE.get(&(chunk_size as u64)).unwrap();
     loop {

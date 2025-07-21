@@ -6,9 +6,8 @@ use std::collections::{HashMap, VecDeque};
 use std::io::{self};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use crate::client::constants::RMBT_UPGRADE_REQUEST;
 use crate::config::constants::MIN_CHUNK_SIZE;
 use crate::mioserver::handlers::basic_handler::{
     handle_client_readable_data, handle_client_writable_data,
@@ -28,27 +27,27 @@ struct Worker {
     poll: Poll,
     connections: HashMap<Token, TestState>,
     events: Events,
-    worker_queue: Arc<(Mutex<VecDeque<ConnectionType>>, Waker)>, // Очередь только для этого воркера
     worker_connection_counts: Arc<Mutex<Vec<usize>>>,
+    global_queue: Arc<Mutex<VecDeque<(ConnectionType, Instant)>>>, // Общая очередь
     server_config: crate::mioserver::server::ServerConfig,
     next_token: usize,
+    
 }
 
 impl WorkerThread {
     pub fn new(
         id: usize,
-        worker_queue: Arc<(Mutex<VecDeque<ConnectionType>>, Waker)>,
         worker_connection_counts: Arc<Mutex<Vec<usize>>>,
+        global_queue: Arc<Mutex<VecDeque<(ConnectionType, Instant)>>>,
         server_config: crate::mioserver::server::ServerConfig,
     ) -> io::Result<Self> {
-        println!("Worker {} new", id);
 
         let thread = thread::Builder::new()
             .stack_size(8 * 1024 * 1024) // 8MB stack
             .spawn(move || {
-                println!("Worker {}: starting", id);
+                debug!("Worker {}: starting", id);
                 let mut worker =
-                    Worker::new(id, worker_queue, worker_connection_counts, server_config)
+                    Worker::new(id, worker_connection_counts, global_queue, server_config)
                         .expect("Failed to create worker");
                 if let Err(e) = worker.run() {
                     info!("Worker {} error: {}", id, e);
@@ -62,8 +61,8 @@ impl WorkerThread {
 impl Worker {
     fn new(
         id: usize,
-        worker_queue: Arc<(Mutex<VecDeque<ConnectionType>>, Waker)>,
         worker_connection_counts: Arc<Mutex<Vec<usize>>>,
+        global_queue: Arc<Mutex<VecDeque<(ConnectionType, Instant)>>>,
         server_config: crate::mioserver::server::ServerConfig,
     ) -> io::Result<Self> {
         let poll = Poll::new()?;
@@ -75,8 +74,8 @@ impl Worker {
             poll,
             connections,
             events,
-            worker_queue,
             worker_connection_counts,
+            global_queue,
             server_config,
             next_token: 1,
         })
@@ -84,17 +83,32 @@ impl Worker {
 
     fn run(&mut self) -> io::Result<()> {
         loop {
-            let maybe_connection = {
-                let (lock, _) = &*self.worker_queue;
-                let mut guard = lock.lock().unwrap();
-                let queue_size = guard.len();
-                if queue_size > 0 {
-                    println!(
-                        "Worker {}: found {} connection(s) in queue",
-                        self.id, queue_size
-                    );
+            debug!("Worker {}: loop iteration, connections: {}, queue size: {}", 
+                self.id, 
+                self.connections.len(),
+                self.global_queue.lock().unwrap().len()
+            );
+            let maybe_connection = if self.connections.is_empty() {
+                let mut global_queue = self.global_queue.lock().unwrap();
+                if let Some((connection, _)) = global_queue.pop_front() {
+                    debug!("Worker {}: taking connection from global queue (queue size after: {})", 
+                        self.id, global_queue.len());
+                    // Увеличиваем счетчик соединений для этого воркера
+                    {
+                        let mut counts = self.worker_connection_counts.lock().unwrap();
+                        counts[self.id] += 1;
+                        debug!(
+                            "Worker {}: connection count increased to {} (from global queue)",
+                            self.id,
+                            counts[self.id]
+                        );
+                    }
+                    Some(connection)
+                } else {
+                    None
                 }
-                guard.pop_front()
+            } else {
+                None
             };
 
             if let Some(connection) = maybe_connection {
@@ -110,8 +124,6 @@ impl Worker {
                         stream
                     }
                 };
-                println!("Worker {}: processing new connection", self.id);
-                debug!("Worker {}: received new connection", self.id);
 
                 let token = Token(self.next_token);
                 self.next_token += 1;
@@ -162,7 +174,7 @@ impl Worker {
             if !self.connections.is_empty() {
                 self.process_all_connections()?;
             } else {
-                thread::sleep(Duration::from_millis(50));
+                thread::sleep(Duration::from_millis(100));
             }
         }
     }
@@ -179,6 +191,7 @@ impl Worker {
         let mut connections_to_remove = Vec::new();
 
         for event in self.events.iter() {
+            debug!("Worker {}: event {:?} token {:?}", self.id, event, event.token());
             let event_token = event.token();
 
             if let Some(state) = self.connections.get_mut(&event_token) {
@@ -205,9 +218,12 @@ impl Worker {
                         if n == 0 {
                             connections_to_remove.push(event_token);
                         }
+                        debug!("Worker {}: should_remove: {} token {:?}", self.id, n, event_token);
+                        continue;
                         // If n > 0, continue processing
                     }
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        debug!("Worker {}: would block for token {:?}", self.id, event_token);
                         continue;
                     }
                     Err(e) => {
@@ -221,20 +237,26 @@ impl Worker {
             }
         }
 
+
+
         for token in connections_to_remove {
             self.connections.remove(&token);
             {
+                println!("Worker {}: removing connection {:?}", self.id, token);
                 let mut counts = self.worker_connection_counts.lock().unwrap();
                 counts[self.id] -= 1;
+                println!("Worker {}: connection count decreased to {}", self.id, counts[self.id]);
             }
 
-            debug!(
+            println!(
                 "Worker {}: connection {:?} closed, remaining connections: {}",
                 self.id,
                 token,
                 self.connections.len()
             );
         }
+
+        debug!("Worker {}: finished processing events", self.id);
 
         Ok(())
     }

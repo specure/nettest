@@ -78,13 +78,12 @@ pub fn handle_get_time_receive_chunk(
             .stream
             .read(&mut state.chunk_buffer[state.read_pos..])?;
         state.read_pos += n;
-        state.bytes_received += n as u64;
         if state.read_pos == state.chunk_size {
-            state.measurements.push_back((
+            state.bytes_received += state.chunk_size as u64;
+            state.download_measurements.push_back((
                 state.phase_start_time.unwrap().elapsed().as_nanos() as u64,
                 state.bytes_received,
             ));
-
             if state.chunk_buffer[state.read_pos - 1] == 0xFF {
                 state.phase = TestPhase::GetTimeSendOk;
                 state
@@ -115,10 +114,7 @@ pub fn handle_get_time_receive_time(
                 .nth(1)
                 .and_then(|s| s.parse::<u64>().ok())
             {
-                let speed = state.bytes_received as f64 / time_ns as f64;
-                state.download_speed = Some(speed);
                 state.download_time = Some(time_ns);
-                state.download_bytes = Some(state.bytes_received);
                 state.phase = TestPhase::GetTimeCompleted;
                 state.phase_start_time = None;
                 state

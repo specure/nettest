@@ -60,14 +60,10 @@ pub struct TestState {
 pub struct MeasurementState {
     pub token: Token,
     pub phase: TestPhase,
-    pub buffer: BytesMut,
-    pub upload_results_for_graph: Vec<(u64, u64)>,
     pub upload_bytes: Option<u64>,
     pub upload_time: Option<u64>,
     pub upload_speed: Option<f64>,
     pub download_time: Option<u64>,
-    pub download_bytes: Option<u64>,
-    pub download_speed: Option<f64>,
     pub chunk_size: usize,
     pub ping_median: Option<u64>,
     pub phase_start_time: Option<Instant>,
@@ -75,7 +71,7 @@ pub struct MeasurementState {
     pub write_buffer: [u8; 1024 * 8],
     pub read_pos: usize,
     pub write_pos: usize,
-    pub measurements: VecDeque<(u64, u64)>, // Хранит (t_k^(j), b_k^(j)) для каждого чанка\
+    pub download_measurements: VecDeque<(u64, u64)>, // Хранит (t_k^(j), b_k^(j)) для каждого чанка\
     pub upload_measurements: VecDeque<(u64, u64)>, // Хранит (t_k^(j), b_k^(j)) для каждого чанка\
     pub failed: bool,
     pub stream: Stream,
@@ -117,19 +113,15 @@ impl TestState {
         stream.register(&mut poll, token, Interest::READABLE | Interest::WRITABLE)?;
 
         let measurement_state = MeasurementState {
-            buffer: BytesMut::with_capacity(DEFAULT_READ_BUFFER_SIZE),
             phase: TestPhase::GreetingSendConnectionType,
-            upload_results_for_graph: Vec::new(),
             upload_bytes: None,
             upload_time: None,
             upload_speed: None,
             download_time: None,
-            download_bytes: None,
-            download_speed: None,
             chunk_size: MIN_CHUNK_SIZE as usize,
             ping_median: None,
             read_buffer: [0u8; 1024 * 8],
-            measurements: VecDeque::new(),
+            download_measurements: VecDeque::new(),
             upload_measurements: VecDeque::new(),
             phase_start_time: None,
             failed: false,
@@ -164,7 +156,7 @@ impl TestState {
         )?;
 
         debug!("Greeting process_greeting");
-        self.process_phase(TestPhase::GreetingCompleted, ONE_SECOND_NS * 5)?;
+        self.process_phase(TestPhase::GreetingCompleted, ONE_SECOND_NS * 50)?;
 
         debug!("Greeting completed");
 
@@ -230,7 +222,7 @@ impl TestState {
 
         while self.measurement_state.phase != phase {
             self.poll
-                .poll(&mut self.events, Some(Duration::from_secs(3)))?;
+                .poll(&mut self.events, Some(Duration::from_nanos(test_duration_ns as u64)))?;
 
             if self.events.is_empty() {
                 let time = self

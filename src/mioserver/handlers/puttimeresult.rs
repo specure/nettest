@@ -4,7 +4,6 @@ use log::{debug, info, trace};
 use mio::{Interest, Poll};
 
 use crate::{
-    client::state::ONE_SECOND_NS,
     mioserver::{server::TestState, ServerTestPhase},
 };
 
@@ -104,6 +103,11 @@ pub fn handle_put_time_result_send_time(poll: &Poll, state: &mut TestState) -> i
         state.write_pos += n;
         info!("write_pos: {}", state.write_pos);
         if state.write_pos == state.chunk_buffer.len() {
+            let tt = state.clock.unwrap().elapsed().as_nanos();
+            state.total_bytes += state.chunk_buffer.len() as u64;
+            state
+                    .bytes_received
+                    .push_back((tt as u64, state.total_bytes));
             debug!("command sent");
             state.write_pos = 0;
             state.read_pos = 0;

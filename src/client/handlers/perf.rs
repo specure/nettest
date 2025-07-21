@@ -154,9 +154,14 @@ pub fn handle_perf_send_last_chunk(
     loop {
         // Write from current position
         let n = measurement_state.stream.write(&buffer[measurement_state.write_pos..])?;
-        measurement_state.bytes_sent += n as u64;
         measurement_state.write_pos += n;
         if measurement_state.write_pos == measurement_state.chunk_size {
+            let tt = measurement_state.phase_start_time.unwrap().elapsed().as_nanos();
+            measurement_state
+            .upload_measurements
+            .push_back((tt as u64, measurement_state.bytes_sent));
+            measurement_state.bytes_sent = 0;
+            measurement_state.bytes_sent += measurement_state.chunk_size as u64;
             measurement_state.phase = TestPhase::PerfReceiveTime;
             measurement_state.stream.reregister(
                 &poll,

@@ -74,7 +74,7 @@ pub fn run_threads(
                 stats.download_measurements.push(
                     state
                         .measurement_state()
-                        .measurements
+                        .download_measurements
                         .iter()
                         .cloned()
                         .collect(),
@@ -113,10 +113,9 @@ pub fn run_threads(
             let result: Measurement = Measurement {
                 thread_id: i,
                 failed: state.measurement_state().failed,
-                //TODO: handle additional clone
                 measurements: state
                     .measurement_state()
-                    .measurements
+                    .download_measurements
                     .iter()
                     .cloned()
                     .collect(),
