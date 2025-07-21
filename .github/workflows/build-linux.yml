@@ -74,8 +74,8 @@ jobs:
       with:
         name: nettest-linux-x86_64
         path: package/nettest-linux-x86_64.tar.gz
-    
-    build-linux-aarch64:
+
+  build-linux-aarch64:
     runs-on: ubuntu-latest-arm64
     
     steps:
@@ -140,80 +140,6 @@ jobs:
       with:
         name: nettest-linux-aarch64
         path: package/nettest-linux-aarch64.tar.gz
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: ${{ matrix.target }}
-        override: true
-        
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y pkg-config libssl-dev libfontconfig1-dev
-        
-    - name: Install cross-compiler for ARM64
-      if: matrix.target == 'aarch64-unknown-linux-gnu'
-      run: |
-        sudo apt-get install -y gcc-aarch64-linux-gnu
-        
-    - name: Cache dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
-        
-    - name: Build for Linux
-      run: |
-        if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
-          export PKG_CONFIG_ALLOW_CROSS=1
-          export RUST_FONTCONFIG_DLOPEN=1
-        fi
-        cargo build --release --target ${{ matrix.target }}
-        
-    - name: Create package directory
-      run: |
-        ARCH=$(echo ${{ matrix.target }} | cut -d'-' -f1)
-        mkdir -p package/nettest-linux-$ARCH
-        
-    - name: Copy binary
-      run: |
-        ARCH=$(echo ${{ matrix.target }} | cut -d'-' -f1)
-        cp target/${{ matrix.target }}/release/nettest package/nettest-linux-$ARCH/
-        
-    - name: Create README for package
-      run: |
-        ARCH=$(echo ${{ matrix.target }} | cut -d'-' -f1)
-        cat > package/nettest-linux-$ARCH/README.txt << 'EOF'
-        Nettest - Network Speed Measurement Tool
-        
-        Architecture: $ARCH
-        Build Date: $(date)
-        
-        Installation:
-        1. Make binary executable: chmod +x nettest
-        2. Run: ./nettest -s (server) or ./nettest -c <address> (client)
-        
-        For more information, visit: https://github.com/your-repo/nettest
-        EOF
-        
-    - name: Create archive
-      run: |
-        ARCH=$(echo ${{ matrix.target }} | cut -d'-' -f1)
-        cd package
-        tar -czf nettest-linux-$ARCH.tar.gz nettest-linux-$ARCH/
-        
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: nettest-linux-${{ matrix.target }}
-        path: package/nettest-linux-$(echo ${{ matrix.target }} | cut -d'-' -f1).tar.gz
 
   create-release:
     needs: [build-linux-x86_64, build-linux-aarch64]
