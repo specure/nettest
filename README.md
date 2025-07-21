@@ -1,29 +1,33 @@
-# RMBT Measurement server 2.0
-
-> ⚠️ **Note:** This server is in the testing phase.
-
+![Network Speed Measurement](Gemini_Generated_Image_skkcnfskkcnfskkc.png)
 
 ## Overview
 
-This is a Rust implementation of the RMBT (RTR Multithreaded Broadband Test) server, designed for conducting network measurements based on the RMBT protocol. The server supports both direct TCP socket connections and WebSocket protocol communications.
+Nettest is a high-performance server and client for network speed measurement, written in Rust. The tool supports modern communication protocols and provides real-time accurate measurements.
 
-## Features
+## Key Features
 
-- Full RMBT protocol implementation
-- Support for both TCP and WebSocket connections
-- Configurable worker threads
-- TLS/SSL support
-- Token-based authentication
-- Comprehensive test suite
+### 🌐 **Multi-Protocol Support**
+- **TCP connections** - Direct connection for maximum performance
+- **WebSocket** - Browser client support
+- **TLS/SSL** - Secure connections
 
-## Prerequisites
+### ⚡ **High Performance**
+- **Multithreading** - Handle multiple clients simultaneously
+- **Asynchronous architecture** - Efficient resource utilization
+- **Connection queue** - Smart load distribution between workers
 
-Required packages:
-- Rust toolchain (latest stable version)
+### 📊 **Data Visualization**
+- **Time speed change graphs**
+- **Detailed measurement statistics**
 
-## Build
+### 🔧 **Flexible Configuration**
+- Configurable number of workers
+- Configurable ports and addresses
+- SSL/TLS certificate support
 
-Build the server using Cargo:
+## Quick Start
+
+### Build
 
 ```bash
 # Debug build
@@ -32,110 +36,116 @@ cargo build
 # Release build with optimizations
 cargo build --release
 
-# Release static build with optimizations
+# Static build for Linux
 cargo build --release --target x86_64-unknown-linux-musl
 ```
 
-The release build will be available at `target/release/rmbt_server`.
+### Run Server
+
+```bash
+# Basic run
+nettest -s
+
+```
+
+### Run Client
+
+```bash
+# TCP client
+nettest -c <SERVER_ADDRESS>
+
+# WebSocket client
+nettest -c <SERVER_ADDRESS> -ws
+
+# TLS client 
+nettest -c <SERVER_ADDRESS> -tls
+```
 
 ## Configuration
 
-### Secret Keys
-The server uses authentication keys as specified in the RMBT protocol. Keys are stored in `secret.key`:
-- One key per line
-- Format: `<key> <label>`
-- Label is logged to syslog when a client uses the key
-
 ### Server Parameters
 
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `-l` | TCP listen address and port | `5005` |
+| `-L` | TLS listen address and port | `443` |
+| `-c` | Path to SSL certificate (PEM format) | - |
+| `-k` | Path to SSL key file (PEM format) | - |
+| `-t` | Number of worker threads | `30` |
+| `-u` | Drop privileges to specified user | - |
+| `-d` | Run as daemon in background | `false` |
+| `-log` | Log level (info, debug, trace) | - |
+
+### Client Parameters
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `-c` | Server address | `127.0.0.1` |
+| `-tls` | Use TLS connection | `false` |
+| `-ws` | Use WebSocket connection | `false` |
+| `-t` | Number of threads | `1` |
+| `-p` | Port number | `8080` |
+| `-g` | Generate graphs | `false` |
+| `-log` | Log level (info, debug, trace) | - |
+
+## Protocols
+
+### TCP Mode
+Direct TCP connection for maximum performance:
 ```
-Usage: rmbtd [OPTIONS]
-
-Options:
-  -l, -L <address>    Listen address and port (SSL with -L)
-                      Format: "port" or "ip:port" or "[ipv6]:port"
-                      Examples: 
-                      - "443"
-                      - "1.2.3.4:1234"
-                      - "[2001:1234::567A]:1234"
-                      Can be specified multiple times
-
-  -c <path>          Path to SSL certificate (PEM format)
-                     Include intermediate certificates if needed
-
-  -k <path>          Path to SSL key file (PEM format)
-
-  -t <number>        Number of worker threads (default: 200)
-
-  -u <user>          Drop privileges to specified user
-                     Requires root privileges
-
-  -d                 Run as daemon in background
-
-  -D                 Enable debug logging
-
-  -w                 Enable HTTP/WebSocket mode
-
-  -v <version>       Serve old clients (example: "0.3")
-```
-
-## Protocol Support
-
-### HTTP/WebSocket Mode (-w)
-- Supports HTTP GET requests with connection upgrades
-- Upgrades to either RMBT or WebSocket protocol
-- Follows RFC 2616 for upgrades
-
-#### RMBT Upgrade
-Request:
-```
-GET /rmbt HTTP/1.1
-Connection: Upgrade
-Upgrade: RMBT
-RMBT-Version: 1.3.0
+Client <──TCP──> Server
 ```
 
-#### WebSocket Upgrade
-Request:
+### WebSocket Mode
+Browser client support:
 ```
-GET /rmbt HTTP/1.1
-Connection: Upgrade
-Upgrade: websocket
-Sec-WebSocket-Version: 13
-Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+Client <──WebSocket──> Server
 ```
 
-### Legacy Mode
-Direct TCP socket communication without HTTP wrapper.
-
-## Testing
-
-Run the test suite:
-```bash
-cargo test
+### TLS Mode
+Secure connections:
+```
+Client <──TLS──> Server
 ```
 
-For specific test categories:
-```bash
-cargo test --test basic_server  # Basic server tests
-cargo test --test handler      # Protocol handler tests
-```
+## Performance
 
-## Performance Testing
+Nettest is optimized for high performance:
 
-Performance test results and system metrics are saved in the `performance/` directory.
+- **Multithreading**: One server can support multiple clients
+- **Asynchronous processing**: Efficient CPU and memory usage
+- **Smart queue**: Automatic load distribution between workers
+- **Minimal latency**: Optimized architecture for accurate measurements
+
+## Visualization
+
+### Speed Graphs
+- Speed change visualization
+- Detailed upload and download statistics
+
+### Metrics
+- Download speed
+- Upload speed
+- Latency
+
+## Requirements
+
+### System Requirements
+- **Rust**: 1.70+ (latest stable)
+- **Linux/macOS/Windows(?)**: Support for all major platforms
+
+
+## License
+
+- **Source code**: Apache License 2.0 ([LICENSE.txt](LICENSE.txt))
+
+## Contributing
+
+We welcome contributions to Nettest development! Please read our [contributing guidelines](CONTRIBUTING.md).
 
 ## Documentation
 
 - [RMBT Protocol Specification](https://www.netztest.at/doc/)
-- [RTR-Netztest](https://www.netztest.at)
+---
 
-## Related Projects
-
-- [RMBTws Client](https://github.com/rtr-nettest/rmbtws)
-- [RTR-Netztest/open-rmbt](https://github.com/rtr-nettest/open-rmbt)
-- [RMBT C client](https://github.com/lwimmer/rmbt-client)
-
-## License
-
-- Source code: Apache License ([LICENSE.txt](LICENSE.txt))
+**Nettest** - Your reliable tool for network speed measurement! 🚀
