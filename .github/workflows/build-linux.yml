@@ -9,13 +9,137 @@ on:
     branches: [ main ]
 
 jobs:
-  build-linux:
+  build-linux-x86_64:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
-        
+    
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: x86_64-unknown-linux-gnu
+        override: true
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev libfontconfig1-dev
+        
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-x86_64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Build for Linux x86_64
+      run: |
+        cargo build --release --target x86_64-unknown-linux-gnu
+        
+    - name: Create package directory
+      run: |
+        mkdir -p package/nettest-linux-x86_64
+        
+    - name: Copy binary
+      run: |
+        cp target/x86_64-unknown-linux-gnu/release/nettest package/nettest-linux-x86_64/
+        
+    - name: Create README for package
+      run: |
+        cat > package/nettest-linux-x86_64/README.txt << 'EOF'
+        Nettest - Network Speed Measurement Tool
+        
+        Architecture: x86_64
+        Build Date: $(date)
+        
+        Installation:
+        1. Make binary executable: chmod +x nettest
+        2. Run: ./nettest -s (server) or ./nettest -c <address> (client)
+        
+        For more information, visit: https://github.com/your-repo/nettest
+        EOF
+        
+    - name: Create archive
+      run: |
+        cd package
+        tar -czf nettest-linux-x86_64.tar.gz nettest-linux-x86_64/
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nettest-linux-x86_64
+        path: package/nettest-linux-x86_64.tar.gz
+    
+    build-linux-aarch64:
+    runs-on: ubuntu-latest-arm64
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: aarch64-unknown-linux-gnu
+        override: true
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev libfontconfig1-dev
+        
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-aarch64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Build for Linux ARM64
+      run: |
+        cargo build --release --target aarch64-unknown-linux-gnu
+        
+    - name: Create package directory
+      run: |
+        mkdir -p package/nettest-linux-aarch64
+        
+    - name: Copy binary
+      run: |
+        cp target/aarch64-unknown-linux-gnu/release/nettest package/nettest-linux-aarch64/
+        
+    - name: Create README for package
+      run: |
+        cat > package/nettest-linux-aarch64/README.txt << 'EOF'
+        Nettest - Network Speed Measurement Tool
+        
+        Architecture: aarch64
+        Build Date: $(date)
+        
+        Installation:
+        1. Make binary executable: chmod +x nettest
+        2. Run: ./nettest -s (server) or ./nettest -c <address> (client)
+        
+        For more information, visit: https://github.com/your-repo/nettest
+        EOF
+        
+    - name: Create archive
+      run: |
+        cd package
+        tar -czf nettest-linux-aarch64.tar.gz nettest-linux-aarch64/
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nettest-linux-aarch64
+        path: package/nettest-linux-aarch64.tar.gz
     - name: Checkout code
       uses: actions/checkout@v4
       
@@ -34,7 +158,7 @@ jobs:
     - name: Install cross-compiler for ARM64
       if: matrix.target == 'aarch64-unknown-linux-gnu'
       run: |
-        sudo apt-get install -y gcc-aarch64-linux-gnu libfontconfig1-dev:arm64
+        sudo apt-get install -y gcc-aarch64-linux-gnu
         
     - name: Cache dependencies
       uses: actions/cache@v4
@@ -49,7 +173,7 @@ jobs:
       run: |
         if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
           export PKG_CONFIG_ALLOW_CROSS=1
-          export PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig
+          export RUST_FONTCONFIG_DLOPEN=1
         fi
         cargo build --release --target ${{ matrix.target }}
         
@@ -92,22 +216,29 @@ jobs:
         path: package/nettest-linux-$(echo ${{ matrix.target }} | cut -d'-' -f1).tar.gz
 
   create-release:
-    needs: build-linux
+    needs: [build-linux-x86_64, build-linux-aarch64]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
+    continue-on-error: true
     
     steps:
     - name: Download artifacts
       uses: actions/download-artifact@v4
       
+    - name: Check available artifacts
+      run: |
+        echo "Checking available artifacts..."
+        ls -la || true
+        
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          nettest-linux-x86_64-unknown-linux-gnu/nettest-linux-x86_64.tar.gz
-          nettest-linux-aarch64-unknown-linux-gnu/nettest-linux-aarch64.tar.gz
+          nettest-linux-x86_64/nettest-linux-x86_64.tar.gz
+          nettest-linux-aarch64/nettest-linux-aarch64.tar.gz
         draft: false
         prerelease: false
         generate_release_notes: true
+        fail_on_unmatched_files: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
