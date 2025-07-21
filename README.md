@@ -27,6 +27,23 @@ Nettest is a high-performance server and client for network speed measurement, w
 
 ## Quick Start
 
+### Download
+
+Download the latest builds from GitHub Actions:
+
+- **Linux x86_64**: [Download Latest](https://github.com/specure/nettest/actions/runs/latest/artifacts)
+- **Linux ARM64**: [Download Latest](https://github.com/specure/nettest/actions/runs/latest/artifacts)
+
+> **Note**: 
+> 1. Click on the link above
+> 2. Find the latest successful workflow run
+> 3. Download `nettest-linux-x86_64-latest` or `nettest-linux-aarch64-latest`
+> 4. Extract the `.tar.gz` file and run the binary
+
+**Available Artifacts:**
+- `nettest-linux-x86_64-latest.tar.gz` - For x86_64 Linux systems
+- `nettest-linux-aarch64-latest.tar.gz` - For ARM64 Linux systems
+
 ### Build
 
 ```bash
