@@ -46,7 +46,7 @@ pub fn handle_put_time_result_send_ok(poll: &Poll, state: &mut TestState) -> io:
 pub fn handle_put_time_result_receive_chunk(
     poll: &Poll,
     state: &mut TestState,
-) -> io::Result<(usize)> {
+) -> io::Result<usize> {
     debug!("handle_put_time_result_receive_chunk");
     loop {
         let n = state

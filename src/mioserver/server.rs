@@ -24,7 +24,6 @@ use crate::tokio_server::server_config::parse_listen_address;
 pub struct MioServer {
     tcp_listener: TcpListener,
     tls_listener: Option<TcpListener>,
-    server_config: crate::mioserver::server::ServerConfig,
     _worker_threads: Vec<WorkerThread>,
     global_queue: Arc<Mutex<VecDeque<(ConnectionType, Instant)>>>, // Общая очередь с временными метками
 }
@@ -119,7 +118,6 @@ impl MioServer {
         Ok(Self {
             tcp_listener,
             tls_listener,
-            server_config,
             _worker_threads: worker_threads,
             global_queue,
         })

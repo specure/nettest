@@ -1,6 +1,6 @@
 use bytes::BytesMut;
 use log::{debug, info, trace};
-use mio::{Events, Interest, Poll, Token, Waker};
+use mio::{Events, Interest, Poll, Token};
 use regex::Regex;
 use std::collections::{HashMap, VecDeque};
 use std::io::{self};
@@ -12,7 +12,7 @@ use crate::config::constants::MIN_CHUNK_SIZE;
 use crate::mioserver::handlers::basic_handler::{
     handle_client_readable_data, handle_client_writable_data,
 };
-use crate::mioserver::server::{ConnectionType, TestState};
+use crate::mioserver::server::{ConnectionType, ServerConfig, TestState};
 use crate::mioserver::ServerTestPhase;
 use crate::stream::stream::Stream;
 use crate::tokio_server::utils::use_http::RMBT_UPGRADE;
@@ -29,7 +29,7 @@ struct Worker {
     events: Events,
     worker_connection_counts: Arc<Mutex<Vec<usize>>>,
     global_queue: Arc<Mutex<VecDeque<(ConnectionType, Instant)>>>, // Общая очередь
-    server_config: crate::mioserver::server::ServerConfig,
+    server_config: ServerConfig,
     next_token: usize,
     
 }
@@ -39,7 +39,7 @@ impl WorkerThread {
         id: usize,
         worker_connection_counts: Arc<Mutex<Vec<usize>>>,
         global_queue: Arc<Mutex<VecDeque<(ConnectionType, Instant)>>>,
-        server_config: crate::mioserver::server::ServerConfig,
+        server_config: ServerConfig,
     ) -> io::Result<Self> {
 
         let thread = thread::Builder::new()
@@ -63,7 +63,7 @@ impl Worker {
         id: usize,
         worker_connection_counts: Arc<Mutex<Vec<usize>>>,
         global_queue: Arc<Mutex<VecDeque<(ConnectionType, Instant)>>>,
-        server_config: crate::mioserver::server::ServerConfig,
+        server_config: ServerConfig,
     ) -> io::Result<Self> {
         let poll = Poll::new()?;
         let events = Events::with_capacity(1024);
@@ -76,7 +76,7 @@ impl Worker {
             events,
             worker_connection_counts,
             global_queue,
-            server_config,
+            server_config: server_config.clone(),
             next_token: 1,
         })
     }

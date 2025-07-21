@@ -1,4 +1,3 @@
-use env_logger::Env;
 use log::LevelFilter;
 
 use crate::{client::client::ClientConfig, config::FileConfig, logger};

@@ -133,7 +133,7 @@ impl GraphService {
         let mut speed_data = Vec::new();
 
         for i in 0..=steps {
-            let t = (i as f64 * 0.2); // Время отображения с 0 секунд
+            let t = i as f64 * 0.2; // Время отображения с 0 секунд
             let target_time = min_time + (i as u64 * step_ns);
             let mut total_bytes = 0.0f64;
 

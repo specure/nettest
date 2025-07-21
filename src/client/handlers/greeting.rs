@@ -1,7 +1,7 @@
 use crate::client::{state::{MeasurementState, TestPhase}};
 use crate::stream::stream::Stream;
 use anyhow::Result;
-use log::{debug, info};
+use log::{debug};
 use mio::{Interest, Poll};
 
 

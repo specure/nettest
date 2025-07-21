@@ -1,5 +1,4 @@
 use anyhow::Result;
-use bytes::BytesMut;
 use log::{debug, info, trace};
 use mio::{Events, Interest, Poll, Token};
 use std::collections::VecDeque;
@@ -10,7 +9,6 @@ use std::io;
 use crate::client::handlers::basic_handler::{
     handle_client_readable_data, handle_client_writable_data,
 };
-use crate::client::constants::DEFAULT_READ_BUFFER_SIZE;
 use crate::config::constants::MIN_CHUNK_SIZE;
 use crate::stream::stream::Stream;
 

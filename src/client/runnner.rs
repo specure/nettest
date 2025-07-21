@@ -11,7 +11,7 @@ use log::debug;
 use crate::client::{
     calculator::{calculate_download_speed_from_stats, calculate_upload_speed_from_stats},
     client::{ClientConfig, Measurement, SharedStats},
-    print::printer::{print_float_result, print_result},
+    print::printer::{print_float_result},
     state::TestState,
 };
 
