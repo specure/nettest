@@ -46,7 +46,7 @@ impl Default for FileConfig {
             logger: LevelFilter::Off,
             client_use_tls: false,
             client_use_websocket: false,
-            client_thread_count: 5,
+            client_thread_count: 3,
             secret_key: None,
         }
     }

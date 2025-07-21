@@ -71,7 +71,6 @@ nettest -c <SERVER_ADDRESS> -tls
 | `-L` | TLS listen address and port | `443` |
 | `-c` | Path to SSL certificate (PEM format) | - |
 | `-k` | Path to SSL key file (PEM format) | - |
-| `-t` | Number of worker threads | `30` |
 | `-u` | Drop privileges to specified user | - |
 | `-d` | Run as daemon in background | `false` |
 | `-log` | Log level (info, debug, trace) | - |
@@ -83,7 +82,7 @@ nettest -c <SERVER_ADDRESS> -tls
 | `-c` | Server address | `127.0.0.1` |
 | `-tls` | Use TLS connection | `false` |
 | `-ws` | Use WebSocket connection | `false` |
-| `-t` | Number of threads | `1` |
+| `-t` | Number of threads | `3` |
 | `-p` | Port number | `8080` |
 | `-g` | Generate graphs | `false` |
 | `-log` | Log level (info, debug, trace) | - |
