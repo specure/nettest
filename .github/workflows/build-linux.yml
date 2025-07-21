@@ -173,14 +173,20 @@ jobs:
         ls -la nettest-x86_64-binary/ || echo "x86_64 binary not found"
         ls -la nettest-aarch64-binary/ || echo "aarch64 binary not found"
         
+    - name: Rename binaries for release
+      run: |
+        cp nettest-x86_64-binary/nettest nettest-x86_64
+        cp nettest-aarch64-binary/nettest nettest-aarch64
+        chmod +x nettest-x86_64 nettest-aarch64
+        
     - name: Create latest release
       uses: softprops/action-gh-release@v1
       with:
         tag_name: latest
         name: Nettest Latest Release
         files: |
-          nettest-x86_64-binary/nettest
-          nettest-aarch64-binary/nettest
+          nettest-x86_64
+          nettest-aarch64
         token: ${{ secrets.GITHUB_TOKEN }}
         overwrite: true
         draft: false
