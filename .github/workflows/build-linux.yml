@@ -166,6 +166,13 @@ jobs:
     - name: Download binaries
       uses: actions/download-artifact@v4
       
+    - name: List downloaded files
+      run: |
+        echo "Listing downloaded files:"
+        find . -name "nettest" -type f
+        ls -la nettest-x86_64-binary/ || echo "x86_64 binary not found"
+        ls -la nettest-aarch64-binary/ || echo "aarch64 binary not found"
+        
     - name: Create latest release
       uses: softprops/action-gh-release@v1
       with:
@@ -178,3 +185,4 @@ jobs:
         overwrite: true
         draft: false
         prerelease: false
+        fail_on_unmatched_files: false
