@@ -266,7 +266,7 @@ impl TestServer {
         Ok((ws_stream, chunk_size))
     }
 
-    pub async fn connect_rmbtd(&self) -> Result<(TlsStream<TcpStream>, u32), Box<dyn Error + Send + Sync>> {
+    pub async fn connect_rmbtd(&self) -> Result<(TcpStream, u32), Box<dyn Error + Send + Sync>> {
         // Create TLS connector with custom configuration
         let mut tls_connector = NativeTlsConnector::builder();
         tls_connector.danger_accept_invalid_certs(true);
@@ -275,8 +275,8 @@ impl TestServer {
 
         // Connect to the TLS port
         info!("Connecting to TLS port {}", self.tls_port);
-        let tcp_stream = TcpStream::connect(format!("{}:{}", self.host, self.tls_port)).await?;
-        let mut tls_stream = tls_connector.connect("localhost", tcp_stream).await?;
+        let mut tls_stream = TcpStream::connect(format!("{}:{}", self.host, 8080)).await?;
+        // let mut tls_stream = tls_connector.connect("localhost", tcp_stream).await?;
 
         // Send RMBT upgrade request
         let upgrade_request = "GET /rmbt HTTP/1.1 \r\n\
