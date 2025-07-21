@@ -29,20 +29,24 @@ Nettest is a high-performance server and client for network speed measurement, w
 
 ### Download
 
-Download the latest builds from GitHub Actions:
+Download the latest builds from GitHub:
 
-- **Linux x86_64**: [Download Latest](https://github.com/specure/nettest/actions/runs/latest/artifacts)
-- **Linux ARM64**: [Download Latest](https://github.com/specure/nettest/actions/runs/latest/artifacts)
+#### Option 1: Manual Release
+- **Trigger Build**: [Manual Release Workflow](https://github.com/specure/nettest/actions/workflows/manual-release.yml)
+- **Latest Artifacts**: [Download Latest](https://github.com/specure/nettest/actions/runs/latest/artifacts)
+
+#### Option 2: GitHub Releases
+- **All Platforms**: [Releases Page](https://github.com/specure/nettest/releases)
 
 > **Note**: 
-> 1. Click on the link above
-> 2. Find the latest successful workflow run
-> 3. Download `nettest-linux-x86_64-latest` or `nettest-linux-aarch64-latest`
+> 1. **Manual Build**: Go to Actions → Manual Release → Run workflow → Enter version (e.g., 1.0.0)
+> 2. **Latest Artifacts**: Find the latest successful workflow run, download the appropriate `.tar.gz` file
+> 3. **Releases**: Go to the latest release and download the appropriate `.tar.gz` file
 > 4. Extract the `.tar.gz` file and run the binary
 
 **Available Artifacts:**
-- `nettest-linux-x86_64-latest.tar.gz` - For x86_64 Linux systems
-- `nettest-linux-aarch64-latest.tar.gz` - For ARM64 Linux systems
+- `nettest-{version}-linux-x86_64.tar.gz` - For x86_64 Linux systems
+- `nettest-{version}-linux-aarch64.tar.gz` - For ARM64 Linux systems
 
 ### Build
 
