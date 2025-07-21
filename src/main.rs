@@ -59,34 +59,8 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         info!("Starting server...");
         server.run().await?;
         info!("Server stopped");
-    // } else if args[1] == "-m" {
-
-    //     // env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
-    //     //     .init();
-
-    //     // let mut tls = false;
-    //     // if args[2] == "-tls" {
-    //     //     tls = true;
-    //     // }
-    //     // Запуск MIO TCP сервера на порту 5005
-    //     let addr: SocketAddr = parse_listen_address("5005")?;
-
-    //     info!("Starting MIO TCP server on {}", addr);
-
-    //     info!("MIO TCP server stopped");
-    // } else {
-    //     print_help();
-    //     return Err("Invalid argument".into());
-    // }
 
     }
     Ok(())
 
-}
-
-fn print_help() {
-    println!("Usage: nettest -c <server_address> : to run nettest measurement client");
-    println!("Usage: nettest -s : to run nettest measurement server");
-    println!("Usage: nettest -c -h | --help  to print client help");
-    println!("Usage: nettest -s -h | --help to print server help");
 }

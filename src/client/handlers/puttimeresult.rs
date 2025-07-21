@@ -6,7 +6,7 @@ use std::time::Instant;
 use crate::client::globals::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE};
 use crate::client::state::{MeasurementState, TestPhase};
 
-const TEST_DURATION_NS: u64 = 7_000_000_000; 
+const TEST_DURATION_NS: u64 = 10_000_000_000; 
 
 pub fn handle_put_time_result_receive_ok(
     poll: &Poll,

@@ -66,7 +66,7 @@ pub fn handle_perf_send_last_chunk(poll: &Poll, state: &mut TestState) -> io::Re
         let n = state.stream.write(&chunk[state.write_pos..])?;
         state.write_pos += n;
         if state.write_pos == chunk.len() {
-            debug!("handle_get_time_send_chunk token {:?}", state.token);
+            // debug!("handle_get_time_send_chunk token {:?}", state.token);
             state.write_pos = 0;
             debug!("is_last");
             state.measurement_state = ServerTestPhase::GetTimeReceiveOk;

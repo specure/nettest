@@ -24,10 +24,8 @@ use crate::tokio_server::server_config::parse_listen_address;
 pub struct MioServer {
     tcp_listener: TcpListener,
     tls_listener: Option<TcpListener>,
-    server_config: crate::mioserver::server::ServerConfig,
     _worker_threads: Vec<WorkerThread>,
-    worker_queues: Vec<Arc<(Mutex<VecDeque<ConnectionType>>, Waker)>>, // Отдельная очередь для каждого воркера
-    worker_connection_counts: Arc<Mutex<Vec<usize>>>, // Счетчики соединений для каждого воркера
+    global_queue: Arc<Mutex<VecDeque<(ConnectionType, Instant)>>>, // Общая очередь с временными метками
 }
 
 pub struct TestState {
@@ -90,7 +88,7 @@ impl MioServer {
             None
         };
 
-        let logical = num_cpus::get();
+        let logical = server_config.num_workers.unwrap_or(30);
         let mut worker_queues = Vec::new();
         for i in 0..logical {
             let poll = Poll::new()?;
@@ -102,14 +100,15 @@ impl MioServer {
         }
 
         let worker_connection_counts = Arc::new(Mutex::new(vec![0; logical]));
+        let global_queue = Arc::new(Mutex::new(VecDeque::new()));
 
         let mut worker_threads = Vec::new();
 
         for i in 0..logical {
             let worker = WorkerThread::new(
                 i,
-                worker_queues[i].clone(),
                 worker_connection_counts.clone(),
+                global_queue.clone(),
                 server_config.clone(),
             )?;
             worker_threads.push(worker);
@@ -119,10 +118,8 @@ impl MioServer {
         Ok(Self {
             tcp_listener,
             tls_listener,
-            server_config,
             _worker_threads: worker_threads,
-            worker_queues,
-            worker_connection_counts,
+            global_queue,
         })
     }
 
@@ -164,49 +161,37 @@ impl MioServer {
                 }
             }
 
+            // Проверяем общую очередь на устаревшие соединения
+            self.check_global_queue()?;
+
             thread::sleep(std::time::Duration::from_millis(10));
         }
     }
 
+    fn check_global_queue(&mut self) -> io::Result<()> {
+        // Убираем таймаут - соединения будут ждать пока воркер их не заберет
+        Ok(())
+    }
+
     fn handle_connection(&mut self, stream: TcpStream, is_tls: bool) -> io::Result<()> {
-        let (selected_worker, _current_counts) = {
-            let counts = self.worker_connection_counts.lock().unwrap();
-            let counts_vec: Vec<usize> = counts.clone();
-            let min_count = counts.iter().min().unwrap_or(&0);
-            let selected = counts
-                .iter()
-                .position(|&count| count == *min_count)
-                .unwrap_or(0);
-            (selected, counts_vec)
+        let connection = if is_tls {
+            ConnectionType::Tls(stream)
+        } else {
+            ConnectionType::Tcp(stream)
         };
 
-        {
-            let mut counts = self.worker_connection_counts.lock().unwrap();
-            counts[selected_worker] += 1;
-            info!(
-                "Worker {}: {} connection count increased to {}",
-                selected_worker, 
-                if is_tls { "TLS" } else { "TCP" },
-                counts[selected_worker]
-            );
-        }
-
-        let (lock, waker) = &*self.worker_queues[selected_worker];
-        {
-            let mut queue = lock.lock().unwrap();
-            let connection = if is_tls {
-                ConnectionType::Tls(stream)
-            } else {
-                ConnectionType::Tcp(stream)
-            };
-            queue.push_back(connection);
-        }
-        waker.wake()?;
-
-        debug!(
-            "{} connection added to worker {} queue and worker woken",
+        // Добавляем соединение в глобальную очередь
+        let mut global_queue = self.global_queue.lock().unwrap();
+        global_queue.push_back((connection, Instant::now()));
+        println!(
+            "SERVER: {} connection added to global queue (queue size: {})",
             if is_tls { "TLS" } else { "TCP" },
-            selected_worker
+            global_queue.len()
+        );
+        info!(
+            "{} connection added to global queue (queue size: {})",
+            if is_tls { "TLS" } else { "TCP" },
+            global_queue.len()
         );
 
         Ok(())

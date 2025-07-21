@@ -5,7 +5,6 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::{ServerConfig, ServerConnection};
 use std::fs;
 use std::io::{self, BufReader, Read, Write};
-use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -19,29 +18,18 @@ pub struct RustlsServerStream {
 }
 
 impl RustlsServerStream {
-    pub fn new(
-        stream: TcpStream,
-        cert_path: String,
-        key_path: String,
-    ) -> Result<Self> {
+    pub fn new(stream: TcpStream, cert_path: String, key_path: String) -> Result<Self> {
         stream.set_nodelay(true)?;
 
-        let config = if let (cert_path, key_path) = (cert_path, key_path) {
-            let certs = load_certs(Path::new(&cert_path))?;
-            let key = load_private_key(Path::new(&key_path))?;
+        let certs = load_certs(Path::new(&cert_path))?;
+        let key = load_private_key(Path::new(&key_path))?;
 
-            let config = ServerConfig::builder()
-                .with_no_client_auth()
-                .with_single_cert(certs, key)
-                .map_err(|e| Error::msg(format!("Failed to create server config: {}", e)))?;
-            config
-        } else {
-            return Err(Error::msg(
-                "Certificate and key paths are required for server",
-            ));
-        };
+        let config = ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)
+            .map_err(|e| Error::msg(format!("Failed to create server config: {}", e)))?;
 
-        let mut conn = ServerConnection::new(Arc::new(config))?;
+        let conn = ServerConnection::new(Arc::new(config))?;
 
         // conn.set_buffer_limit(Some(1024 * 1024 * 10));
 
@@ -53,20 +41,16 @@ impl RustlsServerStream {
             temp_buf: vec![],
         })
     }
-    
 
     pub fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         // trace!("Reading from RustlsStream");
         if self.temp_buf.len() > buf.len() {
-
             let to_copy = buf.len().min(self.temp_buf.len());
             buf[..to_copy].copy_from_slice(&self.temp_buf[..to_copy]);
             self.temp_buf.drain(..to_copy);
             debug!("Left {} bytes in temp_buf", self.temp_buf.len());
             return Ok(to_copy);
-        } 
-
-
+        }
 
         // Read TLS data
         match self.conn.read_tls(&mut self.stream) {
@@ -83,7 +67,7 @@ impl RustlsServerStream {
                     self.temp_buf.drain(..to_copy);
                     debug!("Left {} bytes in temp_buf", self.temp_buf.len());
                     return Ok(to_copy);
-                }  
+                }
                 return Err(io::Error::new(
                     io::ErrorKind::WouldBlock,
                     "TLS read would block",
@@ -108,7 +92,10 @@ impl RustlsServerStream {
         // debug!("Processing new packets");
         let io_state = match self.conn.process_new_packets() {
             Ok(state) => {
-                debug!("Processed new packets {:?}", state.plaintext_bytes_to_read());
+                debug!(
+                    "Processed new packets {:?}",
+                    state.plaintext_bytes_to_read()
+                );
                 state
             }
             Err(e) => {
@@ -116,9 +103,6 @@ impl RustlsServerStream {
                 return Err(io::Error::new(io::ErrorKind::Other, e));
             }
         };
-
-
-    
 
         // If we need to write handshake data, do it
         if !self.handshake_done {
@@ -130,17 +114,14 @@ impl RustlsServerStream {
             self.handshake_done = true;
         }
 
-
-        
         let mut chunk = [0u8; 8192 * 10];
-            
 
         loop {
             match self.conn.reader().read(&mut chunk) {
                 Ok(0) => {
                     trace!("EOF");
                     break;
-                },
+                }
                 Ok(n) => {
                     self.temp_buf.extend_from_slice(&chunk[..n]);
                     trace!("Extending temp buf by {} bytes", n);
@@ -148,7 +129,7 @@ impl RustlsServerStream {
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                     trace!("WouldBlock nothing to read from conn");
                     break;
-                },
+                }
                 Err(e) => return Err(e),
             }
         }
@@ -157,7 +138,11 @@ impl RustlsServerStream {
 
         buf[..to_copy].copy_from_slice(&self.temp_buf[..to_copy]);
 
-        trace!("To copy: {} from temp buf len: {}", to_copy, self.temp_buf.len());
+        trace!(
+            "To copy: {} from temp buf len: {}",
+            to_copy,
+            self.temp_buf.len()
+        );
         if to_copy > 0 {
             self.temp_buf.drain(..to_copy);
             trace!("Temp buf len after drain : {}", self.temp_buf.len());
@@ -212,7 +197,6 @@ impl RustlsServerStream {
             self.finished = true;
         }
 
-
         // Теперь пробуем записать новые данные
         while total_written < buf.len() {
             match self.conn.writer().write(&buf[total_written..]) {
@@ -222,7 +206,7 @@ impl RustlsServerStream {
                     // Пытаемся отправить данные в сеть
                     while self.conn.wants_write() {
                         match self.conn.write_tls(&mut self.stream) {
-                            Ok(s) => {
+                            Ok(_) => {
                                 continue;
                             }
                             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -249,7 +233,6 @@ impl RustlsServerStream {
                 }
             }
         }
-
 
         Ok(total_written)
     }
@@ -310,7 +293,6 @@ pub fn load_private_key(key_path: &Path) -> Result<PrivateKeyDer<'static>, Error
         Err(Error::msg("No private keys found in key file"))
     }
 }
-
 
 impl Read for RustlsServerStream {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {

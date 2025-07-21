@@ -4,7 +4,7 @@ use anyhow::Result;
 use log::{debug, trace};
 use mio::{Interest, Poll};
 
-use crate::{client::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, RMBT_UPGRADE_REQUEST}, config::constants::CHUNK_SIZE, mioserver::{server::TestState, ServerTestPhase}, tokio_server::utils::use_http::RMBT_UPGRADE};
+use crate::{client::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE}, config::constants::CHUNK_SIZE, mioserver::{server::TestState, ServerTestPhase}};
 
 pub fn handle_greeting_accep_token_read(
     poll: &Poll,

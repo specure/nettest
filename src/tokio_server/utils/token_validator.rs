@@ -2,11 +2,9 @@ use std::error::Error;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::sleep;
 use log::{debug};
-use crate::config::constants::{MAX_ACCEPT_EARLY, MAX_ACCEPT_LATE};
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use uuid::Uuid;
 
 type HmacSha1 = Hmac<Sha1>;
 
@@ -27,24 +25,21 @@ impl TokenValidator {
     /// Проверка токена
     pub async fn validate(&self, _token_uuid: &str, _start_time_str: &str, _hmac: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
         // Проверяем токен с каждым ключом
-        return Ok(true);
-        // for (i, key) in self.secret_keys.iter().enumerate() {
-        //     if self.validate_with_key(token_uuid, start_time_str, hmac, key).await? {
-        //         info!("Token was accepted by key {}", self.secret_keys_labels[i]);
-        //         debug!("Token was accepted by key {}", self.secret_keys[i]);
-        //         return Ok(true);
-        //     }
-        // }
+        for (i, key) in self.secret_keys.iter().enumerate() {
+            if self.validate_with_key(_token_uuid, _start_time_str, _hmac, key).await? {
+                debug!("Token was accepted by key {}", self.secret_keys_labels[i]);
+                return Ok(true);
+            }
+        }
         
-        // error!("Got illegal token: \"{}\"", token_uuid);
-        // Ok(false)
+        Ok(false)
     }
 
     async fn validate_with_key(&self, token_uuid: &str, start_time_str: &str, _hmac: &str, key: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
-        if Uuid::parse_str(token_uuid).is_err() {
-            // error!("Invalid UUID format: \"{}\"", token_uuid);
-            return Ok(false);
-        }
+        // if Uuid::parse_str(token_uuid).is_err() {
+        //     // error!("Invalid UUID format: \"{}\"", token_uuid);
+        //     return Ok(false);
+        // }
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)?
@@ -52,14 +47,14 @@ impl TokenValidator {
         
         let start_time = start_time_str.parse::<i64>()?;
 
-        if start_time - (MAX_ACCEPT_EARLY as i64) > now {
-            // error!("Client is not allowed yet. {} seconds too early", start_time - now);
-            return Ok(false);
-        }
-        if start_time + (MAX_ACCEPT_LATE as i64) < now {
-            // error!("Client is {} seconds too late", now - start_time);
-            return Ok(false);
-        }
+        // if start_time - (MAX_ACCEPT_EARLY as i64) > now {
+        //     // error!("Client is not allowed yet. {} seconds too early", start_time - now);
+        //     return Ok(false);
+        // }
+        // if start_time + (MAX_ACCEPT_LATE as i64) < now {
+        //     // error!("Client is {} seconds too late", now - start_time);
+        //     return Ok(false);
+        // }
 
         if start_time > now {
             let wait_time = start_time - now;

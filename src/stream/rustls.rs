@@ -2,7 +2,7 @@ use anyhow::{Error, Result};
 use log::{debug, info, trace};
 use mio::{net::TcpStream, Interest, Poll, Token};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
-use rustls::{ClientConfig, ClientConnection, RootCertStore, ServerConfig};
+use rustls::{ClientConfig, ClientConnection, RootCertStore};
 use std::fs;
 use std::io::{self, BufReader, Read, Write};
 use std::net::SocketAddr;
@@ -57,7 +57,7 @@ impl RustlsStream {
             ServerName::DnsName("dev.measurementservers.net".try_into()?)
         };
 
-        let mut conn = ClientConnection::new(Arc::new(config), server_name)?;
+        let  conn = ClientConnection::new(Arc::new(config), server_name)?;
 
         // conn.set_buffer_limit(Some(1024 * 1024 * 10));
 
@@ -237,7 +237,7 @@ impl RustlsStream {
                     // Пытаемся отправить данные в сеть
                     while self.conn.wants_write() {
                         match self.conn.write_tls(&mut self.stream) {
-                            Ok(s) => {
+                            Ok(_) => {
                                 continue;
                             }
                             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {

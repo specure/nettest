@@ -132,8 +132,8 @@ impl GraphService {
         let steps = (duration_ns as f64 / step_ns as f64).ceil() as usize;
         let mut speed_data = Vec::new();
 
-        for i in 2..=steps {
-            let t = 1.0 + (i - 2) as f64 * 0.2;
+        for i in 0..=steps {
+            let t = i as f64 * 0.2; // Время отображения с 0 секунд
             let target_time = min_time + (i as u64 * step_ns);
             let mut total_bytes = 0.0f64;
 
@@ -141,33 +141,10 @@ impl GraphService {
                 if result.measurements.is_empty() {
                     continue;
                 }
-                let mut before = None;
-                let mut after = None;
 
-                for (tt, b) in &result.measurements {
-                    if *tt <= target_time {
-                        before = Some((*tt, *b));
-                    }
-                    if *tt >= target_time {
-                        after = Some((*tt, *b));
-                        break;
-                    }
-                }
-
-                let bytes = match (before, after) {
-                    (Some((t0, b0)), Some((t1, b1))) if t1 > t0 => {
-                        let dt = t1 - t0;
-                        let db = b1 - b0;
-                        let dt_target = target_time - t0;
-                        b0 as f64 + (dt_target as f64 / dt as f64) * db as f64
-                    }
-                    (Some((_, b)), None) => b as f64,
-                    (None, Some((_, _))) => 0.0 as f64,
-                    _ => 0.0,
-                };
-
-                debug!("bytes: {}", bytes);
-                total_bytes += bytes;
+                // Интерполируем данные в текущий момент времени
+                let bytes_at_target = Self::interpolate_bytes_at_time(&result.measurements, target_time);
+                total_bytes += bytes_at_target;
             }
 
             let speed_mbit = if t > 0.0 {
@@ -179,6 +156,37 @@ impl GraphService {
             speed_data.push((t, speed_mbit, total_bytes as u64));
         }
         speed_data
+    }
+
+    fn interpolate_bytes_at_time(measurements: &[(u64, u64)], target_time: u64) -> f64 {
+        if measurements.is_empty() {
+            return 0.0;
+        }
+
+        let mut before = None;
+        let mut after = None;
+
+        for (time, bytes) in measurements {
+            if *time <= target_time {
+                before = Some((*time, *bytes));
+            }
+            if *time >= target_time {
+                after = Some((*time, *bytes));
+                break;
+            }
+        }
+
+        match (before, after) {
+            (Some((t0, b0)), Some((t1, b1))) if t1 > t0 => {
+                let dt = t1 - t0;
+                let db = b1 - b0;
+                let dt_target = target_time - t0;
+                b0 as f64 + (dt_target as f64 / dt as f64) * db as f64
+            }
+            (Some((_, b)), None) => b as f64,
+            (None, Some((_, b))) => b as f64,
+            _ => 0.0,
+        }
     }
 
     fn print_speed_textplot(speed_data: &[(f64, f64)], test_type: &str) {

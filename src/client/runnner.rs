@@ -11,7 +11,7 @@ use log::debug;
 use crate::client::{
     calculator::{calculate_download_speed_from_stats, calculate_upload_speed_from_stats},
     client::{ClientConfig, Measurement, SharedStats},
-    print::printer::print_result,
+    print::printer::{print_float_result},
     state::TestState,
 };
 
@@ -51,20 +51,20 @@ pub fn run_threads(
             }
             barrier.wait();
             state.run_get_chunks().unwrap();
-            if i == 0 {
-                print_result(
-                    "Get Chunks",
-                    "Completed",
-                    Some(state.measurement_state().chunk_size as usize),
-                );
-            }
+            // if i == 0 {
+            //     print_result(
+            //         "Get Chunks",
+            //         "Completed",
+            //         Some(state.measurement_state().chunk_size as usize),
+            //     );
+            // }
 
             barrier.wait();
 
             if i == 0 {
                 state.run_ping().unwrap();
                 let median = state.measurement_state().ping_median.unwrap();
-                print_result("Ping Median", "Completed (ns)", Some(median as usize));
+                print_float_result("Ping Median", "ms", Some(median as f64 / 1000000.0 ));
             }
             barrier.wait();
 
@@ -74,7 +74,7 @@ pub fn run_threads(
                 stats.download_measurements.push(
                     state
                         .measurement_state()
-                        .measurements
+                        .download_measurements
                         .iter()
                         .cloned()
                         .collect(),
@@ -113,10 +113,9 @@ pub fn run_threads(
             let result: Measurement = Measurement {
                 thread_id: i,
                 failed: state.measurement_state().failed,
-                //TODO: handle additional clone
                 measurements: state
                     .measurement_state()
-                    .measurements
+                    .download_measurements
                     .iter()
                     .cloned()
                     .collect(),
