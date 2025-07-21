@@ -1,5 +1,4 @@
 use bytes::BytesMut;
-use chrono::Duration;
 use log::{debug, info, LevelFilter};
 use mio::net::{TcpListener, TcpStream};
 use mio::{Poll, Token, Waker};
@@ -8,7 +7,7 @@ use std::io::{self};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Instant, Duration as StdDuration};
+use std::time::Instant;
 
 #[derive(Debug)]
 pub enum ConnectionType {

@@ -39,7 +39,7 @@ pub fn handle_put_no_result_send_ok(poll: &Poll, state: &mut TestState) -> io::R
 pub fn handle_put_no_result_receive_chunk(
     poll: &Poll,
     state: &mut TestState,
-) -> io::Result<(usize)> {
+) -> io::Result<usize> {
     debug!("handle_put_no_result_receive_chunk");
     loop {
         let n = state

@@ -1,6 +1,5 @@
 use log::{debug, trace};
 use mio::{Interest, Poll};
-use serde_json::de;
 use std::{io, time::Instant};
 
 use crate::{

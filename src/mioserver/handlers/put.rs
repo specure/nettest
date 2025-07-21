@@ -1,6 +1,6 @@
 use std::{io, time::Instant};
 
-use log::{debug, trace};
+use log::{debug};
 use mio::{Interest, Poll};
 
 use crate::mioserver::{server::TestState, ServerTestPhase};
@@ -74,7 +74,7 @@ pub fn handle_put_send_bytes(poll: &Poll, state: &mut TestState) -> io::Result<u
 pub fn handle_put_receive_chunk(
     poll: &Poll,
     state: &mut TestState,
-) -> io::Result<(usize)> {
+) -> io::Result<usize> {
     debug!("handle_put_receive_chunk");
     loop {
         let n = state
