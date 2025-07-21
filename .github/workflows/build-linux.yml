@@ -1,0 +1,91 @@
+name: Build Linux Package
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
+        
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: ${{ matrix.target }}
+        override: true
+        
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Build for Linux
+      run: |
+        cargo build --release --target ${{ matrix.target }}
+        
+    - name: Create package directory
+      run: |
+        ARCH=$(echo ${{ matrix.target }} | cut -d'-' -f1)
+        mkdir -p package/nettest-linux-$ARCH
+        
+    - name: Copy binary
+      run: |
+        ARCH=$(echo ${{ matrix.target }} | cut -d'-' -f1)
+        cp target/${{ matrix.target }}/release/nettest package/nettest-linux-$ARCH/
+        
+    - name: Create README for package
+      run: |
+        ARCH=$(echo ${{ matrix.target }} | cut -d'-' -f1)
+        cat > package/nettest-linux-$ARCH/README.txt << 'EOF'
+        Nettest - Network Speed Measurement Tool
+        
+        Architecture: $ARCH
+        Build Date: $(date)
+        
+        Installation:
+        1. Make binary executable: chmod +x nettest
+        2. Run: ./nettest -s (server) or ./nettest -c <address> (client)
+        
+        For more information, visit: https://github.com/your-repo/nettest
+        EOF
+        
+    - name: Create archive
+      run: |
+        ARCH=$(echo ${{ matrix.target }} | cut -d'-' -f1)
+        cd package
+        tar -czf nettest-linux-$ARCH.tar.gz nettest-linux-$ARCH/
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: nettest-linux-${{ matrix.target }}
+        path: package/nettest-linux-$(echo ${{ matrix.target }} | cut -d'-' -f1).tar.gz
+        
+    - name: Create Release (on tags)
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          nettest-linux-x86_64-unknown-linux-gnu/nettest-linux-x86_64.tar.gz
+          nettest-linux-aarch64-unknown-linux-gnu/nettest-linux-aarch64.tar.gz
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
