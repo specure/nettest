@@ -11,6 +11,8 @@ on:
 jobs:
   build-linux-x86_64:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     
     steps:
     - name: Checkout code
@@ -74,9 +76,20 @@ jobs:
       with:
         name: nettest-linux-x86_64-latest
         path: package/nettest-linux-x86_64.tar.gz
+        
+    - name: Upload to GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: latest
+        name: Nettest Static Binary x86_64
+        files: target/x86_64-unknown-linux-gnu/release/nettest
+        token: ${{ secrets.GITHUB_TOKEN }}
+        overwrite: true
 
   build-linux-aarch64:
     runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
     
     steps:
     - name: Checkout code
@@ -139,5 +152,14 @@ jobs:
       with:
         name: nettest-linux-aarch64-latest
         path: package/nettest-linux-aarch64.tar.gz
+        
+    - name: Upload to GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: latest
+        name: Nettest Static Binary ARM64
+        files: target/release/nettest
+        token: ${{ secrets.GITHUB_TOKEN }}
+        overwrite: true
 
  
