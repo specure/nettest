@@ -76,7 +76,7 @@ jobs:
         path: package/nettest-linux-x86_64.tar.gz
 
   build-linux-aarch64:
-    runs-on: ubuntu-latest-arm64
+    runs-on: ubuntu-24.04-arm
     
     steps:
     - name: Checkout code
@@ -86,7 +86,6 @@ jobs:
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
-        target: aarch64-unknown-linux-gnu
         override: true
         
     - name: Install system dependencies
@@ -101,11 +100,11 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-aarch64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-arm64-${{ hashFiles('**/Cargo.lock') }}
         
     - name: Build for Linux ARM64
       run: |
-        cargo build --release --target aarch64-unknown-linux-gnu
+        cargo build --release
         
     - name: Create package directory
       run: |
@@ -113,7 +112,7 @@ jobs:
         
     - name: Copy binary
       run: |
-        cp target/aarch64-unknown-linux-gnu/release/nettest package/nettest-linux-aarch64/
+        cp target/release/nettest package/nettest-linux-aarch64/
         
     - name: Create README for package
       run: |
