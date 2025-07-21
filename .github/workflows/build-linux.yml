@@ -77,14 +77,11 @@ jobs:
         name: nettest-linux-x86_64-latest
         path: package/nettest-linux-x86_64.tar.gz
         
-    - name: Upload to GitHub Release
-      uses: softprops/action-gh-release@v1
+    - name: Upload binary for release
+      uses: actions/upload-artifact@v4
       with:
-        tag_name: latest
-        name: Nettest Static Binary x86_64
-        files: target/x86_64-unknown-linux-gnu/release/nettest
-        token: ${{ secrets.GITHUB_TOKEN }}
-        overwrite: true
+        name: nettest-x86_64-binary
+        path: target/x86_64-unknown-linux-gnu/release/nettest
 
   build-linux-aarch64:
     runs-on: ubuntu-24.04-arm
@@ -153,13 +150,31 @@ jobs:
         name: nettest-linux-aarch64-latest
         path: package/nettest-linux-aarch64.tar.gz
         
-    - name: Upload to GitHub Release
+    - name: Upload binary for release
+      uses: actions/upload-artifact@v4
+      with:
+        name: nettest-aarch64-binary
+        path: target/release/nettest
+
+  create-latest-release:
+    needs: [build-linux-x86_64, build-linux-aarch64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Download binaries
+      uses: actions/download-artifact@v4
+      
+    - name: Create latest release
       uses: softprops/action-gh-release@v1
       with:
         tag_name: latest
-        name: Nettest Static Binary ARM64
-        files: target/release/nettest
+        name: Nettest Latest Release
+        files: |
+          nettest-x86_64-binary/nettest
+          nettest-aarch64-binary/nettest
         token: ${{ secrets.GITHUB_TOKEN }}
         overwrite: true
-
- 
+        draft: false
+        prerelease: false
