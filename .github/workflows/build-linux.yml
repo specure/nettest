@@ -34,7 +34,7 @@ jobs:
     - name: Install cross-compiler for ARM64
       if: matrix.target == 'aarch64-unknown-linux-gnu'
       run: |
-        sudo apt-get install -y gcc-aarch64-linux-gnu
+        sudo apt-get install -y gcc-aarch64-linux-gnu pkg-config-aarch64-linux-gnu
         
     - name: Cache dependencies
       uses: actions/cache@v4
@@ -47,6 +47,10 @@ jobs:
         
     - name: Build for Linux
       run: |
+        if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+          export PKG_CONFIG=aarch64-linux-gnu-pkg-config
+          export PKG_CONFIG_ALLOW_CROSS=1
+        fi
         cargo build --release --target ${{ matrix.target }}
         
     - name: Create package directory
@@ -87,12 +91,22 @@ jobs:
         name: nettest-linux-${{ matrix.target }}
         path: package/nettest-linux-$(echo ${{ matrix.target }} | cut -d'-' -f1).tar.gz
         
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nettest-linux-${{ matrix.target }}
+        path: package/nettest-linux-$(echo ${{ matrix.target }} | cut -d'-' -f1).tar.gz
+
+  create-release:
+    needs: build-linux
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
     - name: Download artifacts
-      if: startsWith(github.ref, 'refs/tags/')
       uses: actions/download-artifact@v4
       
-    - name: Create Release (on tags)
-      if: startsWith(github.ref, 'refs/tags/')
+    - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
