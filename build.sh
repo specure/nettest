@@ -5,8 +5,6 @@ set -e
 declare -A TARGETS=(
     ["x86_64-unknown-linux-musl"]="x86_64"
     ["aarch64-unknown-linux-musl"]="aarch64"
-    ["i686-unknown-linux-musl"]="i686"
-    ["armv7-unknown-linux-musleabihf"]="armv7"
 )
 
 # Environment variables for static linking
