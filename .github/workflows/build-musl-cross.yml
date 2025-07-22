@@ -23,7 +23,7 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Setup Cross
-      uses: rust-embedded/cross@v2
+      uses: rust-embedded/cross@v1
       with:
         target: x86_64-unknown-linux-musl
         
