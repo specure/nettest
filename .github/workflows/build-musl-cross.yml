@@ -36,17 +36,17 @@ jobs:
         # Try different package managers
         if command -v apt-get &> /dev/null; then
           echo "Using apt-get"
-          apt-get update
-          apt-get install -y wget curl musl-tools
+          sudo apt-get update
+          sudo apt-get install -y wget curl musl-tools
         elif command -v yum &> /dev/null; then
           echo "Using yum"
-          yum install -y wget curl musl-gcc
+          sudo yum install -y wget curl musl-gcc
         elif command -v dnf &> /dev/null; then
           echo "Using dnf"
-          dnf install -y wget curl musl-gcc
+          sudo dnf install -y wget curl musl-gcc
         elif command -v apk &> /dev/null; then
           echo "Using apk"
-          apk add wget curl musl-dev
+          sudo apk add wget curl musl-dev
         else
           echo "No package manager found, trying to install wget manually"
           # Try to download wget manually
