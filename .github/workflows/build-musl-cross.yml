@@ -22,10 +22,8 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Setup Cross
-      uses: rust-embedded/cross@v1
-      with:
-        target: x86_64-unknown-linux-musl
+    - name: Setup Rust with MUSL
+      uses: stevenleadbeater/rust-musl-builder@master
         
     - name: Add aarch64 target
       run: |
@@ -37,7 +35,7 @@ jobs:
         OPENSSL_VENDORED: 1
         RUSTFLAGS: "-C target-feature=+crt-static"
       run: |
-        cross build --release --target x86_64-unknown-linux-musl
+        cargo build --release --target x86_64-unknown-linux-musl
         mkdir -p package/nettest-linux-x86_64
         cp target/x86_64-unknown-linux-musl/release/nettest package/nettest-linux-x86_64/
         cd package
