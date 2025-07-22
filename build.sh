@@ -12,11 +12,11 @@ export OPENSSL_STATIC=1
 export OPENSSL_VENDORED=1
 export RUSTFLAGS="-C target-feature=+crt-static"
 
-# Fontconfig environment variables - setup proper paths
+# Fontconfig environment variables - use system libraries
 export PKG_CONFIG_ALLOW_CROSS=1
 export FONTCONFIG_NO_PKG_CONFIG=0
 export RUST_FONTCONFIG_DLOPEN=0
-export FONTCONFIG_STATIC=1
+export FONTCONFIG_STATIC=0
 export PKG_CONFIG_PATH="/usr/lib/pkgconfig:/usr/share/pkgconfig"
 
 echo "Building for multiple targets with musl..."

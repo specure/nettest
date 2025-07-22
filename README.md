@@ -77,8 +77,8 @@ This will create static musl binaries for:
 #### GitHub Actions
 
 The project includes automated builds via GitHub Actions:
-- **Docker-based**: Uses Docker containers for consistent builds
-- **Musl static linking**: Maximum compatibility with older Linux distributions
+- **Musl Cross Compiler**: Uses musl.cc cross-compiler for maximum compatibility
+- **Static linking**: Maximum compatibility with older Linux distributions like Debian 11
 
 ### Run Server
 
