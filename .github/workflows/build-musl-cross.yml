@@ -22,51 +22,17 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
+    - name: Setup Rust with MUSL
+      uses: juankaram/rust-musl-action@v1
       with:
-        toolchain: stable
         target: x86_64-unknown-linux-musl
-        override: true
         
     - name: Add aarch64 target
       run: |
         rustup target add aarch64-unknown-linux-musl
         
-    - name: Install system tools
-      run: |
-        echo "Installing system tools..."
-        sudo apt-get update
-        sudo apt-get install -y wget curl
-        
-    - name: Install musl cross compiler
-      run: |
-        echo "Installing musl cross compiler..."
-        wget https://musl.cc/x86_64-linux-musl-cross.tgz
-        tar -xzf x86_64-linux-musl-cross.tgz
-        sudo mv x86_64-linux-musl-cross /opt/
-        export PATH="/opt/x86_64-linux-musl-cross/bin:$PATH"
-        echo "PATH=/opt/x86_64-linux-musl-cross/bin:$PATH" >> $GITHUB_ENV
-        
-    - name: Setup musl environment
-      run: |
-        echo "Setting up musl environment..."
-        echo "CC_x86_64_unknown_linux_musl=x86_64-linux-musl-gcc" >> $GITHUB_ENV
-        echo "CXX_x86_64_unknown_linux_musl=x86_64-linux-musl-g++" >> $GITHUB_ENV
-        echo "AR_x86_64_unknown_linux_musl=x86_64-linux-musl-ar" >> $GITHUB_ENV
-        echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
-        echo "PKG_CONFIG_SYSROOT_DIR=/usr/x86_64-linux-musl" >> $GITHUB_ENV
-        echo "PKG_CONFIG_PATH=/usr/x86_64-linux-musl/lib/pkgconfig" >> $GITHUB_ENV
-        
     - name: Build for x86_64
       env:
-        PATH: "/opt/x86_64-linux-musl-cross/bin:$PATH"
-        CC_x86_64_unknown_linux_musl: x86_64-linux-musl-gcc
-        CXX_x86_64_unknown_linux_musl: x86_64-linux-musl-g++
-        AR_x86_64_unknown_linux_musl: x86_64-linux-musl-ar
-        PKG_CONFIG_ALLOW_CROSS: 1
-        PKG_CONFIG_SYSROOT_DIR: /usr/x86_64-linux-musl
-        PKG_CONFIG_PATH: /usr/x86_64-linux-musl/lib/pkgconfig
         OPENSSL_STATIC: 1
         OPENSSL_VENDORED: 1
         RUSTFLAGS: "-C target-feature=+crt-static"
