@@ -22,22 +22,19 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Setup Rust with MUSL
-      uses: juankaram/rust-musl-action@v1
-      with:
-        target: x86_64-unknown-linux-musl
-        
-    - name: Add aarch64 target
-      run: |
-        rustup target add aarch64-unknown-linux-musl
-        
     - name: Build for x86_64
+      uses: juankaram/rust-musl-action@master
       env:
         OPENSSL_STATIC: 1
         OPENSSL_VENDORED: 1
         RUSTFLAGS: "-C target-feature=+crt-static"
+      with:
+        target: x86_64-unknown-linux-musl
+        args: cargo build --target x86_64-unknown-linux-musl --release
+        
+    - name: Add aarch64 target
       run: |
-        cargo build --release --target x86_64-unknown-linux-musl
+        rustup target add aarch64-unknown-linux-musl
         mkdir -p package/nettest-linux-x86_64
         cp target/x86_64-unknown-linux-musl/release/nettest package/nettest-linux-x86_64/
         cd package
