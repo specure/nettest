@@ -1,8 +1,16 @@
 [target.x86_64-unknown-linux-musl]
 image = "ghcr.io/cross-rs/x86_64-unknown-linux-musl:main"
+xargo = false
+pre-build = [
+    "apk add --no-cache fontconfig-dev pkgconfig"
+]
 
 [target.aarch64-unknown-linux-musl]
 image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:main"
+xargo = false
+pre-build = [
+    "apk add --no-cache fontconfig-dev pkgconfig"
+]
 
 [build.env]
 passthrough = [
@@ -12,5 +20,6 @@ passthrough = [
     "PKG_CONFIG_ALLOW_CROSS",
     "FONTCONFIG_NO_PKG_CONFIG",
     "RUST_FONTCONFIG_DLOPEN",
-    "FONTCONFIG_STATIC"
+    "FONTCONFIG_STATIC",
+    "PKG_CONFIG_PATH"
 ] 
