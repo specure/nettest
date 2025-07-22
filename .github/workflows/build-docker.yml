@@ -27,11 +27,18 @@ jobs:
       
     - name: Build Docker image
       run: |
+        # Try Debian-based image first (better fontconfig support)
+        docker build -f Dockerfile.build.debian -t nettest-builder-debian . || \
         docker build -f Dockerfile.build -t nettest-builder .
         
     - name: Run builds in Docker
       run: |
-        docker run --rm -v $(pwd):/app -w /app nettest-builder /usr/local/bin/build.sh
+        # Use Debian-based image if available, otherwise fallback
+        if docker images | grep -q nettest-builder-debian; then
+          docker run --rm -v $(pwd):/app -w /app nettest-builder-debian /usr/local/bin/build.sh
+        else
+          docker run --rm -v $(pwd):/app -w /app nettest-builder /usr/local/bin/build.sh
+        fi
         
     - name: Upload artifacts
       uses: actions/upload-artifact@v4

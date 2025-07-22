@@ -14,6 +14,11 @@ export OPENSSL_STATIC=1
 export OPENSSL_VENDORED=1
 export RUSTFLAGS="-C target-feature=+crt-static"
 
+# Fontconfig environment variables
+export PKG_CONFIG_ALLOW_CROSS=1
+export FONTCONFIG_NO_PKG_CONFIG=1
+export RUST_FONTCONFIG_DLOPEN=1
+
 echo "Building for multiple targets with musl..."
 
 # Create package directory
