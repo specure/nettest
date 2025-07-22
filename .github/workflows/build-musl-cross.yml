@@ -26,14 +26,7 @@ jobs:
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
-        override: true
-        
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: x86_64-unknown-linux-musl
-        target: aarch64-unknown-linux-musl
+        targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
         override: true
         
     - name: Install musl cross compiler
