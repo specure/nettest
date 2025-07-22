@@ -30,28 +30,47 @@ jobs:
         rustup target add x86_64-unknown-linux-musl
         rustup target add aarch64-unknown-linux-musl
         
-    - name: Install musl cross compiler
+    - name: Install system tools
+      run: |
+        echo "Installing system tools..."
+        # Try different package managers
+        if command -v apt-get &> /dev/null; then
+          echo "Using apt-get"
+          apt-get update
+          apt-get install -y wget curl musl-tools
+        elif command -v yum &> /dev/null; then
+          echo "Using yum"
+          yum install -y wget curl musl-gcc
+        elif command -v dnf &> /dev/null; then
+          echo "Using dnf"
+          dnf install -y wget curl musl-gcc
+        elif command -v apk &> /dev/null; then
+          echo "Using apk"
+          apk add wget curl musl-dev
+        else
+          echo "No package manager found, trying to install wget manually"
+          # Try to download wget manually
+          if [ -f /usr/bin/curl ]; then
+            curl -L -o wget https://github.com/mirror/wget/releases/download/v1.21.4/wget-1.21.4.tar.gz
+          fi
+        fi
+        echo "Checking installed tools:"
+        which wget || echo "wget not found"
+        which curl || echo "curl not found"
+        which musl-gcc || echo "musl-gcc not found"
+        
+    - name: Setup musl environment
       env:
         PATH: "$HOME/.cargo/bin:$PATH"
       run: |
-        echo "Installing musl cross compiler..."
-        # Try alternative sources for musl cross compiler
-        curl -L -o x86_64-linux-musl-cross.tgz https://musl.cc/x86_64-linux-musl-cross.tgz || \
-        curl -L -o x86_64-linux-musl-cross.tgz https://github.com/richfelker/musl-cross-make/releases/download/v0.9.9/x86_64-linux-musl-cross.tgz || \
-        (echo "Download failed, installing musl-tools..." && apt-get update && apt-get install -y musl-tools)
-        if [ -f x86_64-linux-musl-cross.tgz ]; then
-          echo "Extracting downloaded musl cross compiler..."
-          tar -xzf x86_64-linux-musl-cross.tgz
-          mv x86_64-linux-musl-cross /opt/
-          export PATH="/opt/x86_64-linux-musl-cross/bin:$PATH"
-          echo "Musl cross compiler installed at /opt/x86_64-linux-musl-cross"
-        else
-          echo "Using system musl-tools"
-        fi
+        echo "Setting up musl environment..."
+        echo "Using rustup targets for musl compilation"
+        echo "CC_x86_64_unknown_linux_musl=musl-gcc" >> $GITHUB_ENV
+        echo "CXX_x86_64_unknown_linux_musl=musl-g++" >> $GITHUB_ENV
+        echo "AR_x86_64_unknown_linux_musl=musl-ar" >> $GITHUB_ENV
+        echo "PKG_CONFIG_SYSROOT_DIR=/usr" >> $GITHUB_ENV
+        echo "PKG_CONFIG_PATH=/usr/lib/pkgconfig" >> $GITHUB_ENV
         echo "Current PATH: $PATH"
-        echo "Checking for musl compilers:"
-        which musl-gcc || echo "musl-gcc not found"
-        which x86_64-linux-musl-gcc || echo "x86_64-linux-musl-gcc not found"
         
     - name: Setup musl environment
       run: |
