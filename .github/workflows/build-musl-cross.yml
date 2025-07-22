@@ -22,93 +22,55 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Setup Rust
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: x86_64-unknown-linux-musl
+        override: true
+        
+    - name: Add aarch64 target
       run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        source $HOME/.cargo/env
-        rustup default stable
-        rustup target add x86_64-unknown-linux-musl
         rustup target add aarch64-unknown-linux-musl
         
     - name: Install system tools
       run: |
         echo "Installing system tools..."
-        # Try different package managers
-        if command -v apt-get &> /dev/null; then
-          echo "Using apt-get"
-          sudo apt-get update
-          sudo apt-get install -y wget curl musl-tools
-        elif command -v yum &> /dev/null; then
-          echo "Using yum"
-          sudo yum install -y wget curl musl-gcc
-        elif command -v dnf &> /dev/null; then
-          echo "Using dnf"
-          sudo dnf install -y wget curl musl-gcc
-        elif command -v apk &> /dev/null; then
-          echo "Using apk"
-          sudo apk add wget curl musl-dev
-        else
-          echo "No package manager found, trying to install wget manually"
-          # Try to download wget manually
-          if [ -f /usr/bin/curl ]; then
-            curl -L -o wget https://github.com/mirror/wget/releases/download/v1.21.4/wget-1.21.4.tar.gz
-          fi
-        fi
-        echo "Checking installed tools:"
-        which wget || echo "wget not found"
-        which curl || echo "curl not found"
-        which musl-gcc || echo "musl-gcc not found"
+        sudo apt-get update
+        sudo apt-get install -y wget curl
+        
+    - name: Install musl cross compiler
+      run: |
+        echo "Installing musl cross compiler..."
+        wget https://musl.cc/x86_64-linux-musl-cross.tgz
+        tar -xzf x86_64-linux-musl-cross.tgz
+        sudo mv x86_64-linux-musl-cross /opt/
+        export PATH="/opt/x86_64-linux-musl-cross/bin:$PATH"
+        echo "PATH=/opt/x86_64-linux-musl-cross/bin:$PATH" >> $GITHUB_ENV
         
     - name: Setup musl environment
-      env:
-        PATH: "$HOME/.cargo/bin:$PATH"
       run: |
         echo "Setting up musl environment..."
-        echo "Using rustup targets for musl compilation"
-        echo "CC_x86_64_unknown_linux_musl=musl-gcc" >> $GITHUB_ENV
-        echo "CXX_x86_64_unknown_linux_musl=musl-g++" >> $GITHUB_ENV
-        echo "AR_x86_64_unknown_linux_musl=musl-ar" >> $GITHUB_ENV
-        echo "PKG_CONFIG_SYSROOT_DIR=/usr" >> $GITHUB_ENV
-        echo "PKG_CONFIG_PATH=/usr/lib/pkgconfig" >> $GITHUB_ENV
-        echo "Current PATH: $PATH"
-        
-    - name: Setup musl environment
-      run: |
-        if [ -d "/opt/x86_64-linux-musl-cross" ]; then
-          echo "Using downloaded musl cross compiler"
-          echo "CC_x86_64_unknown_linux_musl=x86_64-linux-musl-gcc" >> $GITHUB_ENV
-          echo "CXX_x86_64_unknown_linux_musl=x86_64-linux-musl-g++" >> $GITHUB_ENV
-          echo "AR_x86_64_unknown_linux_musl=x86_64-linux-musl-ar" >> $GITHUB_ENV
-          echo "PKG_CONFIG_SYSROOT_DIR=/usr/x86_64-linux-musl" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=/usr/x86_64-linux-musl/lib/pkgconfig" >> $GITHUB_ENV
-        else
-          echo "Using system musl-tools"
-          echo "CC_x86_64_unknown_linux_musl=musl-gcc" >> $GITHUB_ENV
-          echo "CXX_x86_64_unknown_linux_musl=musl-g++" >> $GITHUB_ENV
-          echo "AR_x86_64_unknown_linux_musl=musl-ar" >> $GITHUB_ENV
-          echo "PKG_CONFIG_SYSROOT_DIR=/usr" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=/usr/lib/pkgconfig" >> $GITHUB_ENV
-        fi
+        echo "CC_x86_64_unknown_linux_musl=x86_64-linux-musl-gcc" >> $GITHUB_ENV
+        echo "CXX_x86_64_unknown_linux_musl=x86_64-linux-musl-g++" >> $GITHUB_ENV
+        echo "AR_x86_64_unknown_linux_musl=x86_64-linux-musl-ar" >> $GITHUB_ENV
+        echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
+        echo "PKG_CONFIG_SYSROOT_DIR=/usr/x86_64-linux-musl" >> $GITHUB_ENV
+        echo "PKG_CONFIG_PATH=/usr/x86_64-linux-musl/lib/pkgconfig" >> $GITHUB_ENV
         
     - name: Build for x86_64
       env:
-        PATH: "$HOME/.cargo/bin:$PATH"
-        CC_x86_64_unknown_linux_musl: ${{ env.CC_x86_64_unknown_linux_musl || 'musl-gcc' }}
-        CXX_x86_64_unknown_linux_musl: ${{ env.CXX_x86_64_unknown_linux_musl || 'musl-g++' }}
-        AR_x86_64_unknown_linux_musl: ${{ env.AR_x86_64_unknown_linux_musl || 'musl-ar' }}
+        PATH: "/opt/x86_64-linux-musl-cross/bin:$PATH"
+        CC_x86_64_unknown_linux_musl: x86_64-linux-musl-gcc
+        CXX_x86_64_unknown_linux_musl: x86_64-linux-musl-g++
+        AR_x86_64_unknown_linux_musl: x86_64-linux-musl-ar
         PKG_CONFIG_ALLOW_CROSS: 1
-        PKG_CONFIG_SYSROOT_DIR: ${{ env.PKG_CONFIG_SYSROOT_DIR || '/usr' }}
-        PKG_CONFIG_PATH: ${{ env.PKG_CONFIG_PATH || '/usr/lib/pkgconfig' }}
+        PKG_CONFIG_SYSROOT_DIR: /usr/x86_64-linux-musl
+        PKG_CONFIG_PATH: /usr/x86_64-linux-musl/lib/pkgconfig
         OPENSSL_STATIC: 1
         OPENSSL_VENDORED: 1
         RUSTFLAGS: "-C target-feature=+crt-static"
-        FONTCONFIG_NO_PKG_CONFIG: 0
-        RUST_FONTCONFIG_DLOPEN: 0
-        FONTCONFIG_STATIC: 0
       run: |
-        echo "Building for x86_64..."
-        echo "PATH: $PATH"
-        echo "Cargo location: $(which cargo)"
         cargo build --release --target x86_64-unknown-linux-musl
         mkdir -p package/nettest-linux-x86_64
         cp target/x86_64-unknown-linux-musl/release/nettest package/nettest-linux-x86_64/
