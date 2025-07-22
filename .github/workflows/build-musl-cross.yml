@@ -22,19 +22,29 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Build for x86_64
-      uses: juankaram/rust-musl-action@master
-      env:
-        OPENSSL_STATIC: 1
-        OPENSSL_VENDORED: 1
-        RUSTFLAGS: "-C target-feature=+crt-static"
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
       with:
+        toolchain: stable
         target: x86_64-unknown-linux-musl
-        args: cargo build --target x86_64-unknown-linux-musl --release
+        override: true
         
     - name: Add aarch64 target
       run: |
         rustup target add aarch64-unknown-linux-musl
+        
+    - name: Install musl tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y musl-tools
+        
+    - name: Build for x86_64
+      env:
+        OPENSSL_STATIC: 1
+        OPENSSL_VENDORED: 1
+        RUSTFLAGS: "-C target-feature=+crt-static"
+      run: |
+        cargo build --release --target x86_64-unknown-linux-musl
         mkdir -p package/nettest-linux-x86_64
         cp target/x86_64-unknown-linux-musl/release/nettest package/nettest-linux-x86_64/
         cd package
