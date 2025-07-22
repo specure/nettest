@@ -31,15 +31,19 @@ Nettest is a high-performance server and client for network speed measurement, w
 
 Download the latest builds directly:
 
-- **Linux x86_64**: [nettest-linux-x86_64.tar.gz](https://github.com/specure/nettest/releases/download/latest/nettest-linux-x86_64.tar.gz)
-- **Linux ARM64**: [nettest-linux-aarch64.tar.gz](https://github.com/specure/nettest/releases/download/latest/nettest-linux-aarch64.tar.gz)
+- **Linux x86_64 (musl)**: [nettest-linux-x86_64.tar.gz](https://github.com/specure/nettest/releases/download/latest/nettest-linux-x86_64.tar.gz)
+- **Linux ARM64 (musl)**: [nettest-linux-aarch64.tar.gz](https://github.com/specure/nettest/releases/download/latest/nettest-linux-aarch64.tar.gz)
+- **Linux i686 (musl)**: [nettest-linux-i686.tar.gz](https://github.com/specure/nettest/releases/download/latest/nettest-linux-i686.tar.gz)
 
 > **Note**: 
 > 1. Download the appropriate archive for your architecture
 > 2. Extract: `tar -xzf nettest-linux-x86_64.tar.gz` or `tar -xzf nettest-linux-aarch64.tar.gz`
 > 3. Run: `./nettest -s` (server) or `./nettest -c <address>` (client)
+> 4. **Musl builds** provide maximum compatibility with older Linux distributions
 
 ### Build
+
+#### Local Build
 
 ```bash
 # Debug build
@@ -51,6 +55,30 @@ cargo build --release
 # Static build for Linux
 cargo build --release --target x86_64-unknown-linux-musl
 ```
+
+#### Docker-based Cross-compilation
+
+For maximum compatibility with older Linux distributions, use Docker-based cross-compilation:
+
+```bash
+# Build Docker image
+docker build -f Dockerfile.build -t nettest-builder .
+
+# Run builds for all architectures
+docker run --rm -v $(pwd):/app -w /app nettest-builder /usr/local/bin/build.sh
+```
+
+This will create static musl binaries for:
+- x86_64 (64-bit Intel/AMD)
+- aarch64 (64-bit ARM)
+- i686 (32-bit Intel)
+- armv7 (32-bit ARM)
+
+#### GitHub Actions
+
+The project includes automated builds via GitHub Actions:
+- **Docker-based**: Uses Docker containers for consistent builds
+- **Musl static linking**: Maximum compatibility with older Linux distributions
 
 ### Run Server
 

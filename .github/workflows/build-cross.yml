@@ -1,0 +1,99 @@
+name: Build Linux Binaries with Cross
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag'
+        required: false
+        default: 'latest'
+
+jobs:
+  build-linux-cross:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+        
+    - name: Install cross
+      run: cargo install cross
+        
+    - name: Add musl targets
+      run: |
+        rustup target add x86_64-unknown-linux-musl
+        rustup target add aarch64-unknown-linux-musl
+        rustup target add i686-unknown-linux-musl
+        rustup target add armv7-unknown-linux-musleabihf
+        
+    - name: Build for x86_64
+      env:
+        OPENSSL_STATIC: 1
+        OPENSSL_VENDORED: 1
+        RUSTFLAGS: "-C target-feature=+crt-static"
+      run: |
+        cross build --release --target x86_64-unknown-linux-musl
+        mkdir -p package/nettest-linux-x86_64
+        cp target/x86_64-unknown-linux-musl/release/nettest package/nettest-linux-x86_64/
+        cd package
+        tar -czf nettest-linux-x86_64.tar.gz nettest-linux-x86_64/
+        cd ..
+        
+    - name: Build for aarch64
+      env:
+        OPENSSL_STATIC: 1
+        OPENSSL_VENDORED: 1
+        RUSTFLAGS: "-C target-feature=+crt-static"
+      run: |
+        cross build --release --target aarch64-unknown-linux-musl
+        mkdir -p package/nettest-linux-aarch64
+        cp target/aarch64-unknown-linux-musl/release/nettest package/nettest-linux-aarch64/
+        cd package
+        tar -czf nettest-linux-aarch64.tar.gz nettest-linux-aarch64/
+        cd ..
+        
+    - name: Build for i686
+      env:
+        OPENSSL_STATIC: 1
+        OPENSSL_VENDORED: 1
+        RUSTFLAGS: "-C target-feature=+crt-static"
+      run: |
+        cross build --release --target i686-unknown-linux-musl
+        mkdir -p package/nettest-linux-i686
+        cp target/i686-unknown-linux-musl/release/nettest package/nettest-linux-i686/
+        cd package
+        tar -czf nettest-linux-i686.tar.gz nettest-linux-i686/
+        cd ..
+        
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: nettest-linux-cross-binaries
+        path: |
+          package/*.tar.gz
+        retention-days: 30
+        
+    - name: Create latest release
+      if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: latest
+        name: Nettest Latest Release (cross)
+        files: package/*.tar.gz
+        token: ${{ secrets.GITHUB_TOKEN }}
+        overwrite: true
+        draft: false
+        prerelease: false
+        fail_on_unmatched_files: false 
