@@ -34,15 +34,24 @@ jobs:
       env:
         PATH: "$HOME/.cargo/bin:$PATH"
       run: |
+        echo "Installing musl cross compiler..."
         # Try alternative sources for musl cross compiler
-        wget https://musl.cc/x86_64-linux-musl-cross.tgz || \
-        wget https://github.com/richfelker/musl-cross-make/releases/download/v0.9.9/x86_64-linux-musl-cross.tgz || \
-        sudo apt-get update && sudo apt-get install -y musl-tools
+        curl -L -o x86_64-linux-musl-cross.tgz https://musl.cc/x86_64-linux-musl-cross.tgz || \
+        curl -L -o x86_64-linux-musl-cross.tgz https://github.com/richfelker/musl-cross-make/releases/download/v0.9.9/x86_64-linux-musl-cross.tgz || \
+        (echo "Download failed, installing musl-tools..." && apt-get update && apt-get install -y musl-tools)
         if [ -f x86_64-linux-musl-cross.tgz ]; then
+          echo "Extracting downloaded musl cross compiler..."
           tar -xzf x86_64-linux-musl-cross.tgz
-          sudo mv x86_64-linux-musl-cross /opt/
+          mv x86_64-linux-musl-cross /opt/
           export PATH="/opt/x86_64-linux-musl-cross/bin:$PATH"
+          echo "Musl cross compiler installed at /opt/x86_64-linux-musl-cross"
+        else
+          echo "Using system musl-tools"
         fi
+        echo "Current PATH: $PATH"
+        echo "Checking for musl compilers:"
+        which musl-gcc || echo "musl-gcc not found"
+        which x86_64-linux-musl-gcc || echo "x86_64-linux-musl-gcc not found"
         
     - name: Setup musl environment
       run: |
