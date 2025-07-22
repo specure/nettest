@@ -31,6 +31,7 @@ RUN rustup target add aarch64-unknown-linux-musl
 RUN apt-get update && apt-get install -y \
     qemu-user \
     qemu-user-static \
+    docker.io \
     && rm -rf /var/lib/apt/lists/*
 
 # Create build script

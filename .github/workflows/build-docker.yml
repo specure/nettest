@@ -35,9 +35,9 @@ jobs:
       run: |
         # Use Debian-based image if available, otherwise fallback
         if docker images | grep -q nettest-builder-debian; then
-          docker run --rm -v $(pwd):/app -w /app nettest-builder-debian /usr/local/bin/build.sh
+          docker run --rm --privileged -v $(pwd):/app -w /app -e DOCKER_HOST=unix:///var/run/docker.sock nettest-builder-debian /usr/local/bin/build.sh
         else
-          docker run --rm -v $(pwd):/app -w /app nettest-builder /usr/local/bin/build.sh
+          docker run --rm --privileged -v $(pwd):/app -w /app -e DOCKER_HOST=unix:///var/run/docker.sock nettest-builder /usr/local/bin/build.sh
         fi
         
     - name: Upload artifacts
