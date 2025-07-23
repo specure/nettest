@@ -91,9 +91,9 @@ jobs:
         path: target/x86_64-unknown-linux-gnu/release/nettest
 
   build-debian-aarch64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     container:
-      image: debian:bullseye
+      image: arm64v8/debian:bullseye
     permissions:
       contents: write
     
@@ -116,10 +116,6 @@ jobs:
         . $HOME/.cargo/env
         rustup target add aarch64-unknown-linux-gnu
         
-    - name: Install cross-compilation tools
-      run: |
-        apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-        
     - name: Cache dependencies
       uses: actions/cache@v4
       with:
@@ -130,10 +126,6 @@ jobs:
         key: ${{ runner.os }}-debian-cargo-aarch64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
         
     - name: Build for Debian ARM64
-      env:
-        CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
-        CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
-        AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
       run: |
         . $HOME/.cargo/env
         cargo build --release --target aarch64-unknown-linux-gnu
