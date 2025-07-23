@@ -1,0 +1,216 @@
+name: Build Ubuntu 22.04 Package
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-ubuntu-22-x86_64:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: x86_64-unknown-linux-gnu
+        override: true
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev libfontconfig1-dev clang
+        
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-x86_64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Build for Ubuntu 22.04 x86_64
+      env:
+        CFLAGS: "-D_DEFAULT_SOURCE"
+        CXXFLAGS: "-D_DEFAULT_SOURCE"
+        RUSTFLAGS: "-C link-arg=-Wl,-z,relro,-z,now"
+        LIBCLANG_PATH: /usr/lib/llvm-14/lib/libclang.so
+      run: |
+        cargo build --release
+        
+    - name: Create package directory
+      run: |
+        mkdir -p package/nettest-ubuntu-22-x86_64
+        
+    - name: Copy binary
+      run: |
+        cp target/x86_64-unknown-linux-gnu/release/nettest package/nettest-ubuntu-22-x86_64/
+        
+    - name: Create README for package
+      run: |
+        cat > package/nettest-ubuntu-22-x86_64/README.txt << 'EOF'
+        Nettest - Network Speed Measurement Tool
+        
+        Architecture: x86_64
+        Distribution: Ubuntu 22.04 LTS
+        Build Date: $(date)
+        
+        Installation:
+        1. Make binary executable: chmod +x nettest
+        2. Run: ./nettest -s (server) or ./nettest -c <address> (client)
+        
+        For more information, visit: https://github.com/your-repo/nettest
+        EOF
+        
+    - name: Create archive
+      run: |
+        cd package
+        tar -czf nettest-ubuntu-22-x86_64.tar.gz nettest-ubuntu-22-x86_64/
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nettest-ubuntu-22-x86_64-latest
+        path: package/nettest-ubuntu-22-x86_64.tar.gz
+        
+    - name: Upload binary for release
+      uses: actions/upload-artifact@v4
+      with:
+        name: nettest-ubuntu-22-x86_64-binary
+        path: target/x86_64-unknown-linux-gnu/release/nettest
+
+  build-ubuntu-22-aarch64:
+    runs-on: ubuntu-22.04-arm
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev libfontconfig1-dev build-essential
+        
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-arm64-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Build for Ubuntu 22.04 ARM64
+      env:
+        OPENSSL_DIR: /usr
+        OPENSSL_LIB_DIR: /usr/lib/aarch64-linux-gnu
+        OPENSSL_INCLUDE_DIR: /usr/include
+        CFLAGS: "-D_DEFAULT_SOURCE"
+        CXXFLAGS: "-D_DEFAULT_SOURCE"
+        RUSTFLAGS: "-C link-arg=-Wl,-z,relro,-z,now"
+      run: |
+        cargo build --release
+        
+    - name: Create package directory
+      run: |
+        mkdir -p package/nettest-ubuntu-22-aarch64
+        
+    - name: Copy binary
+      run: |
+        cp target/release/nettest package/nettest-ubuntu-22-aarch64/
+        
+    - name: Create README for package
+      run: |
+        cat > package/nettest-ubuntu-22-aarch64/README.txt << 'EOF'
+        Nettest - Network Speed Measurement Tool
+        
+        Architecture: aarch64
+        Distribution: Ubuntu 22.04 LTS
+        Build Date: $(date)
+        
+        Installation:
+        1. Make binary executable: chmod +x nettest
+        2. Run: ./nettest -s (server) or ./nettest -c <address> (client)
+        
+        For more information, visit: https://github.com/your-repo/nettest
+        EOF
+        
+    - name: Create archive
+      run: |
+        cd package
+        tar -czf nettest-ubuntu-22-aarch64.tar.gz nettest-ubuntu-22-aarch64/
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nettest-ubuntu-22-aarch64-latest
+        path: package/nettest-ubuntu-22-aarch64.tar.gz
+        
+    - name: Upload binary for release
+      uses: actions/upload-artifact@v4
+      with:
+        name: nettest-ubuntu-22-aarch64-binary
+        path: target/release/nettest
+
+  create-ubuntu-22-release:
+    needs: [build-ubuntu-22-x86_64, build-ubuntu-22-aarch64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Download binaries
+      uses: actions/download-artifact@v4
+      
+    - name: List downloaded files
+      run: |
+        echo "Listing downloaded files:"
+        find . -name "nettest" -type f
+        ls -la nettest-ubuntu-22-x86_64-binary/ || echo "Ubuntu 22.04 x86_64 binary not found"
+        ls -la nettest-ubuntu-22-aarch64-binary/ || echo "Ubuntu 22.04 aarch64 binary not found"
+        
+    - name: Create archives with binaries
+      run: |
+        # Create Ubuntu 22.04 x86_64 archive
+        cp nettest-ubuntu-22-x86_64-binary/nettest nettest
+        chmod +x nettest
+        tar -czf nettest-ubuntu-22-x86_64.tar.gz nettest
+        rm nettest
+        
+        # Create Ubuntu 22.04 ARM64 archive
+        cp nettest-ubuntu-22-aarch64-binary/nettest nettest
+        chmod +x nettest
+        tar -czf nettest-ubuntu-22-aarch64.tar.gz nettest
+        rm nettest
+        
+    - name: Create latest release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: latest-ubuntu-22
+        name: Ubuntu 22.04 Latest Release
+        files: |
+          nettest-ubuntu-22-x86_64.tar.gz
+          nettest-ubuntu-22-aarch64.tar.gz
+        token: ${{ secrets.GITHUB_TOKEN }}
+        overwrite: true
+        draft: false
+        prerelease: false
+        fail_on_unmatched_files: false 

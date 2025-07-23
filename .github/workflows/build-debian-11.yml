@@ -1,4 +1,4 @@
-name: Build Linux Package
+name: Build Debian 11 Package
 
 on:
   push:
@@ -9,8 +9,10 @@ on:
     branches: [ main ]
 
 jobs:
-  build-linux-x86_64:
+  build-debian-11-x86_64:
     runs-on: ubuntu-latest
+    container:
+      image: debian:bullseye
     permissions:
       contents: write
     
@@ -18,17 +20,20 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: x86_64-unknown-linux-gnu
-        override: true
-        
     - name: Install system dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y pkg-config libssl-dev libfontconfig1-dev
+        apt-get update
+        apt-get install -y curl build-essential pkg-config libssl-dev libfontconfig1-dev
+        
+    - name: Install Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        
+    - name: Add Rust target
+      run: |
+        . $HOME/.cargo/env
+        rustup target add x86_64-unknown-linux-gnu
         
     - name: Cache dependencies
       uses: actions/cache@v4
@@ -37,26 +42,28 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-x86_64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-debian-11-cargo-x86_64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
         
-    - name: Build for Linux x86_64
+    - name: Build for Debian 11 x86_64
       run: |
+        . $HOME/.cargo/env
         cargo build --release --target x86_64-unknown-linux-gnu
         
     - name: Create package directory
       run: |
-        mkdir -p package/nettest-linux-x86_64
+        mkdir -p package/nettest-debian-11-x86_64
         
     - name: Copy binary
       run: |
-        cp target/x86_64-unknown-linux-gnu/release/nettest package/nettest-linux-x86_64/
+        cp target/x86_64-unknown-linux-gnu/release/nettest package/nettest-debian-11-x86_64/
         
     - name: Create README for package
       run: |
-        cat > package/nettest-linux-x86_64/README.txt << 'EOF'
+        cat > package/nettest-debian-11-x86_64/README.txt << 'EOF'
         Nettest - Network Speed Measurement Tool
         
         Architecture: x86_64
+        Distribution: Debian 11 (Bullseye)
         Build Date: $(date)
         
         Installation:
@@ -69,22 +76,24 @@ jobs:
     - name: Create archive
       run: |
         cd package
-        tar -czf nettest-linux-x86_64.tar.gz nettest-linux-x86_64/
+        tar -czf nettest-debian-11-x86_64.tar.gz nettest-debian-11-x86_64/
         
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: nettest-linux-x86_64-latest
-        path: package/nettest-linux-x86_64.tar.gz
+        name: nettest-debian-11-x86_64-latest
+        path: package/nettest-debian-11-x86_64.tar.gz
         
     - name: Upload binary for release
       uses: actions/upload-artifact@v4
       with:
-        name: nettest-x86_64-binary
+        name: nettest-debian-11-x86_64-binary
         path: target/x86_64-unknown-linux-gnu/release/nettest
 
-  build-linux-aarch64:
+  build-debian-11-aarch64:
     runs-on: ubuntu-24.04-arm
+    container:
+      image: arm64v8/debian:bullseye
     permissions:
       contents: write
     
@@ -92,16 +101,20 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        override: true
-        
     - name: Install system dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y pkg-config libssl-dev libfontconfig1-dev
+        apt-get update
+        apt-get install -y curl build-essential pkg-config libssl-dev libfontconfig1-dev
+        
+    - name: Install Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        
+    - name: Add Rust target
+      run: |
+        . $HOME/.cargo/env
+        rustup target add aarch64-unknown-linux-gnu
         
     - name: Cache dependencies
       uses: actions/cache@v4
@@ -110,26 +123,28 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-arm64-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-debian-11-cargo-aarch64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
         
-    - name: Build for Linux ARM64
+    - name: Build for Debian 11 ARM64
       run: |
-        cargo build --release
+        . $HOME/.cargo/env
+        cargo build --release --target aarch64-unknown-linux-gnu
         
     - name: Create package directory
       run: |
-        mkdir -p package/nettest-linux-aarch64
+        mkdir -p package/nettest-debian-11-aarch64
         
     - name: Copy binary
       run: |
-        cp target/release/nettest package/nettest-linux-aarch64/
+        cp target/aarch64-unknown-linux-gnu/release/nettest package/nettest-debian-11-aarch64/
         
     - name: Create README for package
       run: |
-        cat > package/nettest-linux-aarch64/README.txt << 'EOF'
+        cat > package/nettest-debian-11-aarch64/README.txt << 'EOF'
         Nettest - Network Speed Measurement Tool
         
         Architecture: aarch64
+        Distribution: Debian 11 (Bullseye)
         Build Date: $(date)
         
         Installation:
@@ -142,22 +157,22 @@ jobs:
     - name: Create archive
       run: |
         cd package
-        tar -czf nettest-linux-aarch64.tar.gz nettest-linux-aarch64/
+        tar -czf nettest-debian-11-aarch64.tar.gz nettest-debian-11-aarch64/
         
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: nettest-linux-aarch64-latest
-        path: package/nettest-linux-aarch64.tar.gz
+        name: nettest-debian-11-aarch64-latest
+        path: package/nettest-debian-11-aarch64.tar.gz
         
     - name: Upload binary for release
       uses: actions/upload-artifact@v4
       with:
-        name: nettest-aarch64-binary
-        path: target/release/nettest
+        name: nettest-debian-11-aarch64-binary
+        path: target/aarch64-unknown-linux-gnu/release/nettest
 
-  create-latest-release:
-    needs: [build-linux-x86_64, build-linux-aarch64]
+  create-debian-11-release:
+    needs: [build-debian-11-x86_64, build-debian-11-aarch64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -170,33 +185,33 @@ jobs:
       run: |
         echo "Listing downloaded files:"
         find . -name "nettest" -type f
-        ls -la nettest-x86_64-binary/ || echo "x86_64 binary not found"
-        ls -la nettest-aarch64-binary/ || echo "aarch64 binary not found"
+        ls -la nettest-debian-11-x86_64-binary/ || echo "Debian 11 x86_64 binary not found"
+        ls -la nettest-debian-11-aarch64-binary/ || echo "Debian 11 aarch64 binary not found"
         
     - name: Create archives with binaries
       run: |
-        # Create x86_64 archive
-        cp nettest-x86_64-binary/nettest nettest
+        # Create Debian 11 x86_64 archive
+        cp nettest-debian-11-x86_64-binary/nettest nettest
         chmod +x nettest
-        tar -czf nettest-linux-x86_64.tar.gz nettest
+        tar -czf nettest-debian-11-x86_64.tar.gz nettest
         rm nettest
         
-        # Create ARM64 archive
-        cp nettest-aarch64-binary/nettest nettest
+        # Create Debian 11 ARM64 archive
+        cp nettest-debian-11-aarch64-binary/nettest nettest
         chmod +x nettest
-        tar -czf nettest-linux-aarch64.tar.gz nettest
+        tar -czf nettest-debian-11-aarch64.tar.gz nettest
         rm nettest
         
     - name: Create latest release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: latest
-        name: Nettest Latest Release
+        tag_name: latest-debian-11
+        name: Debian 11 Latest Release
         files: |
-          nettest-linux-x86_64.tar.gz
-          nettest-linux-aarch64.tar.gz
+          nettest-debian-11-x86_64.tar.gz
+          nettest-debian-11-aarch64.tar.gz
         token: ${{ secrets.GITHUB_TOKEN }}
         overwrite: true
         draft: false
         prerelease: false
-        fail_on_unmatched_files: false
+        fail_on_unmatched_files: false 
