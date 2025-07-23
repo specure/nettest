@@ -1,0 +1,10 @@
+target/
+.git/
+.github/
+*.md
+.gitignore
+Dockerfile*
+.dockerignore
+package/
+*.tar.gz
+*.log 

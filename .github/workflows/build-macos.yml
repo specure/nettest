@@ -1,0 +1,207 @@
+name: Build macOS Package
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-macos-aarch64:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: aarch64-apple-darwin
+        override: true
+        
+    - name: Install system dependencies
+      run: |
+        brew install pkg-config openssl fontconfig
+        
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-aarch64-apple-darwin-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Build for macOS Apple Silicon
+      env:
+        PKG_CONFIG_PATH: /opt/homebrew/lib/pkgconfig
+      run: |
+        cargo build --release --target aarch64-apple-darwin
+        
+    - name: Create package directory
+      run: |
+        mkdir -p package/nettest-macos-aarch64
+        
+    - name: Copy binary
+      run: |
+        cp target/aarch64-apple-darwin/release/nettest package/nettest-macos-aarch64/
+        
+    - name: Create README for package
+      run: |
+        cat > package/nettest-macos-aarch64/README.txt << 'EOF'
+        Nettest - Network Speed Measurement Tool
+        
+        Architecture: aarch64 (Apple Silicon)
+        macOS Version: 15.5 (Sequoia)
+        Build Date: $(date)
+        
+        Installation:
+        1. Make binary executable: chmod +x nettest
+        2. Run: ./nettest -s (server) or ./nettest -c <address> (client)
+        
+        For more information, visit: https://github.com/your-repo/nettest
+        EOF
+        
+    - name: Create archive
+      run: |
+        cd package
+        tar -czf nettest-macos-aarch64.tar.gz nettest-macos-aarch64/
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nettest-macos-aarch64-latest
+        path: package/nettest-macos-aarch64.tar.gz
+        
+    - name: Upload binary for release
+      uses: actions/upload-artifact@v4
+      with:
+        name: nettest-macos-aarch64-binary
+        path: target/aarch64-apple-darwin/release/nettest
+
+  build-macos-x86_64:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: x86_64-apple-darwin
+        override: true
+        
+    - name: Install system dependencies
+      run: |
+        brew install pkg-config openssl fontconfig
+        
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-x86_64-apple-darwin-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Build for macOS Intel
+      env:
+        PKG_CONFIG_PATH: /usr/local/lib/pkgconfig
+      run: |
+        cargo build --release --target x86_64-apple-darwin
+        
+    - name: Create package directory
+      run: |
+        mkdir -p package/nettest-macos-x86_64
+        
+    - name: Copy binary
+      run: |
+        cp target/x86_64-apple-darwin/release/nettest package/nettest-macos-x86_64/
+        
+    - name: Create README for package
+      run: |
+        cat > package/nettest-macos-x86_64/README.txt << 'EOF'
+        Nettest - Network Speed Measurement Tool
+        
+        Architecture: x86_64 (Intel)
+        macOS Version: 15.5 (Sequoia)
+        Build Date: $(date)
+        
+        Installation:
+        1. Make binary executable: chmod +x nettest
+        2. Run: ./nettest -s (server) or ./nettest -c <address> (client)
+        
+        For more information, visit: https://github.com/your-repo/nettest
+        EOF
+        
+    - name: Create archive
+      run: |
+        cd package
+        tar -czf nettest-macos-x86_64.tar.gz nettest-macos-x86_64/
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nettest-macos-x86_64-latest
+        path: package/nettest-macos-x86_64.tar.gz
+        
+    - name: Upload binary for release
+      uses: actions/upload-artifact@v4
+      with:
+        name: nettest-macos-x86_64-binary
+        path: target/x86_64-apple-darwin/release/nettest
+
+  create-macos-release:
+    needs: [build-macos-aarch64, build-macos-x86_64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Download binaries
+      uses: actions/download-artifact@v4
+      
+    - name: List downloaded files
+      run: |
+        echo "Listing downloaded files:"
+        find . -name "nettest" -type f
+        ls -la nettest-macos-aarch64-binary/ || echo "macOS aarch64 binary not found"
+        ls -la nettest-macos-x86_64-binary/ || echo "macOS x86_64 binary not found"
+        
+    - name: Create archives with binaries
+      run: |
+        # Create macOS Apple Silicon archive
+        cp nettest-macos-aarch64-binary/nettest nettest
+        chmod +x nettest
+        tar -czf nettest-macos-aarch64.tar.gz nettest
+        rm nettest
+        
+        # Create macOS Intel archive
+        cp nettest-macos-x86_64-binary/nettest nettest
+        chmod +x nettest
+        tar -czf nettest-macos-x86_64.tar.gz nettest
+        rm nettest
+        
+    - name: Create latest release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: latest-macos
+        name: macOS Latest Release
+        files: |
+          nettest-macos-aarch64.tar.gz
+          nettest-macos-x86_64.tar.gz
+        token: ${{ secrets.GITHUB_TOKEN }}
+        overwrite: true
+        draft: false
+        prerelease: false
+        fail_on_unmatched_files: false 
