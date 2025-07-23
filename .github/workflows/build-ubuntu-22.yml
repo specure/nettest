@@ -28,7 +28,7 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y pkg-config libssl-dev libfontconfig1-dev
+        sudo apt-get install -y pkg-config libssl-dev libfontconfig1-dev clang
         
     - name: Cache dependencies
       uses: actions/cache@v4
@@ -44,6 +44,7 @@ jobs:
         CFLAGS: "-D_DEFAULT_SOURCE"
         CXXFLAGS: "-D_DEFAULT_SOURCE"
         RUSTFLAGS: "-C link-arg=-Wl,-z,relro,-z,now"
+        LIBCLANG_PATH: /usr/lib/llvm-14/lib/libclang.so
       run: |
         cargo build --release --target x86_64-unknown-linux-gnu
         
