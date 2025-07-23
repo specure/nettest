@@ -85,7 +85,7 @@ jobs:
         path: target/x86_64-unknown-linux-gnu/release/nettest
 
   build-ubuntu-22-aarch64:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-arm
     permissions:
       contents: write
     
