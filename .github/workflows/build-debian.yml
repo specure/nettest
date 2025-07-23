@@ -91,7 +91,7 @@ jobs:
         path: target/x86_64-unknown-linux-gnu/release/nettest
 
   build-debian-aarch64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     container:
       image: arm64v8/debian:bullseye
       options: --platform linux/arm64
