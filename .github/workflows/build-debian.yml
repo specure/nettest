@@ -32,7 +32,7 @@ jobs:
         
     - name: Add Rust target
       run: |
-        source $HOME/.cargo/env
+        . $HOME/.cargo/env
         rustup target add x86_64-unknown-linux-gnu
         
     - name: Cache dependencies
@@ -46,7 +46,7 @@ jobs:
         
     - name: Build for Debian x86_64
       run: |
-        source $HOME/.cargo/env
+        . $HOME/.cargo/env
         cargo build --release --target x86_64-unknown-linux-gnu
         
     - name: Create package directory
@@ -113,7 +113,7 @@ jobs:
         
     - name: Add Rust target
       run: |
-        source $HOME/.cargo/env
+        . $HOME/.cargo/env
         rustup target add aarch64-unknown-linux-gnu
         
     - name: Install cross-compilation tools
@@ -135,7 +135,7 @@ jobs:
         CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
         AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
       run: |
-        source $HOME/.cargo/env
+        . $HOME/.cargo/env
         cargo build --release --target aarch64-unknown-linux-gnu
         
     - name: Create package directory
