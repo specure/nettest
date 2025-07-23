@@ -196,7 +196,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         tag_name: latest-macos
-        name: Nettest Latest Release (macOS)
+        name: macOS Latest Release
         files: |
           nettest-macos-aarch64.tar.gz
           nettest-macos-x86_64.tar.gz

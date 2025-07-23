@@ -191,7 +191,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         tag_name: latest
-        name: Ubuntu Latest Release
+        name: Ubuntu 24.04 Latest Release
         files: |
           nettest-linux-x86_64.tar.gz
           nettest-linux-aarch64.tar.gz
