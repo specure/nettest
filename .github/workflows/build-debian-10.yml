@@ -1,4 +1,4 @@
-name: Build Debian 11 Package
+name: Build Debian 10 Package
 
 on:
   push:
@@ -9,10 +9,10 @@ on:
     branches: [ main ]
 
 jobs:
-  build-debian-x86_64:
+  build-debian-10-x86_64:
     runs-on: ubuntu-latest
     container:
-      image: debian:bullseye
+      image: debian:buster
     permissions:
       contents: write
     
@@ -42,28 +42,28 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-debian-cargo-x86_64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-debian-10-cargo-x86_64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
         
-    - name: Build for Debian 11 x86_64
+    - name: Build for Debian 10 x86_64
       run: |
         . $HOME/.cargo/env
         cargo build --release --target x86_64-unknown-linux-gnu
         
     - name: Create package directory
       run: |
-        mkdir -p package/nettest-debian-x86_64
+        mkdir -p package/nettest-debian-10-x86_64
         
     - name: Copy binary
       run: |
-        cp target/x86_64-unknown-linux-gnu/release/nettest package/nettest-debian-x86_64/
+        cp target/x86_64-unknown-linux-gnu/release/nettest package/nettest-debian-10-x86_64/
         
     - name: Create README for package
       run: |
-        cat > package/nettest-debian-x86_64/README.txt << 'EOF'
+        cat > package/nettest-debian-10-x86_64/README.txt << 'EOF'
         Nettest - Network Speed Measurement Tool
         
         Architecture: x86_64
-        Distribution: Debian Bullseye
+        Distribution: Debian 10 (Buster)
         Build Date: $(date)
         
         Installation:
@@ -76,24 +76,24 @@ jobs:
     - name: Create archive
       run: |
         cd package
-        tar -czf nettest-debian-x86_64.tar.gz nettest-debian-x86_64/
+        tar -czf nettest-debian-10-x86_64.tar.gz nettest-debian-10-x86_64/
         
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: nettest-debian-x86_64-latest
-        path: package/nettest-debian-x86_64.tar.gz
+        name: nettest-debian-10-x86_64-latest
+        path: package/nettest-debian-10-x86_64.tar.gz
         
     - name: Upload binary for release
       uses: actions/upload-artifact@v4
       with:
-        name: nettest-debian-x86_64-binary
+        name: nettest-debian-10-x86_64-binary
         path: target/x86_64-unknown-linux-gnu/release/nettest
 
-  build-debian-aarch64:
+  build-debian-10-aarch64:
     runs-on: ubuntu-24.04-arm
     container:
-      image: arm64v8/debian:bullseye
+      image: arm64v8/debian:buster
       options: --platform linux/arm64
     permissions:
       contents: write
@@ -124,28 +124,28 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-debian-cargo-aarch64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-debian-10-cargo-aarch64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
         
-    - name: Build for Debian 11 ARM64
+    - name: Build for Debian 10 ARM64
       run: |
         . $HOME/.cargo/env
         cargo build --release --target aarch64-unknown-linux-gnu
         
     - name: Create package directory
       run: |
-        mkdir -p package/nettest-debian-aarch64
+        mkdir -p package/nettest-debian-10-aarch64
         
     - name: Copy binary
       run: |
-        cp target/aarch64-unknown-linux-gnu/release/nettest package/nettest-debian-aarch64/
+        cp target/aarch64-unknown-linux-gnu/release/nettest package/nettest-debian-10-aarch64/
         
     - name: Create README for package
       run: |
-        cat > package/nettest-debian-aarch64/README.txt << 'EOF'
+        cat > package/nettest-debian-10-aarch64/README.txt << 'EOF'
         Nettest - Network Speed Measurement Tool
         
         Architecture: aarch64
-        Distribution: Debian Bullseye
+        Distribution: Debian 10 (Buster)
         Build Date: $(date)
         
         Installation:
@@ -158,22 +158,22 @@ jobs:
     - name: Create archive
       run: |
         cd package
-        tar -czf nettest-debian-aarch64.tar.gz nettest-debian-aarch64/
+        tar -czf nettest-debian-10-aarch64.tar.gz nettest-debian-10-aarch64/
         
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: nettest-debian-aarch64-latest
-        path: package/nettest-debian-aarch64.tar.gz
+        name: nettest-debian-10-aarch64-latest
+        path: package/nettest-debian-10-aarch64.tar.gz
         
     - name: Upload binary for release
       uses: actions/upload-artifact@v4
       with:
-        name: nettest-debian-aarch64-binary
+        name: nettest-debian-10-aarch64-binary
         path: target/aarch64-unknown-linux-gnu/release/nettest
 
-  create-debian-release:
-    needs: [build-debian-x86_64, build-debian-aarch64]
+  create-debian-10-release:
+    needs: [build-debian-10-x86_64, build-debian-10-aarch64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -186,31 +186,31 @@ jobs:
       run: |
         echo "Listing downloaded files:"
         find . -name "nettest" -type f
-        ls -la nettest-debian-x86_64-binary/ || echo "Debian x86_64 binary not found"
-        ls -la nettest-debian-aarch64-binary/ || echo "Debian aarch64 binary not found"
+        ls -la nettest-debian-10-x86_64-binary/ || echo "Debian 10 x86_64 binary not found"
+        ls -la nettest-debian-10-aarch64-binary/ || echo "Debian 10 aarch64 binary not found"
         
     - name: Create archives with binaries
       run: |
-        # Create Debian x86_64 archive
-        cp nettest-debian-x86_64-binary/nettest nettest
+        # Create Debian 10 x86_64 archive
+        cp nettest-debian-10-x86_64-binary/nettest nettest
         chmod +x nettest
-        tar -czf nettest-debian-x86_64.tar.gz nettest
+        tar -czf nettest-debian-10-x86_64.tar.gz nettest
         rm nettest
         
-        # Create Debian ARM64 archive
-        cp nettest-debian-aarch64-binary/nettest nettest
+        # Create Debian 10 ARM64 archive
+        cp nettest-debian-10-aarch64-binary/nettest nettest
         chmod +x nettest
-        tar -czf nettest-debian-aarch64.tar.gz nettest
+        tar -czf nettest-debian-10-aarch64.tar.gz nettest
         rm nettest
         
     - name: Create latest release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: latest-debian-11
-        name: Debian 11 Latest Release
+        tag_name: latest-debian-10
+        name: Debian 10 Latest Release
         files: |
-          nettest-debian-x86_64.tar.gz
-          nettest-debian-aarch64.tar.gz
+          nettest-debian-10-x86_64.tar.gz
+          nettest-debian-10-aarch64.tar.gz
         token: ${{ secrets.GITHUB_TOKEN }}
         overwrite: true
         draft: false
