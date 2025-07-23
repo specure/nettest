@@ -46,7 +46,7 @@ jobs:
         RUSTFLAGS: "-C link-arg=-Wl,-z,relro,-z,now"
         LIBCLANG_PATH: /usr/lib/llvm-14/lib/libclang.so
       run: |
-        cargo build --release --target x86_64-unknown-linux-gnu
+        cargo build --release
         
     - name: Create package directory
       run: |
