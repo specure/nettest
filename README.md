@@ -31,15 +31,26 @@ Nettest is a high-performance server and client for network speed measurement, w
 
 Download the latest builds directly:
 
-- **Linux x86_64 (musl)**: [nettest-linux-x86_64.tar.gz](https://github.com/specure/nettest/releases/download/latest/nettest-linux-x86_64.tar.gz)
-- **Linux ARM64 (musl)**: [nettest-linux-aarch64.tar.gz](https://github.com/specure/nettest/releases/download/latest/nettest-linux-aarch64.tar.gz)
-- **Linux i686 (musl)**: [nettest-linux-i686.tar.gz](https://github.com/specure/nettest/releases/download/latest/nettest-linux-i686.tar.gz)
+#### Ubuntu
+- **Ubuntu 24.04 x86_64**: [nettest-ubuntu-24-x86_64.tar.gz](https://github.com/specure/nettest/releases/download/latest/nettest-ubuntu-24-x86_64.tar.gz)
+- **Ubuntu 24.04 ARM64**: [nettest-ubuntu-24-aarch64.tar.gz](https://github.com/specure/nettest/releases/download/latest/nettest-ubuntu-24-aarch64.tar.gz)
+- **Ubuntu 22.04 x86_64**: [nettest-ubuntu-22-x86_64.tar.gz](https://github.com/specure/nettest/releases/download/latest/nettest-ubuntu-22-x86_64.tar.gz)
+- **Ubuntu 22.04 ARM64**: [nettest-ubuntu-22-aarch64.tar.gz](https://github.com/specure/nettest/releases/download/latest/nettest-ubuntu-22-aarch64.tar.gz)
+
+#### Debian
+- **Debian 12 (Bookworm) x86_64**: [nettest-debian-12-x86_64.tar.gz](https://github.com/specure/nettest/releases/download/latest-debian-12/nettest-debian-12-x86_64.tar.gz)
+- **Debian 12 (Bookworm) ARM64**: [nettest-debian-12-aarch64.tar.gz](https://github.com/specure/nettest/releases/download/latest-debian-12/nettest-debian-12-aarch64.tar.gz)
+- **Debian 11 (Bullseye) x86_64**: [nettest-debian-11-x86_64.tar.gz](https://github.com/specure/nettest/releases/download/latest-debian-11/nettest-debian-11-x86_64.tar.gz)
+- **Debian 11 (Bullseye) ARM64**: [nettest-debian-11-aarch64.tar.gz](https://github.com/specure/nettest/releases/download/latest-debian-11/nettest-debian-11-aarch64.tar.gz)
+
+#### macOS
+- **macOS Apple Silicon**: [nettest-macos-aarch64.tar.gz](https://github.com/specure/nettest/releases/download/latest-macos/nettest-macos-aarch64.tar.gz)
+- **macOS Intel**: [nettest-macos-x86_64.tar.gz](https://github.com/specure/nettest/releases/download/latest-macos/nettest-macos-x86_64.tar.gz)
 
 > **Note**: 
-> 1. Download the appropriate archive for your architecture
-> 2. Extract: `tar -xzf nettest-linux-x86_64.tar.gz` or `tar -xzf nettest-linux-aarch64.tar.gz`
+> 1. Download the appropriate archive for your architecture and distribution
+> 2. Extract: `tar -xzf nettest-<distribution>-<arch>.tar.gz`
 > 3. Run: `./nettest -s` (server) or `./nettest -c <address>` (client)
-> 4. **Musl builds** provide maximum compatibility with older Linux distributions
 
 ### Build
 
@@ -77,8 +88,9 @@ This will create static musl binaries for:
 #### GitHub Actions
 
 The project includes automated builds via GitHub Actions:
-- **Musl Cross Compiler**: Uses musl.cc cross-compiler for maximum compatibility
-- **Static linking**: Maximum compatibility with older Linux distributions like Debian 11
+- **Ubuntu builds**: Latest and LTS versions with native compilation
+- **Debian builds**: Multiple versions (11, 12) for maximum compatibility
+- **macOS builds**: Apple Silicon and Intel architectures
 
 ### Run Server
 
