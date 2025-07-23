@@ -10,7 +10,7 @@ on:
 
 jobs:
   build-macos-aarch64:
-    runs-on: macos-15
+    runs-on: macos-latest
     permissions:
       contents: write
     
