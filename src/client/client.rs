@@ -35,9 +35,11 @@ pub struct ClientConfig {
     pub graphs: bool,
     pub thread_count: usize,
     pub log: Option<LevelFilter>,
-    pub server: String,
+    pub server: Option<String>,
     pub port: u16,
     pub tls_port: u16,
+    pub x_nettest_client: String,
+    pub control_server: String,
 }
 
 pub async fn client_run(args: Vec<String>, dafault_config: FileConfig) -> anyhow::Result<()> {
@@ -49,14 +51,16 @@ pub async fn client_run(args: Vec<String>, dafault_config: FileConfig) -> anyhow
         print_help();
     }
 
-    let config = parse_args(args, dafault_config)?;
+    let config = parse_args(args, dafault_config).await?;
 
     let stats: Arc<Mutex<SharedStats>> = Arc::new(Mutex::new(SharedStats::default()));
 
-    let state_refs = run_threads(config.clone(), stats)?;
+    info!("Config: {:?}", config);
+
+    let state_refs = run_threads(config.clone(), stats);
 
     if config.graphs {
-        GraphService::print_graph(&state_refs);
+        GraphService::print_graph(&state_refs.unwrap());
     }
     Ok(())
 }

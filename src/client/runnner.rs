@@ -9,23 +9,35 @@ use std::sync::Mutex;
 use log::debug;
 
 use crate::client::{
-    calculator::{calculate_download_speed_from_stats, calculate_upload_speed_from_stats},
-    client::{ClientConfig, Measurement, SharedStats},
-    print::printer::{print_float_result},
-    state::TestState,
+    calculator::{calculate_download_speed_from_stats, calculate_upload_speed_from_stats}, client::{ClientConfig, Measurement, SharedStats}, control_server::{get_best_measurement_server, resolve_ip_from_web_address}, print::printer::print_float_result, state::TestState
 };
 
 pub fn run_threads(
-    config: ClientConfig,
+    mut config: ClientConfig,
     stats: Arc<Mutex<SharedStats>>,
 ) -> Result<Vec<Measurement>, anyhow::Error> {
     let barrier = Arc::new(Barrier::new(config.thread_count));
     let mut thread_handles = vec![];
 
-    let addr = if !config.use_tls {
-        format!("{}:{}", config.server, config.port).parse::<SocketAddr>()?
+    // Get server address (IP or hostname)
+    let server_addr = config.server.unwrap();
+    
+    // Resolve IP if it's a hostname
+    let ip = if crate::client::control_server::servers::is_ip_address(&server_addr) {
+        server_addr.clone()
     } else {
-        format!("{}:{}", config.server, config.tls_port).parse::<SocketAddr>()?
+        match crate::client::control_server::servers::resolve_ip_from_web_address(&server_addr) {
+            Ok(ip) => ip,
+            Err(_) => server_addr.clone(), // Fallback to original if resolution fails
+        }
+    };
+    
+    debug!("Resolved IP: {}", ip);
+    
+    let addr = if !config.use_tls {
+        format!("{}:{}", ip, config.port).parse::<SocketAddr>()?
+    } else {
+        format!("{}:{}", ip, config.tls_port).parse::<SocketAddr>()?
     };
 
 
