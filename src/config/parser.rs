@@ -131,6 +131,15 @@ fn parse_config_content(content: &str) -> FileConfig {
                         config.logger = LevelFilter::Trace;
                     }
                 }
+                "server_registration" => {
+                    println!("server_registration: {}", value);
+                    if value == "true" {
+                        config.server_registration = true;
+                    } else {
+                        config.server_registration = false;
+                    }
+                }
+                "hostname" => config.hostname = Some(value.to_string()),
                 "x_nettest_client" => config.x_nettest_client = value.to_string(),
                 "control_server" => config.control_server = value.to_string(),
                 _ => {

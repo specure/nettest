@@ -85,7 +85,12 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
             println!("No server found, using default");
             anyhow::anyhow!("No server found")
         })?;
-        config.server = Some(server.ip_address.unwrap().clone());
+        let address = if server.web_address.is_empty() {
+            server.ip_address.unwrap()
+        } else {
+            server.web_address.clone()
+        };
+        config.server = Some(address);
         let details = server.server_type_details;
         let rmbt_details = details.iter().find(|s| s.server_type == "RMBT");
         if rmbt_details.is_some() {

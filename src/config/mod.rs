@@ -29,6 +29,10 @@ pub struct FileConfig {
     pub secret_key: Option<String>,
     pub x_nettest_client: String,
     pub control_server: String,
+    pub server_registration: bool,
+    pub hostname: Option<String>,
+    pub registration_token: Option<String>,
+    
 }
 
 impl Default for FileConfig {
@@ -51,7 +55,10 @@ impl Default for FileConfig {
             client_thread_count: 3,
             secret_key: None,
             x_nettest_client: "nt".to_string(),
-            control_server: "https://api.nettest.org/measurementServer".to_string(),
+            control_server: "https://api.nettest.org".to_string(),
+            server_registration: false,
+            hostname: None,
+            registration_token: None,
         }
     }
 }
