@@ -28,11 +28,6 @@ pub struct RmbtServerConfig {
     pub secret_key_labels: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TlsConfig {
-    pub cert_path: String,
-    pub key_path: String,
-}
 
 impl RmbtServerConfig {
     pub fn from_args(args: Vec<String>) -> Result<Self, Box<dyn Error + Send + Sync>> {

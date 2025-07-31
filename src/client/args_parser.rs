@@ -1,19 +1,20 @@
-use log::LevelFilter;
+use log::{debug, LevelFilter};
 
-use crate::{client::client::ClientConfig, config::FileConfig, logger};
+use crate::{client::{client::ClientConfig, control_server::get_best_measurement_server}, config::FileConfig, logger};
 
-pub fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result<ClientConfig, anyhow::Error> {
+pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result<ClientConfig, anyhow::Error> {
     let mut config = ClientConfig {
         use_tls: default_config.client_use_tls,
         use_websocket: default_config.client_use_websocket,
         graphs: false,
         log: Some(LevelFilter::Info),
         thread_count: default_config.client_thread_count,
-        server: String::new(),
+        server: None,
         port: default_config.server_tcp_port.parse().unwrap_or(5005),
         tls_port: default_config.server_tls_port.unwrap_or("443".to_string()).parse().unwrap(),
+        x_nettest_client: default_config.x_nettest_client,
+        control_server: default_config.control_server,
     };
-
 
     let mut i = 0;
     while i < args.len() {
@@ -25,11 +26,16 @@ pub fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result<Clien
                 }
             }
             "-c" => {
-                i += 1;
-                if i < args.len() {
-                    config.server = args[i].clone();
+                if i + 1 < args.len() {
+                    let next_arg = &args[i + 1];
+                    if next_arg.starts_with('-') {
+                        config.server = None;
+                    } else {
+                        i += 1;
+                        config.server = Some(next_arg.clone());
+                    }
                 } else {
-                    return Err(anyhow::anyhow!("Server address is required"));
+                    config.server = None;
                 }
             }
             "-tls" => {
@@ -70,12 +76,22 @@ pub fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result<Clien
         i += 1;
     }
 
-    if config.server.is_empty() {
-        return Err(anyhow::anyhow!("Server address is required"));
-    }
-
     if config.log.is_some() {
         logger::init_logger(config.log.unwrap()).unwrap();
+    }
+    if config.server.is_none()  {
+        debug!("No server address provided, using default");
+        let server = get_best_measurement_server(&config.x_nettest_client, &config.control_server).await?.ok_or_else(|| {
+            println!("No server found, using default");
+            anyhow::anyhow!("No server found")
+        })?;
+        config.server = Some(server.ip_address.unwrap().clone());
+        let details = server.server_type_details;
+        let rmbt_details = details.iter().find(|s| s.server_type == "RMBT");
+        if rmbt_details.is_some() {
+            config.port = rmbt_details.unwrap().port as u16;
+            config.tls_port = rmbt_details.unwrap().port_ssl as u16;
+        } 
     }
 
     Ok(config)

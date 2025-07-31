@@ -83,7 +83,7 @@ impl Worker {
 
     fn run(&mut self) -> io::Result<()> {
         loop {
-            debug!("Worker {}: loop iteration, connections: {}, queue size: {}", 
+            trace!("Worker {}: loop iteration, connections: {}, queue size: {}", 
                 self.id, 
                 self.connections.len(),
                 self.global_queue.lock().unwrap().len()
@@ -91,13 +91,12 @@ impl Worker {
             let maybe_connection = if self.connections.is_empty() {
                 let mut global_queue = self.global_queue.lock().unwrap();
                 if let Some((connection, _)) = global_queue.pop_front() {
-                    debug!("Worker {}: taking connection from global queue (queue size after: {})", 
+                    trace!("Worker {}: taking connection from global queue (queue size after: {})", 
                         self.id, global_queue.len());
-                    // Увеличиваем счетчик соединений для этого воркера
                     {
                         let mut counts = self.worker_connection_counts.lock().unwrap();
                         counts[self.id] += 1;
-                        debug!(
+                        trace!(
                             "Worker {}: connection count increased to {} (from global queue)",
                             self.id,
                             counts[self.id]

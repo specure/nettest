@@ -27,6 +27,8 @@ pub struct FileConfig {
     pub protocol_version: Option<u32>, //TODO None for latest, Some(3) for v0.3
     pub logger: LevelFilter,
     pub secret_key: Option<String>,
+    pub x_nettest_client: String,
+    pub control_server: String,
 }
 
 impl Default for FileConfig {
@@ -48,6 +50,8 @@ impl Default for FileConfig {
             client_use_websocket: false,
             client_thread_count: 3,
             secret_key: None,
+            x_nettest_client: "nt".to_string(),
+            control_server: "https://api.nettest.org/measurementServer".to_string(),
         }
     }
 }

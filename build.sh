@@ -20,7 +20,7 @@ export FONTCONFIG_STATIC=0
 export PKG_CONFIG_PATH="/usr/lib/pkgconfig:/usr/share/pkgconfig"
 
 echo "Building for multiple targets with musl..."
-
+        
 # Create package directory
 mkdir -p package
 

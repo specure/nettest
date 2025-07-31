@@ -36,18 +36,12 @@ pub fn parse_args(
             "-c" => {
                 i += 1;
                 if i < args.len() {
-                    if config.cert_path.is_some() {
-                        return Err(anyhow::anyhow!("Error: only one -c is allowed"));
-                    }
                     config.cert_path = Some(args[i].clone());
                 }
             }
             "-k" => {
                 i += 1;
                 if i < args.len() {
-                    if config.key_path.is_some() {
-                        return Err(anyhow::anyhow!("Error: only one -k is allowed"));
-                    }
                     config.key_path = Some(args[i].clone());
                 }
             }
