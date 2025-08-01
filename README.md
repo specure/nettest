@@ -63,27 +63,7 @@ cargo build
 # Release build with optimizations
 cargo build --release
 
-# Static build for Linux
-cargo build --release --target x86_64-unknown-linux-musl
 ```
-
-#### Docker-based Cross-compilation
-
-For maximum compatibility with older Linux distributions, use Docker-based cross-compilation:
-
-```bash
-# Build Docker image
-docker build -f Dockerfile.build -t nettest-builder .
-
-# Run builds for all architectures
-docker run --rm -v $(pwd):/app -w /app nettest-builder /usr/local/bin/build.sh
-```
-
-This will create static musl binaries for:
-- x86_64 (64-bit Intel/AMD)
-- aarch64 (64-bit ARM)
-- i686 (32-bit Intel)
-- armv7 (32-bit ARM)
 
 #### GitHub Actions
 
@@ -178,6 +158,43 @@ Nettest is optimized for high performance:
 - Download speed
 - Upload speed
 - Latency
+
+### 🗺️ **Active Servers Map**
+Interactive map showing all active measurement servers with their locations:
+
+- **Real-time data**: Shows all registered servers with valid coordinates
+- **Interactive markers**: Click on markers to see server details
+- **Auto-refresh**: Updates every 30 seconds
+- **Server information**: Name, city, distance, version, and capabilities
+
+<details>
+<summary>📊 **View Active Servers Map**</summary>
+
+<div style="height: 500px; width: 100%; border: 1px solid #ddd; border-radius: 5px; overflow: hidden;">
+  <iframe 
+    src="https://specure.github.io/nettest/servers_map.html" 
+    style="width: 100%; height: 100%; border: none;"
+    title="Measurement Servers Map">
+  </iframe>
+</div>
+
+### 🚀 **Setup Options**
+
+#### **Option 1: GitHub Pages (Recommended)**
+The map is automatically deployed to GitHub Pages and available at:
+**https://specure.github.io/nettest/servers_map.html**
+
+No local server setup required - just open the URL in your browser!
+
+#### **Option 2: Local Development**
+To view the map locally with your control server:
+
+1. **Start your control server** (make sure it's running on the configured port)
+2. **Run the local server**: `./serve_map.sh`
+3. **Open your browser** and go to: `http://localhost:8000/servers_map.html`
+
+> **Note**: The map connects to the control server API to fetch real-time server data. Make sure your control server is accessible at the configured URL.
+</details>
 
 ## Requirements
 
