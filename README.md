@@ -25,6 +25,17 @@ Nettest is a high-performance server and client for network speed measurement, w
 - Configurable ports and addresses
 - SSL/TLS certificate support
 
+<div style="text-align: center; margin: 30px 0; padding: 20px; background: url('https://specure.github.io/nettest/map-background.png') center/cover; border-radius: 10px; color: white; position: relative; overflow: hidden;">
+  <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5);"></div>
+  <div style="position: relative; z-index: 1;">
+    <h2 style="margin: 0 0 15px 0; font-size: 24px;">🗺️ Interactive Servers Map</h2>
+    <p style="margin: 0 0 20px 0; font-size: 16px; opacity: 0.9;">View all active measurement servers with real-time data</p>
+    <a href="https://specure.github.io/nettest/servers_map.html" target="_blank" style="display: inline-block; padding: 15px 30px; background: rgba(255,255,255,0.2); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; border: 2px solid rgba(255,255,255,0.3); transition: all 0.3s ease;">
+      🌐 Open Interactive Map
+    </a>
+  </div>
+</div>
+
 ## Quick Start
 
 ### Download
@@ -158,43 +169,6 @@ Nettest is optimized for high performance:
 - Download speed
 - Upload speed
 - Latency
-
-### 🗺️ **Active Servers Map**
-Interactive map showing all active measurement servers with their locations:
-
-- **Real-time data**: Shows all registered servers with valid coordinates
-- **Interactive markers**: Click on markers to see server details
-- **Auto-refresh**: Updates every 30 seconds
-- **Server information**: Name, city, distance, version, and capabilities
-
-<details>
-<summary>📊 **View Active Servers Map**</summary>
-
-<div style="height: 500px; width: 100%; border: 1px solid #ddd; border-radius: 5px; overflow: hidden;">
-  <iframe 
-    src="https://specure.github.io/nettest/servers_map.html" 
-    style="width: 100%; height: 100%; border: none;"
-    title="Measurement Servers Map">
-  </iframe>
-</div>
-
-### 🚀 **Setup Options**
-
-#### **Option 1: GitHub Pages (Recommended)**
-The map is automatically deployed to GitHub Pages and available at:
-**https://specure.github.io/nettest/servers_map.html**
-
-No local server setup required - just open the URL in your browser!
-
-#### **Option 2: Local Development**
-To view the map locally with your control server:
-
-1. **Start your control server** (make sure it's running on the configured port)
-2. **Run the local server**: `./serve_map.sh`
-3. **Open your browser** and go to: `http://localhost:8000/servers_map.html`
-
-> **Note**: The map connects to the control server API to fetch real-time server data. Make sure your control server is accessible at the configured URL.
-</details>
 
 ## Requirements
 
