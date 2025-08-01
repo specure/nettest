@@ -81,6 +81,7 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
     }
     if config.server.is_none()  {
         debug!("No server address provided, using default");
+        //TODO: verify tls
         let server = get_best_measurement_server(&config.x_nettest_client, &config.control_server).await?.ok_or_else(|| {
             println!("No server found, using default");
             anyhow::anyhow!("No server found")

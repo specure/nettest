@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::thread;
 use std::time::Instant;
-use crate::mioserver::control_server::auto_registration::{deregister_server, register_server};
+use crate::mioserver::control_server::auto_registration::{deregister_server, register_server, start_ping_job};
 
 #[derive(Debug)]
 pub enum ConnectionType {
@@ -140,8 +140,17 @@ impl MioServer {
             info!("Registering server with control server...");
             let config_clone = self.server_config.clone();
             info!("Registering server with control server...");
+            let shutdown_signal = self.shutdown_signal.clone();
             tokio::spawn(async move {
-                let _ = register_server(&config_clone).await;
+                match register_server(&config_clone).await {
+                    Ok(_) => {
+                        info!("Server registration successful, starting ping job...");
+                        start_ping_job(config_clone, shutdown_signal).await;
+                    }
+                    Err(e) => {
+                        info!("Server registration failed: {}", e);
+                    }
+                }
             });
         }
       
