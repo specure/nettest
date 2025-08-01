@@ -5,9 +5,10 @@ use mio::{Poll, Token, Waker};
 use std::collections::VecDeque;
 use std::io::{self};
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::thread;
 use std::time::Instant;
+use crate::mioserver::control_server::auto_registration::{deregister_server, register_server, start_ping_job};
 
 #[derive(Debug)]
 pub enum ConnectionType {
@@ -26,6 +27,8 @@ pub struct MioServer {
     tls_listener: Option<TcpListener>,
     _worker_threads: Vec<WorkerThread>,
     global_queue: Arc<Mutex<VecDeque<(ConnectionType, Instant)>>>, // Общая очередь с временными метками
+    server_config: ServerConfig,
+    shutdown_signal: Arc<AtomicBool>,
 }
 
 pub struct TestState {
@@ -49,6 +52,7 @@ pub struct TestState {
     pub chunk: Option<BytesMut>,
     pub terminal_chunk: Option<BytesMut>,
     pub bytes_received: VecDeque<(u64, u64)>
+
 }
 
 #[derive(Clone)]
@@ -63,6 +67,11 @@ pub struct ServerConfig {
     pub version: Option<String>,
     pub secret_key: Option<String>,
     pub log_level: Option<LevelFilter>,
+    pub server_registration: bool,
+    pub control_server: String,
+    pub hostname: Option<String>,
+    pub x_nettest_client: String,
+    pub registration_token: Option<String>,
 }
 
 impl MioServer {
@@ -120,11 +129,38 @@ impl MioServer {
             tls_listener,
             _worker_threads: worker_threads,
             global_queue,
+            server_config,
+            shutdown_signal: Arc::new(AtomicBool::new(false)),
         })
     }
 
     pub fn run(&mut self) -> io::Result<()> {
+        info!("server_config.server_registration: {:?}", self.server_config.server_registration);
+        if self.server_config.server_registration {
+            info!("Registering server with control server...");
+            let config_clone = self.server_config.clone();
+            info!("Registering server with control server...");
+            let shutdown_signal = self.shutdown_signal.clone();
+            tokio::spawn(async move {
+                match register_server(&config_clone).await {
+                    Ok(_) => {
+                        info!("Server registration successful, starting ping job...");
+                        start_ping_job(config_clone, shutdown_signal).await;
+                    }
+                    Err(e) => {
+                        info!("Server registration failed: {}", e);
+                    }
+                }
+            });
+        }
+      
         loop {
+            // Проверяем сигнал завершения
+            if self.shutdown_signal.load(Ordering::Relaxed) {
+                info!("Shutdown signal received, stopping server...");
+                break;
+            }
+
             // Принимаем TCP соединения
             match self.tcp_listener.accept() {
                 Ok((stream, _addr)) => {
@@ -166,6 +202,30 @@ impl MioServer {
 
             thread::sleep(std::time::Duration::from_millis(10));
         }
+
+       
+        Ok(())
+    }
+
+   pub  async fn shutdown(&mut self) -> io::Result<()> {
+        info!("Starting graceful shutdown...");
+        
+        if self.server_config.server_registration {
+            info!("Deregistering server from control server...");
+            let _ = deregister_server(&self.server_config).await;
+        }
+        
+        info!("Server shutdown complete");
+        Ok(())
+    }
+
+    pub fn request_shutdown(&self) {
+        self.shutdown_signal.store(true, Ordering::Relaxed);
+        info!("Shutdown requested");
+    }
+
+    pub fn get_shutdown_signal(&self) -> Arc<AtomicBool> {
+        self.shutdown_signal.clone()
     }
 
     fn check_global_queue(&mut self) -> io::Result<()> {

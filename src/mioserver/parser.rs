@@ -14,9 +14,14 @@ pub fn parse_args(
         num_workers: default_config.server_workers, 
         user: default_config.user,
         daemon: default_config.daemonize,
-        version: Some("1.5.0".to_string()),
+        version: Some("2.0.0".to_string()),
         secret_key: default_config.secret_key,
         log_level: None,
+        server_registration: default_config.server_registration,
+        control_server: default_config.control_server,
+        hostname: default_config.hostname,
+        x_nettest_client: default_config.x_nettest_client,
+        registration_token: default_config.registration_token,
     };
 
     let mut i = 1;
@@ -74,6 +79,9 @@ pub fn parse_args(
                     config.secret_key = Some(args[i].clone());
                 }
             }
+            "-register" => {
+                config.server_registration = true;
+            }
             "--help" | "-h" => {
                 print_help();
                 return Err(anyhow::anyhow!("Help printed"));
@@ -110,4 +118,5 @@ fn print_help() {
     println!(" -d     fork into background as daemon (no argument)\n");
     println!(" -log    log level: info, debug, trace\n");
     println!(" -e     encryption key for resut signature\n");
+    println!(" -register  enable server registration\n");
 }

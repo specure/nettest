@@ -1,4 +1,5 @@
 use log::{debug, info};
+use tokio::signal;
 
 use crate::config::parser::{ read_config_file};
 use crate::mioserver::MioServer;
@@ -30,7 +31,19 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         args = args.iter().skip(1).map(|s| s.clone()).collect();
 
         let mut mio_server = MioServer::new(args, config)?;
+        
+        // Создаем отдельный поток для обработки сигналов
+        let shutdown_signal = mio_server.get_shutdown_signal();
+        tokio::spawn(async move {
+            signal::ctrl_c().await.expect("Failed to listen for Ctrl+C");
+            info!("Ctrl+C received, shutting down server...");
+            shutdown_signal.store(true, std::sync::atomic::Ordering::Relaxed);
+        });
+        
         mio_server.run()?;
+        info!("Server stopping...");
+        mio_server.shutdown().await?;
+        info!("Server stopped");
     } else {
 
         args = args.iter().skip(1).map(|s| s.clone()).collect();
@@ -59,6 +72,8 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         info!("Starting server...");
         server.run().await?;
         info!("Server stopped");
+
+        
 
     }
     Ok(())

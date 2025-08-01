@@ -95,7 +95,7 @@ pub async fn fetch_measurement_servers(x_nettest_client: &str, control_server: &
     let client = reqwest::Client::new();
     
     let response = client
-        .get(control_server)
+        .get(format!("{}/measurementServer", control_server))
         .header("x-nettest-client", x_nettest_client)
         .header("Content-Type", "application/json")
         .body("{}")

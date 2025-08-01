@@ -81,11 +81,17 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
     }
     if config.server.is_none()  {
         debug!("No server address provided, using default");
+        //TODO: verify tls
         let server = get_best_measurement_server(&config.x_nettest_client, &config.control_server).await?.ok_or_else(|| {
             println!("No server found, using default");
             anyhow::anyhow!("No server found")
         })?;
-        config.server = Some(server.ip_address.unwrap().clone());
+        let address = if server.web_address.is_empty() {
+            server.ip_address.unwrap()
+        } else {
+            server.web_address.clone()
+        };
+        config.server = Some(address);
         let details = server.server_type_details;
         let rmbt_details = details.iter().find(|s| s.server_type == "RMBT");
         if rmbt_details.is_some() {
