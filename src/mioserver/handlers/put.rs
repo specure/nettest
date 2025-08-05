@@ -115,10 +115,10 @@ pub fn handle_put_send_time(poll: &Poll, state: &mut TestState) -> io::Result<us
         if state.write_pos == command_len {
             state.write_pos = 0;
             state.read_pos = 0;
-            state.measurement_state = ServerTestPhase::AcceptCommandReceive;
+            state.measurement_state = ServerTestPhase::AcceptCommandSend;
             state
                 .stream
-                .reregister(poll, state.token, Interest::READABLE)?;
+                .reregister(poll, state.token, Interest::WRITABLE )?;
             return Ok(n);
         }
     }

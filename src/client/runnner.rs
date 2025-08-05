@@ -9,11 +9,11 @@ use std::sync::Mutex;
 use log::debug;
 
 use crate::client::{
-    calculator::{calculate_download_speed_from_stats, calculate_upload_speed_from_stats}, client::{ClientConfig, Measurement, SharedStats}, control_server::{get_best_measurement_server, resolve_ip_from_web_address}, print::printer::print_float_result, state::TestState
+    calculator::{calculate_download_speed_from_stats, calculate_upload_speed_from_stats}, client::{ClientConfig, Measurement, SharedStats}, print::printer::print_float_result, state::TestState
 };
 
 pub fn run_threads(
-    mut config: ClientConfig,
+    config: ClientConfig,
     stats: Arc<Mutex<SharedStats>>,
 ) -> Result<Vec<Measurement>, anyhow::Error> {
     let barrier = Arc::new(Barrier::new(config.thread_count));

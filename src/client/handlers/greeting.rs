@@ -94,6 +94,7 @@ pub fn handle_greeting_receive_greeting(
             .stream
             .read(&mut state.read_buffer[state.read_pos..])?;
         state.read_pos += n;
+        debug!("handle_greeting_receive_greeting read {} bytes", String::from_utf8_lossy(&state.read_buffer));
         let end = b"ACCEPT TOKEN QUIT\n";
         if n > 0 && state.read_pos >= end.len() && state.read_buffer[state.read_pos - end.len()..state.read_pos] == *end {
             state.phase = TestPhase::GreetingSendToken;

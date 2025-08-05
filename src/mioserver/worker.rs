@@ -83,11 +83,6 @@ impl Worker {
 
     fn run(&mut self) -> io::Result<()> {
         loop {
-            trace!("Worker {}: loop iteration, connections: {}, queue size: {}", 
-                self.id, 
-                self.connections.len(),
-                self.global_queue.lock().unwrap().len()
-            );
             let maybe_connection = if self.connections.is_empty() {
                 let mut global_queue = self.global_queue.lock().unwrap();
                 if let Some((connection, _)) = global_queue.pop_front() {
@@ -128,39 +123,47 @@ impl Worker {
                 self.next_token += 1;
 
                 // Регистрируем новое соединение
-                if let Err(e) = stream.register(&self.poll, token, Interest::READABLE) {
+                if let Err(e) = stream.register(&self.poll, token, Interest::READABLE | Interest::WRITABLE) {
                     info!("Worker {}: Failed to register connection: {}", self.id, e);
                     continue;
                 }
 
-                stream = self.handle_greeting_receive_connection_type(stream, token)?;
 
-                self.connections.insert(
-                    token,
-                    TestState {
-                        token,
-                        // stream: Stream::new_rustls_server(stream, None, None).unwrap(),
-                        stream: stream,
-                        measurement_state: ServerTestPhase::GreetingSendVersion,
-                        read_buffer: [0; 1024 * 8],
-                        write_buffer: [0; 1024 * 8],
-                        read_bytes: BytesMut::new(),
-                        read_pos: 0,
-                        write_pos: 0,
-                        num_chunks: 0,
-                        chunk_size: 0,
-                        processed_chunks: 0,
-                        clock: None,
-                        time_ns: None,
-                        duration: 0,
-                        chunk_buffer: vec![0; MIN_CHUNK_SIZE as usize],
-                        total_bytes: 0,
-                        chunk: None,
-                        terminal_chunk: None,
-                        put_duration: None,
-                        bytes_received: VecDeque::new(),
+                match self.handle_greeting_receive_connection_type(stream, token) {
+                    Ok(stream) => {
+                        self.connections.insert(
+                            token,
+                            TestState {
+                                token,
+                                last_active: Instant::now(),
+                                // stream: Stream::new_rustls_server(stream, None, None).unwrap(),
+                                stream: stream,
+                                measurement_state: ServerTestPhase::GreetingSendVersion,
+                                read_buffer: [0; 1024 * 8],
+                                write_buffer: [0; 1024 * 8],
+                                read_bytes: BytesMut::new(),
+                                read_pos: 0,
+                                write_pos: 0,
+                                num_chunks: 0,
+                                chunk_size: 0,
+                                processed_chunks: 0,
+                                clock: None,
+                                time_ns: None,
+                                duration: 0,
+                                chunk_buffer: vec![0; MIN_CHUNK_SIZE as usize],
+                                total_bytes: 0,
+                                chunk: None,
+                                terminal_chunk: None,
+                                put_duration: None,
+                                bytes_received: VecDeque::new(),
+                            },
+                        );
                     },
-                );
+                    Err(e) => {
+                        info!("Worker {}: Error handling greeting: {}", self.id, e);
+                        continue;
+                    }
+                };
 
                 debug!(
                     "Worker {} registered new connection with token {:?} (total connections: {})",
@@ -192,10 +195,9 @@ impl Worker {
         for event in self.events.iter() {
             debug!("Worker {}: event {:?} token {:?}", self.id, event, event.token());
             let event_token = event.token();
-
             if let Some(state) = self.connections.get_mut(&event_token) {
                 let mut should_remove: Result<usize, io::Error> = Ok(0);
-
+                state.last_active = Instant::now();
                 if event.is_readable() {
                     trace!(
                         "Worker {}: event is readable for token {:?}",
@@ -215,9 +217,9 @@ impl Worker {
                 match should_remove {
                     Ok(n) => {
                         if n == 0 {
+                            debug!("Worker {}: should_remove: {} token {:?}", self.id, n, event_token);
                             connections_to_remove.push(event_token);
                         }
-                        debug!("Worker {}: should_remove: {} token {:?}", self.id, n, event_token);
                         continue;
                         // If n > 0, continue processing
                     }
@@ -236,6 +238,12 @@ impl Worker {
             }
         }
 
+        for (token, state) in self.connections.iter_mut() {
+            if state.last_active.elapsed() > Duration::from_secs(15) {
+                debug!("Worker {}: connection {:?} timed out", self.id, token);
+                connections_to_remove.push(token.clone());
+            }
+        }
 
 
         for token in connections_to_remove {
@@ -269,17 +277,30 @@ impl Worker {
         let mut buffer = vec![0; 1024];
         let mut result = BytesMut::new();
         let mut loop_flag = false;
+        let timeout = std::time::Duration::from_secs(3);
+        let start_time = std::time::Instant::now();
 
         while !loop_flag {
-            self.poll.poll(&mut self.events, None)?;
+            // Проверяем таймаут
+            if start_time.elapsed() > timeout {
+                debug!("Worker {}: handshake timeout after {:?}", self.id, timeout);
+                stream.close().unwrap();
+                self.connections.remove(&token);
+                return Err(io::Error::new(io::ErrorKind::TimedOut, "Handshake timeout"));
+            }
+
+            // Используем таймаут для poll
+            let poll_timeout = timeout - start_time.elapsed();
+            self.poll.poll(&mut self.events, Some(poll_timeout))?;
             for event in self.events.iter() {
                 if event.is_readable() {
                     match stream.read(&mut buffer) {
                         Ok(n) => {
                             result.extend_from_slice(&buffer[..n]);
+                            debug!("Worker {}: read {} bytes {}", self.id, n, String::from_utf8_lossy(&buffer[..n]));
                             if result.len() >= 4
                                 && result[result.len() - 4..result.len()]
-                                    == [b'\r', b'\n', b'\r', b'\n']
+                                    == [b'\r', b'\n', b'\r', b'\n'] || String::from_utf8_lossy(&result).contains("\r\n\r\n")
                             {
                                 let request = String::from_utf8_lossy(&result);
                                 let ws_regex = Regex::new(r"(?i)upgrade:\s*websocket").unwrap();
@@ -295,7 +316,7 @@ impl Worker {
                                     debug!("Worker {}: writing upgrade response", self.id);
                                     match stream.write(RMBT_UPGRADE.as_bytes()) {
                                         Ok(n) => {
-                                            debug!("Worker {}: wrote {} bytes", self.id, n);
+                                            debug!("Worker {}: wrote {} bytes {}", self.id, n, RMBT_UPGRADE);
                                         }
                                         Err(e) => {
                                             debug!("Worker {}: error writing upgrade response: {}", self.id, e);
@@ -319,6 +340,7 @@ impl Worker {
                 }
             }
         }
+        debug!("Worker {}: handshake done", self.id);
         Ok(stream)
     }
 }

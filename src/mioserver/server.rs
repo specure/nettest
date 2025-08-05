@@ -33,6 +33,7 @@ pub struct MioServer {
 
 pub struct TestState {
     pub token: Token,
+    pub last_active: Instant,
     pub stream: Stream,
     pub measurement_state: ServerTestPhase,
     pub read_buffer: [u8; 1024 * 8],
@@ -243,11 +244,7 @@ impl MioServer {
         // Добавляем соединение в глобальную очередь
         let mut global_queue = self.global_queue.lock().unwrap();
         global_queue.push_back((connection, Instant::now()));
-        println!(
-            "SERVER: {} connection added to global queue (queue size: {})",
-            if is_tls { "TLS" } else { "TCP" },
-            global_queue.len()
-        );
+
         info!(
             "{} connection added to global queue (queue size: {})",
             if is_tls { "TLS" } else { "TCP" },

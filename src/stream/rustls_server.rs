@@ -12,7 +12,6 @@ use std::sync::Arc;
 pub struct RustlsServerStream {
     pub conn: ServerConnection,
     pub stream: TcpStream,
-    handshake_done: bool,
     pub finished: bool,
     pub temp_buf: Vec<u8>,
 }
@@ -24,10 +23,13 @@ impl RustlsServerStream {
         let certs = load_certs(Path::new(&cert_path))?;
         let key = load_private_key(Path::new(&key_path))?;
 
-        let config = ServerConfig::builder()
+        let mut config = ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(certs, key)
             .map_err(|e| Error::msg(format!("Failed to create server config: {}", e)))?;
+
+            config.alpn_protocols = vec![b"http/1.1".to_vec()];
+
 
         let conn = ServerConnection::new(Arc::new(config))?;
 
@@ -36,14 +38,14 @@ impl RustlsServerStream {
         Ok(Self {
             conn,
             stream,
-            handshake_done: false,
             finished: true,
             temp_buf: vec![],
         })
     }
 
+
     pub fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        // trace!("Reading from RustlsStream");
+        
         if self.temp_buf.len() > buf.len() {
             let to_copy = buf.len().min(self.temp_buf.len());
             buf[..to_copy].copy_from_slice(&self.temp_buf[..to_copy]);
@@ -104,15 +106,7 @@ impl RustlsServerStream {
             }
         };
 
-        // If we need to write handshake data, do it
-        if !self.handshake_done {
-            while self.conn.wants_write() {
-                self.handshake_done = true;
-                trace!("Writing handshake data");
-                self.conn.write_tls(&mut self.stream)?;
-            }
-            self.handshake_done = true;
-        }
+        
 
         let mut chunk = [0u8; 8192 * 10];
 

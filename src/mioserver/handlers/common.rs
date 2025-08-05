@@ -145,7 +145,6 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
                     return Err(io::Error::new(io::ErrorKind::Other, "Invalid command"));
                 }
 
-                println!("PUTNORESULT command: {}", command_str);
 
                 if parts.len() == 2 {
                     match parts[1].parse::<usize>() {
