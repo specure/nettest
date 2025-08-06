@@ -15,6 +15,7 @@ class TestVisualizationService {
     this.onUploadUpdate = null;
     this.onPhaseUpdate = null;
     this.onPingMedianUpdate = null;
+    this.onTestInfoUpdate = null; // New callback for test info
     this.redrawLoop = null;
     this.lastProgress = -1;
     this.lastStatus = -1;
@@ -65,6 +66,16 @@ class TestVisualizationService {
   updateInfo(serverName, remoteIp, providerName, testUUID) {
     this.testUUID = testUUID;
     console.log('Test info updated:', { serverName, remoteIp, providerName, testUUID });
+    
+    // Вызываем callback с информацией о тесте
+    if (this.onTestInfoUpdate) {
+      this.onTestInfoUpdate({
+        serverName,
+        remoteIp,
+        providerName,
+        testUUID
+      });
+    }
   }
 
   // Основной метод для получения и обработки результатов (как в portal)
@@ -303,6 +314,10 @@ class TestVisualizationService {
   // Метод для обновления pingMedian
   setOnPingMedianUpdate(callback) {
     this.onPingMedianUpdate = callback;
+  }
+
+  setOnTestInfoUpdate(callback) {
+    this.onTestInfoUpdate = callback;
   }
 
   // Метод для получения текущего результата

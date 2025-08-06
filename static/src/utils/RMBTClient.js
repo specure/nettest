@@ -14,6 +14,12 @@ class RMBTClient {
       ping: null,
       jitter: null
     };
+    this.onPingUpdate = null; // For ping chart (now removed)
+    this.onDownloadUpdate = null;
+    this.onUploadUpdate = null;
+    this.onPhaseUpdate = null;
+    this.onPingMedianUpdate = null; // New callback for ping median
+    this.onTestInfoUpdate = null; // New callback for test info
   }
 
   async init() {
@@ -72,8 +78,15 @@ class RMBTClient {
       // Устанавливаем тест в TestEnvironment как в portal
       this.rmbtws.TestEnvironment.getTestVisualization().setRMBTTest(this.test);
 
-      // Устанавливаем обработчики событий
-      this.setupEventHandlers();
+          // Устанавливаем обработчики событий
+    this.setupEventHandlers();
+    
+    // Устанавливаем callback для информации о тесте
+    this.visualizationService.setOnTestInfoUpdate((info) => {
+      if (this.onTestInfoUpdate) {
+        this.onTestInfoUpdate(info);
+      }
+    });
 
       return true;
     } catch (error) {
@@ -174,6 +187,10 @@ class RMBTClient {
   // Метод для установки callback для обновления фазы теста
   setOnPhaseUpdate(callback) {
     this.onPhaseUpdate = callback;
+  }
+
+  setOnTestInfoUpdate(callback) {
+    this.onTestInfoUpdate = callback;
   }
 
   generateUUID() {
