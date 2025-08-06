@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Nettest measurement client",
   "main": "index.js",
-  "homepage": "https://specure.github.io/measurement-server",
+  "homepage": "https://specure.github.io/nettest",
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
