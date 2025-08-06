@@ -1,0 +1,54 @@
+.ping-display-container {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  margin: 20px 0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.ping-display-container h3 {
+  margin: 0 0 15px 0;
+  color: #333;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.ping-display-placeholder {
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+  font-style: italic;
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.ping-value {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  height: 200px;
+  background: #f8f9fa;
+  border-radius: 4px;
+  padding: 20px;
+}
+
+.ping-number {
+  font-size: 48px;
+  font-weight: 700;
+  color: #007bff;
+  margin-right: 8px;
+}
+
+.ping-unit {
+  font-size: 24px;
+  font-weight: 500;
+  color: #666;
+}
+
+.ping-waiting {
+  font-size: 18px;
+  color: #666;
+  font-style: italic;
+} 

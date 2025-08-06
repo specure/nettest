@@ -1,0 +1,435 @@
+.App {
+  text-align: center;
+  min-height: 100vh;
+  padding: 20px;
+  position: relative;
+}
+
+.App::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    radial-gradient(circle at 10% 20%, rgba(0, 255, 255, 0.05) 0%, transparent 50%),
+    radial-gradient(circle at 90% 80%, rgba(0, 150, 255, 0.05) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.App-header {
+  margin-bottom: 40px;
+  animation: slideIn 0.8s ease-out;
+}
+
+.App-title {
+  font-size: 3rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 0 30px rgba(0, 212, 255, 0.3);
+}
+
+.App-subtitle {
+  font-size: 1.2rem;
+  color: #8b9bb4;
+  font-weight: 400;
+  margin-bottom: 20px;
+}
+
+.burger-menu {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 100;
+}
+
+.burger-button {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 153, 204, 0.2) 100%);
+  border: 2px solid rgba(0, 212, 255, 0.4);
+  border-radius: 12px;
+  color: #00d4ff;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 15px rgba(0, 212, 255, 0.2);
+  text-shadow: 0 0 5px rgba(0, 212, 255, 0.3);
+  white-space: nowrap;
+}
+
+.burger-button:hover {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.3) 0%, rgba(0, 153, 204, 0.3) 100%);
+  border-color: rgba(0, 212, 255, 0.6);
+  box-shadow: 0 6px 20px rgba(0, 212, 255, 0.3);
+  transform: translateX(5px);
+  text-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+}
+
+.burger-button:active {
+  transform: translateX(0);
+  box-shadow: 0 4px 15px rgba(0, 212, 255, 0.2);
+}
+
+.documentation-button {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 153, 204, 0.2) 100%);
+  border: 2px solid rgba(0, 212, 255, 0.4);
+  border-radius: 12px;
+  color: #00d4ff;
+  font-size: 16px;
+  font-weight: 600;
+  padding: 12px 24px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 15px rgba(0, 212, 255, 0.2);
+  text-shadow: 0 0 5px rgba(0, 212, 255, 0.3);
+}
+
+.documentation-button:hover {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.3) 0%, rgba(0, 153, 204, 0.3) 100%);
+  border-color: rgba(0, 212, 255, 0.6);
+  box-shadow: 0 6px 20px rgba(0, 212, 255, 0.3);
+  transform: translateY(-2px);
+  text-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+}
+
+.documentation-button:active {
+  transform: translateY(0);
+  box-shadow: 0 4px 15px rgba(0, 212, 255, 0.2);
+}
+
+.App-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+/* Анимация для элементов */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.floating {
+  animation: float 6s ease-in-out infinite;
+}
+
+/* Стили для сетки */
+.grid-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 30px;
+  margin-top: 30px;
+}
+
+/* Стили для карточек */
+.card {
+  background: rgba(15, 20, 25, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: 16px;
+  padding: 30px;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #00d4ff, #0099cc, #00d4ff);
+  background-size: 200% 100%;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.card:hover {
+  border-color: rgba(0, 212, 255, 0.4);
+  box-shadow: 
+    0 12px 40px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(0, 212, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transform: translateY(-5px);
+}
+
+.card-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #00d4ff;
+  margin-bottom: 15px;
+  text-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+}
+
+.card-content {
+  color: #e0e8ff;
+  line-height: 1.6;
+}
+
+/* Стили для контейнера элементов управления */
+.test-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 5px 0 15px 0;
+}
+
+/* Стили для карты серверов */
+.servers-map-section {
+  margin-bottom: 30px;
+}
+
+.servers-map-section .card-content {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Стили для карточки с картой */
+.card:has(.servers-map-container) {
+  padding: 20px;
+}
+
+.card:has(.servers-map-container) .card-content {
+  padding: 0;
+}
+
+/* Стили для кнопок */
+.button {
+  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+  border: none;
+  border-radius: 12px;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 1rem;
+  padding: 15px 30px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
+}
+
+.button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.button:hover::before {
+  left: 100%;
+}
+
+.button:hover {
+  transform: translateY(-3px);
+  box-shadow: 
+    0 8px 25px rgba(0, 212, 255, 0.4),
+    0 0 15px rgba(0, 212, 255, 0.3);
+}
+
+.button:active {
+  transform: translateY(-1px);
+}
+
+/* Стили для статуса */
+.status {
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 500;
+  margin: 10px 0;
+  background: rgba(0, 212, 255, 0.1);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  color: #00d4ff;
+}
+
+/* Стили для ошибок */
+.error {
+  background: rgba(255, 59, 48, 0.1);
+  border: 1px solid rgba(255, 59, 48, 0.3);
+  color: #ff6b6b;
+}
+
+/* Стили для успеха */
+.success {
+  background: rgba(52, 199, 89, 0.1);
+  border: 1px solid rgba(52, 199, 89, 0.3);
+  color: #4ecdc4;
+}
+
+/* Адаптивность */
+@media (max-width: 768px) {
+  .App {
+    padding: 15px;
+  }
+  
+  .App-title {
+    font-size: 2rem;
+  }
+  
+  .App-subtitle {
+    font-size: 1rem;
+  }
+  
+  .grid-container {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  
+  .card {
+    padding: 20px;
+  }
+} 
+
+/* Стили для QuickActions */
+.quick-actions {
+  position: fixed;
+  bottom: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 100;
+}
+
+.quick-action-btn {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.4) 0%, rgba(0, 153, 204, 0.4) 100%);
+  border: 2px solid rgba(0, 212, 255, 0.7);
+  border-right: none;
+  border-radius: 12px 0 0 12px;
+  color: #00d4ff;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  padding: 8px 12px 8px 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  box-shadow: 
+    -2px 0 8px rgba(0, 212, 255, 0.3),
+    0 2px 8px rgba(0, 0, 0, 0.3);
+  text-shadow: 0 0 5px rgba(0, 212, 255, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  position: relative;
+  overflow: hidden;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  height: 120px;
+  width: 40px;
+}
+
+.quick-action-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.quick-action-btn:hover::before {
+  left: 100%;
+}
+
+.quick-action-btn:hover {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.6) 0%, rgba(0, 153, 204, 0.6) 100%);
+  border-color: rgba(0, 212, 255, 0.9);
+  box-shadow: 
+    -4px 0 15px rgba(0, 212, 255, 0.6),
+    0 4px 12px rgba(0, 0, 0, 0.4);
+  transform: translateX(-3px);
+  text-shadow: 0 0 8px rgba(0, 212, 255, 0.7);
+}
+
+.quick-action-btn:active {
+  transform: translateX(0);
+  box-shadow: 
+    -2px 0 8px rgba(0, 212, 255, 0.3),
+    0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.btn-text {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  transform: rotate(180deg);
+}
+
+/* Анимация появления */
+.quick-actions {
+  animation: slideInFromRight 0.6s ease-out;
+}
+
+@keyframes slideInFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Адаптивность для мобильных устройств */
+@media (max-width: 768px) {
+  .quick-actions {
+    bottom: 0;
+    right: 0;
+    gap: 1px;
+  }
+  
+  .quick-action-btn {
+    padding: 6px 10px 6px 6px;
+    min-width: 35px;
+    height: 100px;
+    width: 35px;
+    font-size: 12px;
+  }
+  
+  .btn-text {
+    font-size: 11px;
+  }
+} 
