@@ -320,12 +320,13 @@
 /* Стили для QuickActions */
 .quick-actions {
   position: fixed;
-  bottom: 0;
+  bottom: 50%;
   right: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
   z-index: 100;
+  transform: translateY(50%);
 }
 
 .quick-action-btn {
@@ -405,20 +406,21 @@
 @keyframes slideInFromRight {
   from {
     opacity: 0;
-    transform: translateX(30px);
+    transform: translateX(30px) translateY(50%);
   }
   to {
     opacity: 1;
-    transform: translateX(0);
+    transform: translateX(0) translateY(50%);
   }
 }
 
 /* Адаптивность для мобильных устройств */
 @media (max-width: 768px) {
   .quick-actions {
-    bottom: 0;
+    bottom: 50%;
     right: 0;
     gap: 1px;
+    transform: translateY(50%);
   }
   
   .quick-action-btn {
