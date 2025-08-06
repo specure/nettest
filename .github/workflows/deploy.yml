@@ -7,7 +7,11 @@ on:
     branches: [ main, develop, static-assets ]
 
 jobs:
-  build-and-deploy:
+  deploy:
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     runs-on: ubuntu-latest
     
     steps:
@@ -30,26 +34,32 @@ jobs:
     - name: Build
       run: |
         cd static
+        echo "Current directory: $(pwd)"
+        echo "Node version: $(node --version)"
+        echo "NPM version: $(npm --version)"
+        echo "Package.json exists: $(test -f package.json && echo 'YES' || echo 'NO')"
+        echo "Installing dependencies..."
+        npm ci
+        echo "Building application..."
         npm run build
         echo "Build completed successfully"
+        echo "Build directory contents:"
         ls -la build/
+        echo "HTML files:"
+        find build/ -name "*.html"
+        echo "JS files:"
+        find build/ -name "*.js" | head -5
+        echo "CSS files:"
+        find build/ -name "*.css" | head -5
         
-    - name: Show branch info
-      run: |
-        echo "Current branch: ${{ github.ref }}"
-        echo "Branch name: ${{ github.ref_name }}"
-        echo "Event name: ${{ github.event_name }}"
-        
-    - name: Check build directory
-      run: |
-        echo "Checking build directory..."
-        ls -la static/build/
-        echo "Build directory exists and contains files"
+    - name: Setup Pages
+      uses: actions/configure-pages@v4
+      
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: ./static/build
         
     - name: Deploy to GitHub Pages
-      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/static-assets' || startsWith(github.ref, 'refs/heads/feature/')
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./static/build
-        force_orphan: true 
+      id: deployment
+      uses: actions/deploy-pages@v4 
