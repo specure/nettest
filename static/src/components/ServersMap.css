@@ -1,0 +1,228 @@
+.servers-map-container {
+  width: 100%;
+  height: 400px;
+  border-radius: 15px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #0a0e1a 0%, #1a1f2e 100%);
+  border: 2px solid rgba(0, 212, 255, 0.3);
+  box-shadow: 
+    0 0 20px rgba(0, 212, 255, 0.2),
+    inset 0 0 20px rgba(0, 212, 255, 0.1);
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.servers-map-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    linear-gradient(90deg, rgba(0, 212, 255, 0.1) 1px, transparent 1px),
+    linear-gradient(rgba(0, 212, 255, 0.1) 1px, transparent 1px);
+  background-size: 20px 20px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.servers-map {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  z-index: 2;
+}
+
+/* Override Leaflet styles for futuristic theme */
+.servers-map .leaflet-container {
+  background: transparent !important;
+}
+
+.servers-map .leaflet-popup-content-wrapper {
+  background: rgba(10, 14, 26, 0.95) !important;
+  color: #00d4ff !important;
+  border: 2px solid #00d4ff !important;
+  border-radius: 10px !important;
+  box-shadow: 
+    0 0 20px rgba(0, 212, 255, 0.5),
+    inset 0 0 10px rgba(0, 212, 255, 0.2) !important;
+  backdrop-filter: blur(10px);
+}
+
+.servers-map .leaflet-popup-tip {
+  background: #00d4ff !important;
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.5) !important;
+}
+
+.servers-map .leaflet-popup-content {
+  font-family: 'Roboto Mono', monospace !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+  margin: 15px !important;
+  color: #00d4ff !important;
+}
+
+.servers-map .leaflet-popup-content b {
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  text-shadow: 0 0 5px #00d4ff !important;
+}
+
+.servers-map .leaflet-popup-close-button {
+  color: #00d4ff !important;
+  font-size: 18px !important;
+  font-weight: bold !important;
+  text-shadow: 0 0 5px #00d4ff !important;
+}
+
+.servers-map .leaflet-popup-close-button:hover {
+  color: #ffffff !important;
+  text-shadow: 0 0 10px #ffffff !important;
+}
+
+.servers-map .leaflet-control-attribution {
+  background: rgba(10, 14, 26, 0.8) !important;
+  color: #00d4ff !important;
+  font-size: 12px !important;
+  border: 1px solid rgba(0, 212, 255, 0.3) !important;
+}
+
+/* Custom server popup styles */
+.server-popup {
+  font-family: 'Roboto Mono', monospace;
+  color: #00d4ff;
+}
+
+.select-server-btn {
+  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+  color: #0a0e1a;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 5px;
+  font-family: 'Roboto Mono', monospace;
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  position: relative;
+  overflow: hidden;
+}
+
+.select-server-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  transition: left 0.5s ease;
+}
+
+.select-server-btn:hover::before {
+  left: 100%;
+}
+
+.select-server-btn:hover {
+  background: linear-gradient(135deg, #ffffff 0%, #00d4ff 100%);
+  box-shadow: 0 0 15px rgba(0, 212, 255, 0.5);
+  transform: translateY(-2px);
+}
+
+.select-server-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.7);
+}
+
+/* Map controls styling */
+.servers-map .leaflet-control-zoom {
+  border: 2px solid rgba(0, 212, 255, 0.3) !important;
+  background: rgba(10, 14, 26, 0.9) !important;
+  box-shadow: 0 0 15px rgba(0, 212, 255, 0.3) !important;
+}
+
+.servers-map .leaflet-control-zoom a {
+  background: rgba(10, 14, 26, 0.9) !important;
+  color: #00d4ff !important;
+  border: 1px solid rgba(0, 212, 255, 0.3) !important;
+  font-weight: bold !important;
+  text-shadow: 0 0 5px #00d4ff !important;
+}
+
+.servers-map .leaflet-control-zoom a:hover {
+  background: rgba(0, 212, 255, 0.2) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.5) !important;
+}
+
+/* Animation for map container */
+.servers-map-container {
+  animation: mapGlow 3s ease-in-out infinite alternate;
+}
+
+@keyframes mapGlow {
+  0% {
+    box-shadow: 
+      0 0 20px rgba(0, 212, 255, 0.2),
+      inset 0 0 20px rgba(0, 212, 255, 0.1);
+  }
+  100% {
+    box-shadow: 
+      0 0 30px rgba(0, 212, 255, 0.4),
+      inset 0 0 30px rgba(0, 212, 255, 0.2);
+  }
+}
+
+/* Map loading state */
+.map-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 14, 26, 0.9);
+  z-index: 10;
+}
+
+.loading-text {
+  color: #00d4ff;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 16px;
+  font-weight: 600;
+  text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .servers-map-container {
+    height: 300px;
+    margin-bottom: 15px;
+  }
+  
+  .servers-map .leaflet-popup-content {
+    font-size: 12px !important;
+    margin: 10px !important;
+  }
+  
+  .select-server-btn {
+    padding: 6px 12px;
+    font-size: 11px;
+  }
+} 

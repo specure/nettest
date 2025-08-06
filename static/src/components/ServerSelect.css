@@ -22,6 +22,21 @@
   box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
 }
 
+.server-dropdown.highlighted {
+  border-color: #00d4ff;
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.7);
+  animation: highlightPulse 2s ease-in-out;
+}
+
+@keyframes highlightPulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(0, 212, 255, 0.9);
+  }
+}
+
 .server-dropdown option {
   background: rgba(15, 20, 25, 0.95);
   color: #e0e8ff;

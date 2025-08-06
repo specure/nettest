@@ -139,6 +139,25 @@
   padding: 20px 0;
 }
 
+/* Стили для карты серверов */
+.servers-map-section {
+  margin-bottom: 30px;
+}
+
+.servers-map-section .card-content {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Стили для карточки с картой */
+.card:has(.servers-map-container) {
+  padding: 20px;
+}
+
+.card:has(.servers-map-container) .card-content {
+  padding: 0;
+}
+
 /* Стили для кнопок */
 .button {
   background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);

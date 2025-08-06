@@ -1,7 +1,7 @@
 import React from 'react';
 import './ServerSelect.css';
 
-const ServerSelect = ({ servers, selectedServer, onServerSelect, loading }) => {
+const ServerSelect = ({ servers, selectedServer, onServerSelect, loading, highlightSelected = false }) => {
   const handleChange = (event) => {
     const serverId = event.target.value;
     const server = servers.find(s => s.webAddress === serverId);
@@ -21,7 +21,7 @@ const ServerSelect = ({ servers, selectedServer, onServerSelect, loading }) => {
       <select 
         value={selectedServer?.webAddress || ''} 
         onChange={handleChange}
-        className="server-dropdown"
+        className={`server-dropdown ${highlightSelected ? 'highlighted' : ''}`}
       >
         <option value="">Select a server...</option>
         {servers.map(server => (

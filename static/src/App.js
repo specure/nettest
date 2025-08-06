@@ -3,6 +3,7 @@ import './App.css';
 import SpeedTest from './components/SpeedTest';
 import ServerSelect from './components/ServerSelect';
 import TestModal from './components/TestModal';
+import ServersMap from './components/ServersMap';
 
 function App() {
   const [servers, setServers] = useState([]);
@@ -33,8 +34,21 @@ function App() {
   };
 
   const handleServerSelect = (server) => {
+    console.log('Server selected:', server);
     setSelectedServer(server);
     setError(null);
+  };
+
+  const handleServerSelectFromMap = (server) => {
+    console.log('handleServerSelectFromMap called with:', server);
+    setSelectedServer(server);
+    setError(null);
+    
+    // Automatically start measurement after a short delay
+    setTimeout(() => {
+      console.log('Starting measurement for server:', server);
+      setIsModalOpen(true);
+    }, 800);
   };
 
   return (
@@ -48,27 +62,42 @@ function App() {
         {error && <div className="error status">{error}</div>}
         
         {servers.length > 0 ? (
-          <div className="card">
-            <h2 className="card-title">Nettest</h2>
-            <div className="card-content">
-              <div className="test-controls">
-                <ServerSelect
+          <>
+            {/* Servers Map */}
+            <div className="card">
+              <h2 className="card-title">Measurement Servers</h2>
+              <div className="card-content">
+                <ServersMap 
                   servers={servers}
-                  selectedServer={selectedServer}
-                  onServerSelect={handleServerSelect}
-                  loading={loading}
+                  onServerSelect={handleServerSelectFromMap}
                 />
-                
-                {selectedServer && (
-                  <SpeedTest
-                    server={selectedServer}
-                    onError={setError}
-                    onStartTest={() => setIsModalOpen(true)}
-                  />
-                )}
               </div>
             </div>
-          </div>
+
+            {/* Test Controls */}
+            <div className="card">
+              <h2 className="card-title">Start Measurement</h2>
+              <div className="card-content">
+                <div className="test-controls">
+                  <ServerSelect
+                    servers={servers}
+                    selectedServer={selectedServer}
+                    onServerSelect={handleServerSelect}
+                    loading={loading}
+                    highlightSelected={selectedServer && selectedServer.id}
+                  />
+                  
+                  {selectedServer && (
+                    <SpeedTest
+                      server={selectedServer}
+                      onError={setError}
+                      onStartTest={() => setIsModalOpen(true)}
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
         ) : (
           <div className="card">
             <div className="card-content">
