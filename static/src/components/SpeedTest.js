@@ -1,16 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import './SpeedTest.css';
-import TestModal from './TestModal';
 
-const SpeedTest = ({ server, onError }) => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
+const SpeedTest = ({ server, onError, onStartTest }) => {
 
   const handleStartTest = () => {
-    setIsModalOpen(true);
-  };
-
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
+    onStartTest();
   };
 
   return (
@@ -19,11 +13,7 @@ const SpeedTest = ({ server, onError }) => {
         Start Speed Test
       </button>
 
-      <TestModal
-        server={server}
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
-      />
+
     </div>
   );
 };

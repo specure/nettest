@@ -1,16 +1,51 @@
 .speed-chart-container {
-  background: white;
-  border-radius: 8px;
+  background: rgba(15, 20, 25, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  border-radius: 12px;
   padding: 20px;
-  margin: 20px 0;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.speed-chart-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #00d4ff, #0099cc, #00d4ff);
+  background-size: 200% 100%;
+  animation: shimmer 3s ease-in-out infinite;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.speed-chart-container:hover::before {
+  opacity: 1;
+}
+
+.speed-chart-container:hover {
+  border-color: rgba(0, 212, 255, 0.5);
+  box-shadow: 
+    0 12px 40px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(0, 212, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
 }
 
 .speed-chart-container h3 {
-  margin: 0 0 15px 0;
-  color: #333;
-  font-size: 18px;
+  color: #00d4ff;
+  font-size: 1.2rem;
   font-weight: 600;
+  margin-bottom: 15px;
+  text-align: center;
+  text-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
 }
 
 .speed-chart-placeholder {
@@ -18,30 +53,140 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #666;
-  font-style: italic;
-  background: #f5f5f5;
-  border-radius: 4px;
+  color: #8b9bb4;
+  font-size: 1rem;
+  background: rgba(15, 20, 25, 0.4);
+  border-radius: 8px;
+  border: 1px dashed rgba(0, 212, 255, 0.3);
 }
 
-.speed-chart-container .recharts-wrapper {
-  margin: 0 auto;
+/* Стили для Recharts */
+.recharts-wrapper {
+  background: rgba(15, 20, 25, 0.4);
+  border-radius: 8px;
+  padding: 10px;
 }
 
-.speed-chart-container .recharts-cartesian-grid-horizontal line,
-.speed-chart-container .recharts-cartesian-grid-vertical line {
-  stroke: #e0e0e0;
+/* Футуристические стили для линий графиков */
+.recharts-line-curve {
+  filter: drop-shadow(0 0 2px rgba(0, 212, 255, 0.3));
 }
 
-.speed-chart-container .recharts-xAxis .recharts-cartesian-axis-tick-value,
-.speed-chart-container .recharts-yAxis .recharts-cartesian-axis-tick-value {
+
+
+/* Специальные стили для разных типов линий */
+.recharts-line[data-key="speed"] {
+  filter: drop-shadow(0 0 3px rgba(0, 212, 255, 0.4));
+}
+
+/* Анимация для линий */
+.recharts-line {
+  animation: lineGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes lineGlow {
+  0% {
+    filter: drop-shadow(0 0 2px rgba(0, 212, 255, 0.3));
+  }
+  100% {
+    filter: drop-shadow(0 0 4px rgba(0, 212, 255, 0.6));
+  }
+}
+
+/* Специальные стили для разных типов линий */
+.recharts-line[data-key="speed"] {
+  filter: drop-shadow(0 0 3px rgba(0, 212, 255, 0.4));
+}
+
+
+
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: rgba(0, 212, 255, 0.2);
+  stroke-width: 1;
+}
+
+.recharts-xAxis .recharts-cartesian-axis-tick-value,
+.recharts-yAxis .recharts-cartesian-axis-tick-value {
+  fill: #8b9bb4;
   font-size: 12px;
-  fill: #666;
+  font-weight: 500;
 }
 
-.speed-chart-container .recharts-tooltip-wrapper {
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+.recharts-xAxis .recharts-cartesian-axis-line,
+.recharts-yAxis .recharts-cartesian-axis-line {
+  stroke: rgba(0, 212, 255, 0.3);
+  stroke-width: 1;
+}
+
+.recharts-tooltip-wrapper {
+  background: rgba(15, 20, 25, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.recharts-tooltip-content {
+  background: transparent !important;
+}
+
+.recharts-default-tooltip {
+  background: rgba(15, 20, 25, 0.95) !important;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 212, 255, 0.3) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+  color: #e0e8ff !important;
+  font-size: 12px !important;
+  padding: 10px !important;
+}
+
+.recharts-tooltip-item {
+  color: #00d4ff !important;
+  font-weight: 600 !important;
+}
+
+.recharts-tooltip-label {
+  color: #8b9bb4 !important;
+  font-weight: 500 !important;
+}
+
+/* Анимация для активных графиков */
+.speed-chart-container.active {
+  border-color: rgba(0, 212, 255, 0.6);
+  box-shadow: 
+    0 12px 40px rgba(0, 0, 0, 0.4),
+    0 0 25px rgba(0, 212, 255, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.speed-chart-container.active::before {
+  opacity: 1;
+}
+
+/* Анимация shimmer */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Адаптивность */
+@media (max-width: 768px) {
+  .speed-chart-container {
+    padding: 15px;
+  }
+  
+  .speed-chart-container h3 {
+    font-size: 1rem;
+  }
+  
+  .speed-chart-placeholder {
+    height: 150px;
+    font-size: 0.9rem;
+  }
 } 

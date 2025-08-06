@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import './App.css';
 import SpeedTest from './components/SpeedTest';
 import ServerSelect from './components/ServerSelect';
+import TestModal from './components/TestModal';
 
 function App() {
   const [servers, setServers] = useState([]);
   const [selectedServer, setSelectedServer] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     loadServers();
@@ -37,32 +39,50 @@ function App() {
 
   return (
     <div className="App">
-      <div className="container">
-        <header className="header">
-          <h1>Speed Test</h1>
-          <p>Measure your internet connection speed</p>
-        </header>
-
-        {error && (
-          <div className="error">
-            {error}
+      <div className="App-header">
+        <h1 className="App-title text-glow">Speed Test</h1>
+        <p className="App-subtitle">Measure your internet connection speed</p>
+      </div>
+      
+      <div className="App-content">
+        {error && <div className="error status">{error}</div>}
+        
+        {servers.length > 0 ? (
+          <div className="card">
+            <h2 className="card-title">Speed Test</h2>
+            <div className="card-content">
+              <div className="test-controls">
+                <ServerSelect
+                  servers={servers}
+                  selectedServer={selectedServer}
+                  onServerSelect={handleServerSelect}
+                  loading={loading}
+                />
+                
+                {selectedServer && (
+                  <SpeedTest
+                    server={selectedServer}
+                    onError={setError}
+                    onStartTest={() => setIsModalOpen(true)}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="card">
+            <div className="card-content">
+              <div className="status">Loading servers...</div>
+            </div>
           </div>
         )}
-
-        <ServerSelect
-          servers={servers}
-          selectedServer={selectedServer}
-          onServerSelect={handleServerSelect}
-          loading={loading}
-        />
-
-        {selectedServer && (
-          <SpeedTest
-            server={selectedServer}
-            onError={setError}
-          />
-        )}
       </div>
+
+      <TestModal
+        server={selectedServer}
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+      />
     </div>
   );
 }

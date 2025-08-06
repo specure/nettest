@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import './TestModal.css';
-import PingDisplay from './PingDisplay';
 import SpeedChart from './SpeedChart';
 import RMBTClient from '../utils/RMBTClient';
 
@@ -233,7 +232,6 @@ const TestModal = ({ server, isOpen, onClose }) => {
           {/* Test Info Section */}
           {(testInfo.serverName || testInfo.remoteIp || testInfo.providerName) && (
             <div className="test-info-section">
-              <h3>Test Information</h3>
               <div className="test-info-grid">
                 {testInfo.serverName && (
                   <div className="test-info-item">
@@ -271,24 +269,25 @@ const TestModal = ({ server, isOpen, onClose }) => {
           {/* Charts Section */}
           <div className="charts-container">
             <SpeedChart
+              key="download-chart"
               data={downloadData}
               title="Download Speed"
-              isActive={testState === 'testing' || testState === 'connecting'}
-              color="#ff6b6b"
+              isActive={testState === 'testing' && currentPhase === 'DOWN'}
+              color="#00d4ff"
             />
 
             <SpeedChart
+              key="upload-chart"
               data={uploadData}
               title="Upload Speed"
-              isActive={testState === 'testing' || testState === 'connecting'}
-              color="#4ecdc4"
+              isActive={testState === 'testing' && currentPhase === 'UP'}
+              color="#0099cc"
             />
           </div>
 
           {/* Results Section */}
           {testState === 'completed' && (
             <div className="results">
-              <h3>Test Results</h3>
               <div className="result-item">
                 <span className="result-label">Download</span>
                 <span className="result-value">
