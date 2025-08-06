@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/measurement-server/static/css/main.e7085f0c.css",
+    "main.js": "/measurement-server/static/js/main.c1c562ec.js",
+    "static/js/259.d406f2a6.chunk.js": "/measurement-server/static/js/259.d406f2a6.chunk.js",
+    "index.html": "/measurement-server/index.html",
+    "main.e7085f0c.css.map": "/measurement-server/static/css/main.e7085f0c.css.map",
+    "main.c1c562ec.js.map": "/measurement-server/static/js/main.c1c562ec.js.map",
+    "259.d406f2a6.chunk.js.map": "/measurement-server/static/js/259.d406f2a6.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.e7085f0c.css",
+    "static/js/main.c1c562ec.js"
+  ]
+}
