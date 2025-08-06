@@ -32,10 +32,10 @@ class RMBTClient {
       // Инициализируем TestEnvironment с нашим сервисом как в portal
       this.rmbtws.TestEnvironment.init(this.visualizationService, null);
       
-      // Создаем конфигурацию теста как в portal, но используем локальный прокси
+      // Создаем конфигурацию теста как в portal
       const config = new this.rmbtws.RMBTTestConfig(
         'en',
-        'http://localhost:3001/api/proxy',
+        'https://api.nettest.org',
         ''
       );
       
