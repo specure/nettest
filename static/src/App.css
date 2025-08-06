@@ -39,7 +39,35 @@
   font-size: 1.2rem;
   color: #8b9bb4;
   font-weight: 400;
-  margin-bottom: 30px;
+  margin-bottom: 20px;
+}
+
+.documentation-button {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 153, 204, 0.2) 100%);
+  border: 2px solid rgba(0, 212, 255, 0.4);
+  border-radius: 12px;
+  color: #00d4ff;
+  font-size: 16px;
+  font-weight: 600;
+  padding: 12px 24px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 15px rgba(0, 212, 255, 0.2);
+  text-shadow: 0 0 5px rgba(0, 212, 255, 0.3);
+}
+
+.documentation-button:hover {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.3) 0%, rgba(0, 153, 204, 0.3) 100%);
+  border-color: rgba(0, 212, 255, 0.6);
+  box-shadow: 0 6px 20px rgba(0, 212, 255, 0.3);
+  transform: translateY(-2px);
+  text-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+}
+
+.documentation-button:active {
+  transform: translateY(0);
+  box-shadow: 0 4px 15px rgba(0, 212, 255, 0.2);
 }
 
 .App-content {

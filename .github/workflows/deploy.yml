@@ -1,0 +1,55 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [ main, develop, feature/*, static-assets ]
+  pull_request:
+    branches: [ main, develop, static-assets ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: static/package-lock.json
+        
+    - name: Install dependencies
+      run: |
+        cd static
+        npm ci
+        echo "Dependencies installed successfully"
+        
+    - name: Build
+      run: |
+        cd static
+        npm run build
+        echo "Build completed successfully"
+        ls -la build/
+        
+    - name: Show branch info
+      run: |
+        echo "Current branch: ${{ github.ref }}"
+        echo "Branch name: ${{ github.ref_name }}"
+        echo "Event name: ${{ github.event_name }}"
+        
+    - name: Check build directory
+      run: |
+        echo "Checking build directory..."
+        ls -la static/build/
+        echo "Build directory exists and contains files"
+        
+    - name: Deploy to GitHub Pages
+      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/static-assets' || startsWith(github.ref, 'refs/heads/feature/')
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./static/build
+        cname: specure.github.io 

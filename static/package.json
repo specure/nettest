@@ -3,13 +3,16 @@
   "version": "1.0.0",
   "description": "Nettest measurement client",
   "main": "index.js",
+  "homepage": "https://specure.github.io/nettest",
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
     "dev": "concurrently \"npm run start\" \"npm run server\"",
-    "server": "node server.js"
+    "server": "node server.js",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d build"
   },
   "dependencies": {
     "axios": "^1.6.0",
@@ -28,7 +31,8 @@
     "@types/express": "^4.17.17",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
-    "@types/ws": "^8.5.0"
+    "@types/ws": "^8.5.0",
+    "gh-pages": "^6.1.0"
   },
   "browserslist": {
     "production": [
