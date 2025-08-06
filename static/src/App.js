@@ -23,7 +23,12 @@ function App() {
   const loadServers = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:3001/api/servers');
+      const response = await fetch('https://api.nettest.org/measurementServer', {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Nettest-Client': 'nt'
+        }
+      });
       if (!response.ok) {
         throw new Error('Failed to fetch servers');
       }
