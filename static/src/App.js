@@ -27,6 +27,22 @@ function App() {
       }
       const data = await response.json();
       setServers(data);
+      
+      // Auto-select the nearest server (lowest distance)
+      if (data && data.length > 0) {
+        const nearestServer = data.reduce((nearest, current) => {
+          // Skip servers without distance
+          if (!current.distance || current.distance === 0) return nearest;
+          if (!nearest.distance || nearest.distance === 0) return current;
+          
+          return current.distance < nearest.distance ? current : nearest;
+        });
+        
+        if (nearestServer && nearestServer.distance) {
+          console.log('Auto-selecting nearest server:', nearestServer.name, 'distance:', nearestServer.distance);
+          setSelectedServer(nearestServer);
+        }
+      }
     } catch (err) {
       console.error('Error loading servers:', err);
       setError('Failed to load servers. Please try again later.');
