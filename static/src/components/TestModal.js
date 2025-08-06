@@ -145,7 +145,7 @@ const TestModal = ({ server, isOpen, onClose }) => {
       setTestState('testing');
 
       setProgress(30);
-      setStatus('Running speed test...');
+      setStatus('Running Nettest...');
 
       const testResults = await clientRef.current.runFullTest();
 
@@ -222,7 +222,7 @@ const TestModal = ({ server, isOpen, onClose }) => {
     <div className="test-modal-overlay">
       <div className="test-modal">
         <div className="test-modal-header">
-          <h2>Speed Test</h2>
+          <h2>Nettest</h2>
           <button className="close-button" onClick={handleClose}>
             ×
           </button>

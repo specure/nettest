@@ -10,7 +10,7 @@ const SpeedTest = ({ server, onError, onStartTest }) => {
   return (
     <div className="speed-test">
       <button onClick={handleStartTest} className="test-button">
-        Start Speed Test
+        Start Nettest
       </button>
 
 

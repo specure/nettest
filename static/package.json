@@ -1,7 +1,7 @@
 {
   "name": "measurement-client",
   "version": "1.0.0",
-  "description": "Speed test measurement client",
+  "description": "Nettest measurement client",
   "main": "index.js",
   "scripts": {
     "start": "react-scripts start",

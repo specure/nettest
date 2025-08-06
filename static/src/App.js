@@ -40,8 +40,8 @@ function App() {
   return (
     <div className="App">
       <div className="App-header">
-        <h1 className="App-title text-glow">Speed Test</h1>
-        <p className="App-subtitle">Measure your internet connection speed</p>
+        <h1 className="App-title text-glow">Nettest</h1>
+                  <p className="App-subtitle">Measure your internet connection performance</p>
       </div>
       
       <div className="App-content">
@@ -49,7 +49,7 @@ function App() {
         
         {servers.length > 0 ? (
           <div className="card">
-            <h2 className="card-title">Speed Test</h2>
+            <h2 className="card-title">Nettest</h2>
             <div className="card-content">
               <div className="test-controls">
                 <ServerSelect

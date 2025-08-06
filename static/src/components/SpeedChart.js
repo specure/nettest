@@ -5,10 +5,6 @@ import './SpeedChart.css';
 const SpeedChart = React.memo(({ data, title, isActive, color = '#82ca9d' }) => {
   const [chartData, setChartData] = useState([]);
   const [updateKey, setUpdateKey] = useState(0);
-}, (prevProps, nextProps) => {
-  // Сравниваем только данные, игнорируем другие пропсы
-  return JSON.stringify(prevProps.data) === JSON.stringify(nextProps.data);
-});
   
   // Обновляем данные при изменении props
   useEffect(() => {
@@ -88,6 +84,9 @@ const SpeedChart = React.memo(({ data, title, isActive, color = '#82ca9d' }) => 
       </ResponsiveContainer>
     </div>
   );
-};
+}, (prevProps, nextProps) => {
+  // Сравниваем только данные, игнорируем другие пропсы
+  return JSON.stringify(prevProps.data) === JSON.stringify(nextProps.data);
+});
 
 export default SpeedChart; 

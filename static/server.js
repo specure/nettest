@@ -10,8 +10,8 @@ app.use(cors());
 app.use(express.json());
 
 // Configuration
-const CONTROL_SERVER_URL = 'https://api-beta.nettest.org';
-const API_DEV_URL = 'https://api-beta.nettest.org';
+const CONTROL_SERVER_URL = 'https://api.nettest.org';
+const API_DEV_URL = 'https://api.nettest.org';
 const X_NETTEST_CLIENT = 'nt';
 
 // Routes
