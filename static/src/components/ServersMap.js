@@ -7,17 +7,35 @@ const ServersMap = ({ servers, onServerSelect }) => {
   const markersRef = useRef([]);
 
   useEffect(() => {
+    console.log('ServersMap: Starting to load Leaflet');
+    
+    // Check if Leaflet is already loaded
+    if (window.L) {
+      console.log('ServersMap: Leaflet already loaded');
+      initializeMap();
+      return;
+    }
+
     // Load Leaflet CSS dynamically
     const link = document.createElement('link');
     link.rel = 'stylesheet';
     link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    link.onload = () => console.log('ServersMap: Leaflet CSS loaded');
+    link.onerror = () => console.error('ServersMap: Failed to load Leaflet CSS');
     document.head.appendChild(link);
 
     // Load Leaflet JS dynamically
     const script = document.createElement('script');
     script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
     script.onload = () => {
-      initializeMap();
+      console.log('ServersMap: Leaflet JS loaded, initializing map');
+      // Add a small delay to ensure DOM is ready
+      setTimeout(() => {
+        initializeMap();
+      }, 100);
+    };
+    script.onerror = () => {
+      console.error('ServersMap: Failed to load Leaflet JS');
     };
     document.head.appendChild(script);
 
@@ -29,10 +47,31 @@ const ServersMap = ({ servers, onServerSelect }) => {
     };
   }, []);
 
+  // Force map initialization when component mounts
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (window.L && !mapInstanceRef.current) {
+        console.log('ServersMap: Force initializing map');
+        initializeMap();
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, []);
+
   const initializeMap = () => {
     if (!window.L || mapInstanceRef.current) return;
 
+    // Check if DOM element is ready
+    if (!mapRef.current) {
+      console.log('ServersMap: Map DOM element not ready, retrying...');
+      setTimeout(initializeMap, 100);
+      return;
+    }
+
     try {
+      console.log('ServersMap: Initializing map');
+      
       // Initialize map
       const map = window.L.map(mapRef.current).setView([0, 0], 2);
       mapInstanceRef.current = map;
@@ -45,12 +84,15 @@ const ServersMap = ({ servers, onServerSelect }) => {
       // Wait for map to be ready
       map.whenReady(() => {
         console.log('Map is ready, updating markers');
+        setIsLoading(false);
         updateMapMarkers();
       });
 
       console.log('Map initialized successfully');
     } catch (error) {
       console.error('Error initializing map:', error);
+      setHasError(true);
+      setIsLoading(false);
     }
   };
 
@@ -195,12 +237,26 @@ const ServersMap = ({ servers, onServerSelect }) => {
     };
   }, [servers, onServerSelect]);
 
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [hasError, setHasError] = React.useState(false);
+
+  useEffect(() => {
+    if (window.L && mapInstanceRef.current) {
+      setIsLoading(false);
+    }
+  }, [window.L, mapInstanceRef.current]);
+
   return (
     <div className="servers-map-container">
       <div ref={mapRef} className="servers-map" />
-      {!window.L && (
+      {isLoading && (
         <div className="map-loading">
           <div className="loading-text">Loading map...</div>
+        </div>
+      )}
+      {hasError && (
+        <div className="map-error">
+          <div className="error-text">Failed to load map</div>
         </div>
       )}
     </div>
