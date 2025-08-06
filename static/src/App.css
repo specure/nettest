@@ -42,6 +42,45 @@
   margin-bottom: 20px;
 }
 
+.burger-menu {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 100;
+}
+
+.burger-button {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 153, 204, 0.2) 100%);
+  border: 2px solid rgba(0, 212, 255, 0.4);
+  border-radius: 12px;
+  color: #00d4ff;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 15px rgba(0, 212, 255, 0.2);
+  text-shadow: 0 0 5px rgba(0, 212, 255, 0.3);
+  white-space: nowrap;
+}
+
+.burger-button:hover {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.3) 0%, rgba(0, 153, 204, 0.3) 100%);
+  border-color: rgba(0, 212, 255, 0.6);
+  box-shadow: 0 6px 20px rgba(0, 212, 255, 0.3);
+  transform: translateX(5px);
+  text-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+}
+
+.burger-button:active {
+  transform: translateX(0);
+  box-shadow: 0 4px 15px rgba(0, 212, 255, 0.2);
+}
+
 .documentation-button {
   background: linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 153, 204, 0.2) 100%);
   border: 2px solid rgba(0, 212, 255, 0.4);
@@ -163,8 +202,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
-  padding: 20px 0;
+  justify-content: center;
+  gap: 10px;
+  padding: 5px 0 15px 0;
 }
 
 /* Стили для карты серверов */

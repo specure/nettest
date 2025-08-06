@@ -1,4 +1,5 @@
 import TestVisualizationService from './TestVisualizationService';
+import { getClientUUID } from './uuid';
 
 class RMBTClient {
   constructor(serverUrl, serverId) {
@@ -39,7 +40,7 @@ class RMBTClient {
       );
       
       // Устанавливаем UUID и другие параметры как в portal
-      config.uuid = this.generateUUID();
+      config.uuid = getClientUUID();
       config.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       config.additionalSubmissionParameters = { network_type: 0 };
       config.additionalRegistrationParameters = {
@@ -193,13 +194,7 @@ class RMBTClient {
     this.onTestInfoUpdate = callback;
   }
 
-  generateUUID() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      const r = Math.random() * 16 | 0;
-      const v = c === 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
-  }
+
 
   async connect() {
     try {
