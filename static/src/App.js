@@ -4,8 +4,7 @@ import SpeedTest from './components/SpeedTest';
 import ServerSelect from './components/ServerSelect';
 import TestModal from './components/TestModal';
 import ServersMap from './components/ServersMap';
-import Documentation from './components/Documentation';
-import History from './components/History';
+import QuickActions from './components/QuickActions';
 
 function App() {
   const [servers, setServers] = useState([]);
@@ -13,8 +12,6 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isDocumentationOpen, setIsDocumentationOpen] = useState(false);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   useEffect(() => {
     loadServers();
@@ -83,22 +80,6 @@ function App() {
         <p className="App-subtitle">Measure your internet connection performance</p>
       </div>
       
-      {/* Burger Menu */}
-      <div className="burger-menu">
-        <button 
-          className="burger-button"
-          onClick={() => setIsHistoryOpen(true)}
-        >
-          Measurement History
-        </button>
-        <button 
-          className="burger-button"
-          onClick={() => setIsDocumentationOpen(true)}
-        >
-          Documentation
-        </button>
-      </div>
-      
       <div className="App-content">
         {error && <div className="error status">{error}</div>}
         
@@ -153,15 +134,7 @@ function App() {
         onClose={() => setIsModalOpen(false)}
       />
       
-      <Documentation
-        isOpen={isDocumentationOpen}
-        onClose={() => setIsDocumentationOpen(false)}
-      />
-      
-      <History
-        isOpen={isHistoryOpen}
-        onClose={() => setIsHistoryOpen(false)}
-      />
+      <QuickActions />
     </div>
   );
 }

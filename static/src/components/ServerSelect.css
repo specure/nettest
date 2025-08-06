@@ -38,9 +38,26 @@
 }
 
 .server-dropdown option {
-  background: rgba(15, 20, 25, 0.95);
+  background: linear-gradient(135deg, rgba(15, 20, 25, 0.95) 0%, rgba(25, 30, 35, 0.95) 100%);
   color: #e0e8ff;
-  padding: 8px;
+  padding: 12px 16px;
+  font-weight: 500;
+  border: none;
+  outline: none;
+  border-bottom: 1px solid rgba(0, 212, 255, 0.1);
+}
+
+.server-dropdown option:hover {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 153, 204, 0.2) 100%);
+  color: #00d4ff;
+  text-shadow: 0 0 5px rgba(0, 212, 255, 0.5);
+}
+
+.server-dropdown option:checked {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.3) 0%, rgba(0, 153, 204, 0.3) 100%);
+  color: #00d4ff;
+  font-weight: 600;
+  text-shadow: 0 0 8px rgba(0, 212, 255, 0.7);
 }
 
 .loading {

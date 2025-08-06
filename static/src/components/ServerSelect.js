@@ -23,7 +23,6 @@ const ServerSelect = ({ servers, selectedServer, onServerSelect, loading, highli
         onChange={handleChange}
         className={`server-dropdown ${highlightSelected ? 'highlighted' : ''}`}
       >
-        <option value="">Select a server...</option>
         {servers.map(server => (
           <option key={server.webAddress} value={server.webAddress}>
             {server.name} ({server.city})
