@@ -1,42 +1,47 @@
+# 🌐 Nettest - Network Speed Measurement
+
 ![Network Speed Measurement](Gemini_Generated_Image_skkcnfskkcnfskkc.png)
 
 ## Overview
 
-Nettest is a high-performance server and client for network speed measurement, written in Rust. The tool supports modern communication protocols and provides real-time accurate measurements.
+**Nettest** is a high-performance server and client for network speed measurement, written in Rust. The tool supports modern communication protocols and provides real-time accurate measurements with beautiful visualization.
 
-## Key Features
+## ✨ Key Features
+
+### 🚀 **High Performance**
+- **Multithreading** - Handle multiple clients simultaneously
+- **Asynchronous architecture** - Efficient resource utilization
+- **Connection queue** - Smart load distribution between workers
 
 ### 🌐 **Multi-Protocol Support**
 - **TCP connections** - Direct connection for maximum performance
 - **WebSocket** - Browser client support
 - **TLS/SSL** - Secure connections
 
-### ⚡ **High Performance**
-- **Multithreading** - Handle multiple clients simultaneously
-- **Asynchronous architecture** - Efficient resource utilization
-- **Connection queue** - Smart load distribution between workers
-
-### 📊 **Data Visualization**
-- **Time speed change graphs**
-- **Detailed measurement statistics**
+### 📊 **Real-Time Visualization**
+- **Interactive speed graphs** - Real-time download and upload visualization
+- **Beautiful UI** - Modern, responsive interface
+- **Live measurements** - See your network performance in real-time
 
 ### 🔧 **Flexible Configuration**
 - Configurable number of workers
 - Configurable ports and addresses
 - SSL/TLS certificate support
 
-<div style="text-align: center; margin: 30px 0; padding: 20px; background: url('https://specure.github.io/nettest/map-background.png') center/cover; border-radius: 10px; color: white; position: relative; overflow: hidden;">
-  <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5);"></div>
+## 🗺️ Interactive Measurement Interface
+
+<div style="text-align: center; margin: 30px 0; padding: 30px; background: linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, rgba(0, 153, 204, 0.1) 100%); border: 2px solid rgba(0, 212, 255, 0.3); border-radius: 16px; position: relative; overflow: hidden;">
+  <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: url('https://specure.github.io/nettest/map-background.png') center/cover; opacity: 0.1;"></div>
   <div style="position: relative; z-index: 1;">
-    <h2 style="margin: 0 0 15px 0; font-size: 24px;">🗺️ Interactive Servers Map</h2>
-    <p style="margin: 0 0 20px 0; font-size: 16px; opacity: 0.9;">View all active measurement servers with real-time data</p>
-    <a href="https://specure.github.io/nettest/servers_map.html" target="_blank" style="display: inline-block; padding: 15px 30px; background: rgba(255,255,255,0.2); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; border: 2px solid rgba(255,255,255,0.3); transition: all 0.3s ease;">
-      🌐 Open Interactive Map
+    <h2 style="margin: 0 0 15px 0; font-size: 28px; color: #00d4ff; text-shadow: 0 0 10px rgba(0, 212, 255, 0.3);">🌐 Interactive Measurement Interface</h2>
+    <p style="margin: 0 0 25px 0; font-size: 18px; color: #e0e8ff; opacity: 0.9;">Experience real-time network measurements with beautiful visualization</p>
+    <a href="https://specure.github.io/nettest" target="_blank" style="display: inline-block; padding: 15px 30px; background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%); color: white; text-decoration: none; border-radius: 12px; font-weight: 600; font-size: 16px; border: none; box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3); transition: all 0.3s ease; text-shadow: 0 0 5px rgba(0, 212, 255, 0.3);">
+      🚀 Launch Measurement Interface
     </a>
   </div>
 </div>
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Download
 
@@ -73,7 +78,6 @@ cargo build
 
 # Release build with optimizations
 cargo build --release
-
 ```
 
 #### GitHub Actions
@@ -88,7 +92,6 @@ The project includes automated builds via GitHub Actions:
 ```bash
 # Basic run
 nettest -s
-
 ```
 
 ### Run Client
@@ -104,7 +107,7 @@ nettest -c <SERVER_ADDRESS> -ws
 nettest -c <SERVER_ADDRESS> -tls
 ```
 
-## Configuration
+## ⚙️ Configuration
 
 ### Server Parameters
 
@@ -130,7 +133,7 @@ nettest -c <SERVER_ADDRESS> -tls
 | `-g` | Generate graphs | `false` |
 | `-log` | Log level (info, debug, trace) | - |
 
-## Protocols
+## 🔌 Protocols
 
 ### TCP Mode
 Direct TCP connection for maximum performance:
@@ -150,7 +153,7 @@ Secure connections:
 Client <──TLS──> Server
 ```
 
-## Performance
+## ⚡ Performance
 
 Nettest is optimized for high performance:
 
@@ -159,35 +162,36 @@ Nettest is optimized for high performance:
 - **Smart queue**: Automatic load distribution between workers
 - **Minimal latency**: Optimized architecture for accurate measurements
 
-## Visualization
+## 📊 Visualization
 
-### Speed Graphs
-- Speed change visualization
+### Real-Time Speed Graphs
+- Live speed change visualization
 - Detailed upload and download statistics
+- Interactive charts with smooth animations
 
 ### Metrics
-- Download speed
-- Upload speed
-- Latency
+- **Download speed** - Real-time download performance
+- **Upload speed** - Real-time upload performance
+- **Latency** - Network response time
 
-## Requirements
+## 📋 Requirements
 
 ### System Requirements
 - **Rust**: 1.70+ (latest stable)
-- **Linux/macOS/Windows(?)**: Support for all major platforms
+- **Linux/macOS/Windows**: Support for all major platforms
 
-
-## License
+## 📄 License
 
 - **Source code**: Apache License 2.0 ([LICENSE.txt](LICENSE.txt))
 
-## Contributing
+## 🤝 Contributing
 
 We welcome contributions to Nettest development! Please read our [contributing guidelines](CONTRIBUTING.md).
 
-## Documentation
+## 📚 Documentation
 
 - [RMBT Protocol Specification](https://www.netztest.at/doc/)
+
 ---
 
 **Nettest** - Your reliable tool for network speed measurement! 🚀
