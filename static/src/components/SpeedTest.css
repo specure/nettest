@@ -1,0 +1,137 @@
+.speed-test {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.charts-container {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  margin: 20px 0;
+}
+
+@media (min-width: 768px) {
+  .charts-container {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1200px) {
+  .charts-container {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.test-button {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+  margin-bottom: 20px;
+  transition: background-color 0.3s;
+}
+
+.test-button:hover:not(.disabled) {
+  background: #0056b3;
+}
+
+.test-button.disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+}
+
+.progress {
+  margin: 20px 0;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #e9ecef;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #28a745;
+  transition: width 0.3s ease;
+}
+
+.status {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.phase-info {
+  font-size: 12px;
+  color: #888;
+  background: #f8f9fa;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border-left: 3px solid #007bff;
+}
+
+.results {
+  margin-top: 20px;
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.result-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.result-item:last-child {
+  border-bottom: none;
+}
+
+.result-label {
+  font-weight: 600;
+  color: #333;
+}
+
+.result-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #007bff;
+}
+
+.reset-button {
+  background: #6c757d;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 15px;
+  transition: background-color 0.3s;
+}
+
+.reset-button:hover {
+  background: #545b62;
+}
+
+.error-message {
+  margin-top: 20px;
+  padding: 15px;
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+  color: #721c24;
+}
+
+.error-message p {
+  margin: 0 0 10px 0;
+} 

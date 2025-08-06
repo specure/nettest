@@ -1,0 +1,23 @@
+.server-select {
+  margin-bottom: 20px;
+}
+
+.server-dropdown {
+  padding: 10px 15px;
+  border: 2px solid #e9ecef;
+  border-radius: 10px;
+  font-size: 1rem;
+  background: white;
+  cursor: pointer;
+  min-width: 200px;
+}
+
+.server-dropdown:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.loading {
+  color: #666;
+  font-style: italic;
+} 

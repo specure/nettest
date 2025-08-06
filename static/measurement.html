@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speed Test - Measurement</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .header {
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1rem;
+        }
+
+        .test-button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            font-weight: 500;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .test-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        .test-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .results {
+            display: none;
+            margin-top: 30px;
+        }
+
+        .results.show {
+            display: block;
+        }
+
+        .result-item {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 15px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .result-label {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .result-value {
+            font-weight: 700;
+            color: #667eea;
+            font-size: 1.2rem;
+        }
+
+        .progress {
+            display: none;
+            margin: 20px 0;
+        }
+
+        .progress.show {
+            display: block;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .status {
+            margin-top: 10px;
+            font-weight: 500;
+            color: #667eea;
+        }
+
+        .error {
+            color: #dc3545;
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 20px 0;
+            display: none;
+        }
+
+        .error.show {
+            display: block;
+        }
+
+        .server-select {
+            margin-bottom: 20px;
+        }
+
+        .server-select select {
+            padding: 10px 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            font-size: 1rem;
+            background: white;
+            cursor: pointer;
+        }
+
+        .server-select select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Speed Test</h1>
+            <p>Measure your internet connection speed</p>
+        </div>
+
+        <div class="server-select">
+            <select id="serverSelect">
+                <option value="">Select a server...</option>
+            </select>
+        </div>
+
+        <button id="startTest" class="test-button" onclick="startMeasurement()">
+            Start Test
+        </button>
+
+        <div id="progress" class="progress">
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill"></div>
+            </div>
+            <div id="status" class="status">Initializing...</div>
+        </div>
+
+        <div id="error" class="error"></div>
+
+        <div id="results" class="results">
+            <div class="result-item">
+                <span class="result-label">Download Speed</span>
+                <span id="downloadSpeed" class="result-value">-</span>
+            </div>
+            <div class="result-item">
+                <span class="result-label">Upload Speed</span>
+                <span id="uploadSpeed" class="result-value">-</span>
+            </div>
+            <div class="result-item">
+                <span class="result-label">Ping</span>
+                <span id="ping" class="result-value">-</span>
+            </div>
+            <div class="result-item">
+                <span class="result-label">Jitter</span>
+                <span id="jitter" class="result-value">-</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const CONTROL_SERVER_URL = 'https://api.nettest.org';
+        const X_NETTEST_CLIENT = 'nt';
+        
+        let currentTest = null;
+        let servers = [];
+
+        // DOM elements
+        const startButton = document.getElementById('startTest');
+        const serverSelect = document.getElementById('serverSelect');
+        const progress = document.getElementById('progress');
+        const progressFill = document.getElementById('progressFill');
+        const status = document.getElementById('status');
+        const error = document.getElementById('error');
+        const results = document.getElementById('results');
+        const downloadSpeed = document.getElementById('downloadSpeed');
+        const uploadSpeed = document.getElementById('uploadSpeed');
+        const ping = document.getElementById('ping');
+        const jitter = document.getElementById('jitter');
+
+        // Load servers on page load
+        window.addEventListener('load', loadServers);
+
+        async function loadServers() {
+            try {
+                const response = await fetch(`${CONTROL_SERVER_URL}/measurementServer`, {
+                    method: 'GET',
+                    headers: {
+                        'x-nettest-client': X_NETTEST_CLIENT,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                servers = await response.json();
+                populateServerSelect();
+            } catch (err) {
+                console.error('Error loading servers:', err);
+                showError('Failed to load servers. Please try again later.');
+            }
+        }
+
+        function populateServerSelect() {
+            serverSelect.innerHTML = '<option value="">Select a server...</option>';
+            
+            servers.forEach(server => {
+                const option = document.createElement('option');
+                option.value = server.webAddress;
+                option.textContent = `${server.name} (${server.city})`;
+                serverSelect.appendChild(option);
+            });
+        }
+
+        function showError(message) {
+            error.textContent = message;
+            error.classList.add('show');
+            setTimeout(() => {
+                error.classList.remove('show');
+            }, 5000);
+        }
+
+        function updateProgress(percent, message) {
+            progressFill.style.width = `${percent}%`;
+            status.textContent = message;
+        }
+
+        function showProgress() {
+            progress.classList.add('show');
+            results.classList.remove('show');
+        }
+
+        function hideProgress() {
+            progress.classList.remove('show');
+        }
+
+        function showResults() {
+            results.classList.add('show');
+        }
+
+        function resetTest() {
+            startButton.disabled = false;
+            startButton.textContent = 'Start Test';
+            hideProgress();
+            downloadSpeed.textContent = '-';
+            uploadSpeed.textContent = '-';
+            ping.textContent = '-';
+            jitter.textContent = '-';
+        }
+
+        async function startMeasurement() {
+            const selectedServer = serverSelect.value;
+            
+            if (!selectedServer) {
+                showError('Please select a server first.');
+                return;
+            }
+
+            if (currentTest) {
+                return; // Test already running
+            }
+
+            // Reset UI
+            resetTest();
+            startButton.disabled = true;
+            startButton.textContent = 'Testing...';
+            showProgress();
+
+            try {
+                currentTest = new SpeedTest(selectedServer);
+                await currentTest.run();
+            } catch (err) {
+                console.error('Test error:', err);
+                showError('Test failed. Please try again.');
+                resetTest();
+            } finally {
+                currentTest = null;
+            }
+        }
+
+        class SpeedTest {
+            constructor(serverUrl) {
+                this.serverUrl = serverUrl;
+                this.websocket = null;
+                this.testResults = {
+                    download: null,
+                    upload: null,
+                    ping: null,
+                    jitter: null
+                };
+            }
+
+            async run() {
+                try {
+                    // Connect to server
+                    updateProgress(10, 'Connecting to server...');
+                    await this.connect();
+
+                    // Run ping test
+                    updateProgress(20, 'Testing ping...');
+                    await this.runPingTest();
+
+                    // Run download test
+                    updateProgress(40, 'Testing download speed...');
+                    await this.runDownloadTest();
+
+                    // Run upload test
+                    updateProgress(70, 'Testing upload speed...');
+                    await this.runUploadTest();
+
+                    // Complete
+                    updateProgress(100, 'Test completed!');
+                    this.displayResults();
+                    
+                } catch (err) {
+                    throw err;
+                } finally {
+                    this.disconnect();
+                }
+            }
+
+            async connect() {
+                return new Promise((resolve, reject) => {
+                    const wsUrl = this.serverUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+                    this.websocket = new WebSocket(wsUrl);
+
+                    this.websocket.onopen = () => {
+                        console.log('WebSocket connected');
+                        resolve();
+                    };
+
+                    this.websocket.onerror = (error) => {
+                        console.error('WebSocket error:', error);
+                        reject(new Error('Failed to connect to server'));
+                    };
+
+                    this.websocket.onclose = () => {
+                        console.log('WebSocket disconnected');
+                    };
+
+                    this.websocket.onmessage = (event) => {
+                        this.handleMessage(event.data);
+                    };
+                });
+            }
+
+            disconnect() {
+                if (this.websocket) {
+                    this.websocket.close();
+                    this.websocket = null;
+                }
+            }
+
+            handleMessage(data) {
+                try {
+                    const message = JSON.parse(data);
+                    console.log('Received message:', message);
+                    
+                    // Handle different message types
+                    switch (message.type) {
+                        case 'ping_result':
+                            this.testResults.ping = message.value;
+                            break;
+                        case 'download_result':
+                            this.testResults.download = message.value;
+                            break;
+                        case 'upload_result':
+                            this.testResults.upload = message.value;
+                            break;
+                        case 'jitter_result':
+                            this.testResults.jitter = message.value;
+                            break;
+                    }
+                } catch (err) {
+                    console.error('Error parsing message:', err);
+                }
+            }
+
+            async runPingTest() {
+                // Simulate ping test
+                await this.delay(2000);
+                this.testResults.ping = Math.random() * 50 + 10; // 10-60ms
+                this.testResults.jitter = Math.random() * 10 + 1; // 1-11ms
+            }
+
+            async runDownloadTest() {
+                // Simulate download test
+                await this.delay(3000);
+                this.testResults.download = Math.random() * 100 + 20; // 20-120 Mbps
+            }
+
+            async runUploadTest() {
+                // Simulate upload test
+                await this.delay(2000);
+                this.testResults.upload = Math.random() * 50 + 10; // 10-60 Mbps
+            }
+
+            displayResults() {
+                downloadSpeed.textContent = `${this.testResults.download?.toFixed(1) || '-'} Mbps`;
+                uploadSpeed.textContent = `${this.testResults.upload?.toFixed(1) || '-'} Mbps`;
+                ping.textContent = `${this.testResults.ping?.toFixed(1) || '-'} ms`;
+                jitter.textContent = `${this.testResults.jitter?.toFixed(1) || '-'} ms`;
+                
+                showResults();
+                resetTest();
+            }
+
+            delay(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+        }
+    </script>
+</body>
+</html> 
