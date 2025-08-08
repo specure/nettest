@@ -1,0 +1,136 @@
+name: Deploy Nettest Server
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Deploy to Debian Server
+      uses: appleboy/ssh-action@v0.1.5
+      with:
+        host: 172.105.0.231
+        username: root
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          echo "🚀 Starting Nettest Server Deployment"
+          echo "====================================="
+          
+          # Определяем URL для Debian x86_64
+          NETTEST_URL="https://github.com/specure/nettest/releases/download/latest/nettest-debian-11-x86_64.tar.gz"
+          NEW_BUILD_DIR="/tmp/nettest-new"
+          OLD_BUILD_DIR="/tmp/nettest-old"
+          CURRENT_BUILD_DIR="/opt/nettest"
+          
+          # Создаем временные директории
+          mkdir -p $NEW_BUILD_DIR
+          mkdir -p $OLD_BUILD_DIR
+          
+          echo "📦 Downloading latest build..."
+          cd $NEW_BUILD_DIR
+          wget -q $NETTEST_URL -O nettest.tar.gz
+          
+          if [ ! -f nettest.tar.gz ]; then
+            echo "❌ Failed to download nettest build"
+            exit 1
+          fi
+          
+          echo "📦 Extracting new build..."
+          tar -xzf nettest.tar.gz
+          
+          if [ ! -f nettest ]; then
+            echo "❌ Failed to extract nettest binary"
+            exit 1
+          fi
+          
+          echo "🔧 Setting permissions..."
+          chmod +x nettest
+          
+          echo "🛑 Stopping existing nettest process..."
+          pkill -f "nettest -s" || echo "No existing nettest process found"
+          sleep 2
+          
+          # Проверяем, есть ли старый билд
+          if [ -d "$CURRENT_BUILD_DIR" ]; then
+            echo "📦 Backing up old build..."
+            mv $CURRENT_BUILD_DIR $OLD_BUILD_DIR
+          fi
+          
+          echo "📦 Installing new build..."
+          mkdir -p $CURRENT_BUILD_DIR
+          cp nettest $CURRENT_BUILD_DIR/
+          cd $CURRENT_BUILD_DIR
+          
+          echo "🚀 Starting new nettest server..."
+          nohup ./nettest -s > nettest.log 2>&1 &
+          NEW_PID=$!
+          
+          echo "⏳ Waiting for server to start..."
+          sleep 5
+          
+          # Проверяем, запустился ли новый сервер
+          if ps -p $NEW_PID > /dev/null; then
+            echo "✅ New nettest server started successfully (PID: $NEW_PID)"
+            echo "📊 Server info:"
+            echo "   Process: $(ps -p $NEW_PID -o pid,ppid,cmd --no-headers)"
+            echo "   Logs: tail -f $CURRENT_BUILD_DIR/nettest.log"
+            
+            # Удаляем старый билд если новый запустился успешно
+            if [ -d "$OLD_BUILD_DIR" ]; then
+              echo "🗑️  Removing old build..."
+              rm -rf $OLD_BUILD_DIR
+            fi
+            
+            # Удаляем временные файлы
+            rm -rf $NEW_BUILD_DIR
+            
+            echo "✅ Deployment completed successfully!"
+            echo "🌐 Server is running on port 5005"
+            
+          else
+            echo "❌ New nettest server failed to start"
+            echo "📋 Checking logs..."
+            cat $CURRENT_BUILD_DIR/nettest.log || echo "No logs available"
+            
+            # Удаляем новый билд
+            echo "🗑️  Removing failed new build..."
+            rm -rf $CURRENT_BUILD_DIR
+            rm -rf $NEW_BUILD_DIR
+            
+            # Восстанавливаем старый билд
+            if [ -d "$OLD_BUILD_DIR" ]; then
+              echo "🔄 Restoring old build..."
+              mv $OLD_BUILD_DIR $CURRENT_BUILD_DIR
+              
+              echo "🚀 Starting old nettest server..."
+              cd $CURRENT_BUILD_DIR
+              nohup ./nettest -s > nettest.log 2>&1 &
+              OLD_PID=$!
+              
+              sleep 3
+              if ps -p $OLD_PID > /dev/null; then
+                echo "✅ Old nettest server restored successfully (PID: $OLD_PID)"
+              else
+                echo "❌ Failed to restore old server"
+                exit 1
+              fi
+            else
+              echo "❌ No old build to restore"
+              exit 1
+            fi
+          fi
+          
+          echo "📊 Final status:"
+          echo "   Active nettest processes:"
+          ps aux | grep "nettest -s" | grep -v grep || echo "   No nettest processes found"
+          echo "   Port 5005 status:"
+          netstat -tuln | grep :5005 || echo "   Port 5005 not listening" 
