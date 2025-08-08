@@ -70,17 +70,25 @@ jobs:
           # Простая остановка процесса
           NETTEST_PID=$(pgrep -f "nettest -s" 2>/dev/null || echo "")
           
+          echo "DEBUG: NETTEST_PID = '$NETTEST_PID'"
+          
           if [ ! -z "$NETTEST_PID" ]; then
             echo "Found existing nettest process (PID: $NETTEST_PID), stopping..."
+            echo "DEBUG: About to run pkill -TERM"
             pkill -TERM -f "nettest -s" >/dev/null 2>&1 || echo "pkill TERM completed"
+            echo "DEBUG: pkill -TERM completed"
             sleep 3
             
+            echo "DEBUG: Checking if process still exists"
             if pgrep -f "nettest -s" >/dev/null 2>&1; then
               echo "Process still running, force killing..."
+              echo "DEBUG: About to run pkill -KILL"
               pkill -KILL -f "nettest -s" >/dev/null 2>&1 || echo "pkill KILL completed"
+              echo "DEBUG: pkill -KILL completed"
               sleep 2
             fi
             
+            echo "DEBUG: Final check if process exists"
             if pgrep -f "nettest -s" >/dev/null 2>&1; then
               echo "Failed to stop process"
               exit 1
