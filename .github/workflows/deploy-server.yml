@@ -65,7 +65,7 @@ jobs:
           
           echo "Stopping existing process..."
           # Находим все процессы nettest
-          NETTEST_PIDS=$(pgrep -f "nettest -s")
+          NETTEST_PIDS=$(pgrep -f "nettest -s" 2>/dev/null || echo "")
           
           if [ ! -z "$NETTEST_PIDS" ]; then
             echo "Found nettest processes: $NETTEST_PIDS"
@@ -73,34 +73,34 @@ jobs:
             # Сначала пытаемся мягко остановить все процессы
             for pid in $NETTEST_PIDS; do
               echo "Sending TERM to PID: $pid"
-              kill -TERM $pid 2>/dev/null || true
+              kill -TERM $pid >/dev/null 2>&1 || true
             done
             
             sleep 2
             
             # Проверяем, какие процессы еще живы
-            REMAINING_PIDS=$(pgrep -f "nettest -s")
+            REMAINING_PIDS=$(pgrep -f "nettest -s" 2>/dev/null || echo "")
             if [ ! -z "$REMAINING_PIDS" ]; then
               echo "Some processes still running: $REMAINING_PIDS"
               echo "Force killing remaining processes..."
               
               for pid in $REMAINING_PIDS; do
                 echo "Sending KILL to PID: $pid"
-                kill -KILL $pid 2>/dev/null || true
+                kill -KILL $pid >/dev/null 2>&1 || true
               done
               
               sleep 2
             fi
             
             # Финальная проверка
-            FINAL_PIDS=$(pgrep -f "nettest -s")
+            FINAL_PIDS=$(pgrep -f "nettest -s" 2>/dev/null || echo "")
             if [ ! -z "$FINAL_PIDS" ]; then
               echo "Failed to stop processes: $FINAL_PIDS"
               echo "Attempting to kill with pkill..."
-              pkill -9 -f "nettest -s" || true
+              pkill -9 -f "nettest -s" >/dev/null 2>&1 || true
               sleep 1
               
-              if pgrep -f "nettest -s" > /dev/null; then
+              if pgrep -f "nettest -s" >/dev/null 2>&1; then
                 echo "Still cannot stop processes"
                 exit 1
               fi
@@ -111,24 +111,32 @@ jobs:
             echo "No existing nettest processes found"
           fi
           
+          echo "Process stopping completed, continuing with deployment..."
+          
           # Проверяем, что порт 5005 свободен
           echo "Checking if port 5005 is free..."
-          if netstat -tuln 2>/dev/null | grep :5005 > /dev/null; then
+          if netstat -tuln 2>/dev/null | grep :5005 >/dev/null 2>&1; then
             echo "Warning: Port 5005 is still in use"
             sleep 2
           else
             echo "Port 5005 is free"
           fi
           
+          echo "Port check completed, proceeding with backup..."
+          
           if [ -d "$CURRENT_BUILD_DIR" ]; then
             echo "Backing up old build..."
             mv $CURRENT_BUILD_DIR $OLD_BUILD_DIR
+            echo "Backup completed"
+          else
+            echo "No existing build to backup"
           fi
           
           echo "Installing new build..."
           mkdir -p $CURRENT_BUILD_DIR
           cp nettest $CURRENT_BUILD_DIR/
           cd $CURRENT_BUILD_DIR
+          echo "Build installation completed"
           
           echo "Starting server..."
           nohup ./nettest -s > nettest.log 2>&1 &
@@ -154,11 +162,11 @@ jobs:
             # Проверяем порт более надежно
             PORT_CHECK_COUNT=0
             for i in {1..10}; do
-              if netstat -tuln 2>/dev/null | grep :5005 > /dev/null; then
+              if netstat -tuln 2>/dev/null | grep :5005 >/dev/null 2>&1; then
                 echo "Port 5005 listening (attempt $i)"
                 PORT_CHECK_COUNT=1
                 break
-              elif ss -tuln 2>/dev/null | grep :5005 > /dev/null; then
+              elif ss -tuln 2>/dev/null | grep :5005 >/dev/null 2>&1; then
                 echo "Port 5005 listening (ss check, attempt $i)"
                 PORT_CHECK_COUNT=1
                 break
@@ -211,5 +219,5 @@ jobs:
           fi
           
           echo "Final status:"
-          ps aux | grep "nettest -s" | grep -v grep || echo "No nettest processes"
-          netstat -tuln | grep :5005 || echo "Port 5005 not listening" 
+          ps aux | grep "nettest -s" | grep -v grep 2>/dev/null || echo "No nettest processes"
+          netstat -tuln | grep :5005 2>/dev/null || echo "Port 5005 not listening" 
