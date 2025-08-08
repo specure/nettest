@@ -1,7 +1,9 @@
 name: Test SSH Connection
 
 on:
-  workflow_dispatch: # Только ручной запуск
+  push:
+    branches: [ main, test ]
+  workflow_dispatch: # Оставляем возможность ручного запуска
 
 jobs:
   test:
