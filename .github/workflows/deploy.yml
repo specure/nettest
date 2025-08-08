@@ -3,8 +3,6 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [ main, develop, feature/*, static-assets ]
-  pull_request:
-    branches: [ main, develop, static-assets ]
 
 jobs:
   deploy:
