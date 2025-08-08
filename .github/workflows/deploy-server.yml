@@ -68,8 +68,10 @@ jobs:
           
           echo "Stopping existing process..."
           # Простая остановка процесса
-          if pgrep -f "nettest -s" >/dev/null 2>&1; then
-            echo "Found existing nettest process, stopping..."
+          NETTEST_PID=$(pgrep -f "nettest -s" 2>/dev/null || echo "")
+          
+          if [ ! -z "$NETTEST_PID" ]; then
+            echo "Found existing nettest process (PID: $NETTEST_PID), stopping..."
             pkill -TERM -f "nettest -s" >/dev/null 2>&1 || true
             sleep 3
             
