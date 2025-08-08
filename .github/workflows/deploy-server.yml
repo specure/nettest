@@ -64,21 +64,32 @@ jobs:
           chmod +x nettest
           
           echo "Stopping existing process..."
-          # Более мягкая остановка процесса
-          pkill -TERM -f "nettest -s" || echo "No existing process"
-          sleep 5
+          # Находим PID процесса nettest
+          NETTEST_PID=$(pgrep -f "nettest -s" | head -1)
           
-          # Проверяем, остановился ли процесс
-          if pgrep -f "nettest -s" > /dev/null; then
-            echo "Process still running, force killing..."
-            pkill -KILL -f "nettest -s"
+          if [ ! -z "$NETTEST_PID" ]; then
+            echo "Found nettest process (PID: $NETTEST_PID)"
+            
+            # Пытаемся мягко остановить
+            kill -TERM $NETTEST_PID
             sleep 3
-          fi
-          
-          # Финальная проверка
-          if pgrep -f "nettest -s" > /dev/null; then
-            echo "Failed to stop existing process"
-            exit 1
+            
+            # Проверяем, остановился ли процесс
+            if kill -0 $NETTEST_PID 2>/dev/null; then
+              echo "Process still running, force killing..."
+              kill -KILL $NETTEST_PID
+              sleep 2
+            fi
+            
+            # Финальная проверка
+            if kill -0 $NETTEST_PID 2>/dev/null; then
+              echo "Failed to stop process (PID: $NETTEST_PID)"
+              exit 1
+            else
+              echo "Process stopped successfully"
+            fi
+          else
+            echo "No existing nettest process found"
           fi
           
           if [ -d "$CURRENT_BUILD_DIR" ]; then
@@ -112,10 +123,25 @@ jobs:
             # Ждем еще немного для полного запуска
             sleep 5
             
-            if netstat -tuln | grep :5005 > /dev/null; then
-              echo "Port 5005 listening"
-            else
-              echo "Port 5005 not listening"
+            # Проверяем порт более надежно
+            PORT_CHECK_COUNT=0
+            for i in {1..10}; do
+              if netstat -tuln 2>/dev/null | grep :5005 > /dev/null; then
+                echo "Port 5005 listening (attempt $i)"
+                PORT_CHECK_COUNT=1
+                break
+              elif ss -tuln 2>/dev/null | grep :5005 > /dev/null; then
+                echo "Port 5005 listening (ss check, attempt $i)"
+                PORT_CHECK_COUNT=1
+                break
+              else
+                echo "Port 5005 not listening yet (attempt $i)"
+                sleep 1
+              fi
+            done
+            
+            if [ $PORT_CHECK_COUNT -eq 0 ]; then
+              echo "Warning: Port 5005 not listening after 10 attempts"
             fi
             
             if [ -d "$OLD_BUILD_DIR" ]; then
