@@ -21,7 +21,7 @@ jobs:
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         debug: false
         script: |
-          set -e  # Остановка при любой ошибке
+          # set -e  # Временно убираем для диагностики
           echo "Deploying Nettest Server..."
           
           NETTEST_URL="https://github.com/specure/nettest/releases/download/latest-debian-11/nettest-debian-11-x86_64.tar.gz"
@@ -72,12 +72,12 @@ jobs:
           
           if [ ! -z "$NETTEST_PID" ]; then
             echo "Found existing nettest process (PID: $NETTEST_PID), stopping..."
-            pkill -TERM -f "nettest -s" >/dev/null 2>&1 || true
+            pkill -TERM -f "nettest -s" >/dev/null 2>&1 || echo "pkill TERM completed"
             sleep 3
             
             if pgrep -f "nettest -s" >/dev/null 2>&1; then
               echo "Process still running, force killing..."
-              pkill -KILL -f "nettest -s" >/dev/null 2>&1 || true
+              pkill -KILL -f "nettest -s" >/dev/null 2>&1 || echo "pkill KILL completed"
               sleep 2
             fi
             
@@ -91,7 +91,7 @@ jobs:
             echo "No existing process found"
           fi
           
-          echo "=== DEBUGGING AFTER PROCESS STOPPING ==="
+          echo "=== IMMEDIATE DEBUGGING ==="
           echo "Process stopping completed, continuing with deployment..."
           echo "Current directory: $(pwd 2>/dev/null || echo 'failed to get pwd')"
           echo "Current user: $(whoami 2>/dev/null || echo 'failed to get user')"
@@ -107,7 +107,7 @@ jobs:
           fi
           
           echo "Nettest binary found, proceeding..."
-          echo "=== END DEBUGGING ==="
+          echo "=== END IMMEDIATE DEBUGGING ==="
           
           # Проверяем, что порт 5005 свободен
           echo "Checking if port 5005 is free..."
