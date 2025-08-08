@@ -4,9 +4,6 @@ on:
   push:
     branches: [ main, static-assets ]
   workflow_dispatch:
-  pull_request:
-    branches: [ main ]
-
 
 jobs:
   deploy:
@@ -24,161 +21,141 @@ jobs:
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         debug: false
         script: |
-          echo "🚀 Starting Nettest Server Deployment"
-          echo "====================================="
+          echo "Deploying Nettest Server..."
           
-          # Определяем URL для Debian x86_64
           NETTEST_URL="https://github.com/specure/nettest/releases/download/latest-debian-11/nettest-debian-11-x86_64.tar.gz"
-          
           NEW_BUILD_DIR="/tmp/nettest-new"
           OLD_BUILD_DIR="/tmp/nettest-old"
           CURRENT_BUILD_DIR="/opt/nettest"
           
-          # Создаем временные директории
-          mkdir -p $NEW_BUILD_DIR
-          mkdir -p $OLD_BUILD_DIR
-          
-          echo "📦 Downloading latest build..."
+          mkdir -p $NEW_BUILD_DIR $OLD_BUILD_DIR
           cd $NEW_BUILD_DIR
           
-          echo "Trying URL: $NETTEST_URL"
+          echo "Downloading build..."
           wget -q --timeout=30 --tries=3 "$NETTEST_URL" -O nettest.tar.gz
           
           if [ $? -eq 0 ] && [ -f nettest.tar.gz ]; then
-            # Проверяем размер файла (должен быть больше 1MB)
             FILE_SIZE=$(stat -c%s nettest.tar.gz 2>/dev/null || echo 0)
             if [ $FILE_SIZE -gt 1048576 ]; then
-              echo "✅ Successfully downloaded from: $NETTEST_URL"
-              echo "📦 File size: $(($FILE_SIZE / 1024 / 1024))MB"
+              echo "Download successful ($(($FILE_SIZE / 1024 / 1024))MB)"
             else
-              echo "❌ File too small"
+              echo "Download failed - file too small"
               exit 1
             fi
           else
-            echo "❌ Failed to download from: $NETTEST_URL"
+            echo "Download failed"
             exit 1
           fi
           
-          echo "📦 Extracting new build..."
+          echo "Extracting build..."
           tar -tzf nettest.tar.gz > /dev/null 2>&1
           if [ $? -ne 0 ]; then
-            echo "❌ Invalid tar.gz file"
+            echo "Invalid archive"
             exit 1
           fi
           
           tar -xzf nettest.tar.gz
           
           if [ ! -f nettest ]; then
-            echo "❌ Failed to extract nettest binary"
-            echo "📋 Archive contents:"
-            tar -tzf nettest.tar.gz | head -10
+            echo "Extraction failed"
             exit 1
           fi
           
-          echo "🔧 Setting permissions..."
           chmod +x nettest
           
-          echo "🛑 Stopping existing nettest process..."
-          pkill -f "nettest -s" || echo "No existing nettest process found"
-          sleep 3
+          echo "Stopping existing process..."
+          # Более мягкая остановка процесса
+          pkill -TERM -f "nettest -s" || echo "No existing process"
+          sleep 5
           
-          # Проверяем что процесс действительно остановлен
+          # Проверяем, остановился ли процесс
           if pgrep -f "nettest -s" > /dev/null; then
-            echo "⚠️  Force killing nettest process..."
-            pkill -9 -f "nettest -s"
-            sleep 2
+            echo "Process still running, force killing..."
+            pkill -KILL -f "nettest -s"
+            sleep 3
           fi
           
-          # Проверяем, есть ли старый билд
+          # Финальная проверка
+          if pgrep -f "nettest -s" > /dev/null; then
+            echo "Failed to stop existing process"
+            exit 1
+          fi
+          
           if [ -d "$CURRENT_BUILD_DIR" ]; then
-            echo "📦 Backing up old build..."
+            echo "Backing up old build..."
             mv $CURRENT_BUILD_DIR $OLD_BUILD_DIR
           fi
           
-          echo "📦 Installing new build..."
+          echo "Installing new build..."
           mkdir -p $CURRENT_BUILD_DIR
           cp nettest $CURRENT_BUILD_DIR/
           cd $CURRENT_BUILD_DIR
           
-          echo "🚀 Starting new nettest server..."
+          echo "Starting server..."
           nohup ./nettest -s > nettest.log 2>&1 &
           NEW_PID=$!
           
-          echo "⏳ Waiting for server to start (PID: $NEW_PID)..."
+          echo "Waiting for server (PID: $NEW_PID)..."
           
-          # Ждем дольше и проверяем статус
-          for i in {1..10}; do
-            echo "Checking attempt $i/10..."
+          # Ждем дольше для запуска
+          for i in {1..15}; do
             if ps -p $NEW_PID > /dev/null; then
-              echo "✅ Process is running"
+              echo "Server started successfully"
               break
             fi
             sleep 1
           done
           
-          # Проверяем, запустился ли новый сервер
           if ps -p $NEW_PID > /dev/null; then
-            echo "✅ New nettest server started successfully (PID: $NEW_PID)"
-            echo "📊 Server info:"
-            echo "   Process: $(ps -p $NEW_PID -o pid,ppid,cmd --no-headers)"
-            echo "   Logs: tail -f $CURRENT_BUILD_DIR/nettest.log"
+            echo "New server running (PID: $NEW_PID)"
             
-            # Проверяем порт
-            echo "🔍 Checking port 5005..."
-            sleep 2
+            # Ждем еще немного для полного запуска
+            sleep 5
+            
             if netstat -tuln | grep :5005 > /dev/null; then
-              echo "✅ Port 5005 is listening"
+              echo "Port 5005 listening"
             else
-              echo "⚠️  Port 5005 not listening yet"
+              echo "Port 5005 not listening"
             fi
             
-            # Удаляем старый билд если новый запустился успешно
             if [ -d "$OLD_BUILD_DIR" ]; then
-              echo "🗑️  Removing old build..."
+              echo "Removing old build..."
               rm -rf $OLD_BUILD_DIR
             fi
             
-            # Удаляем временные файлы
             rm -rf $NEW_BUILD_DIR
             
-            echo "✅ Deployment completed successfully!"
-            echo "🌐 Server is running on port 5005"
+            echo "Deployment completed successfully!"
             
           else
-            echo "❌ New nettest server failed to start"
-            echo "📋 Checking logs..."
-            cat $CURRENT_BUILD_DIR/nettest.log || echo "No logs available"
+            echo "Server failed to start"
+            echo "Checking logs:"
+            cat $CURRENT_BUILD_DIR/nettest.log || echo "No logs"
             
-            # Удаляем новый билд
-            echo "🗑️  Removing failed new build..."
-            rm -rf $CURRENT_BUILD_DIR
-            rm -rf $NEW_BUILD_DIR
+            echo "Removing failed build..."
+            rm -rf $CURRENT_BUILD_DIR $NEW_BUILD_DIR
             
-            # Восстанавливаем старый билд
             if [ -d "$OLD_BUILD_DIR" ]; then
-              echo "🔄 Restoring old build..."
+              echo "Restoring old build..."
               mv $OLD_BUILD_DIR $CURRENT_BUILD_DIR
               
-              echo "🚀 Starting old nettest server..."
               cd $CURRENT_BUILD_DIR
               nohup ./nettest -s > nettest.log 2>&1 &
               OLD_PID=$!
               
-              sleep 3
+              sleep 5
               if ps -p $OLD_PID > /dev/null; then
-                echo "✅ Old nettest server restored successfully (PID: $OLD_PID)"
+                echo "Old server restored (PID: $OLD_PID)"
               else
-                echo "❌ Failed to restore old server"
+                echo "Failed to restore old server"
                 exit 1
               fi
             else
-              echo "❌ No old build to restore"
+              echo "No old build to restore"
               exit 1
             fi
           fi
           
-          echo "📊 Final status:"
-          echo "   Active nettest processes:"
-          ps aux | grep "nettest -s" | grep -v grep || echo "   No nettest processes found"
-          echo "   Port 5005 status:"
-          netstat -tuln | grep :5005 || echo "   Port 5005 not listening" 
+          echo "Final status:"
+          ps aux | grep "nettest -s" | grep -v grep || echo "No nettest processes"
+          netstat -tuln | grep :5005 || echo "Port 5005 not listening" 
