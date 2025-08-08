@@ -21,6 +21,7 @@ jobs:
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         debug: false
         script: |
+          set -e  # Остановка при любой ошибке
           echo "Deploying Nettest Server..."
           
           NETTEST_URL="https://github.com/specure/nettest/releases/download/latest-debian-11/nettest-debian-11-x86_64.tar.gz"
@@ -28,6 +29,7 @@ jobs:
           OLD_BUILD_DIR="/tmp/nettest-old"
           CURRENT_BUILD_DIR="/opt/nettest"
           
+          echo "Creating directories..."
           mkdir -p $NEW_BUILD_DIR $OLD_BUILD_DIR
           cd $NEW_BUILD_DIR
           
@@ -62,53 +64,29 @@ jobs:
           fi
           
           chmod +x nettest
+          echo "Build prepared successfully"
           
           echo "Stopping existing process..."
-          # Находим все процессы nettest
-          NETTEST_PIDS=$(pgrep -f "nettest -s" 2>/dev/null || echo "")
-          
-          if [ ! -z "$NETTEST_PIDS" ]; then
-            echo "Found nettest processes: $NETTEST_PIDS"
+          # Простая остановка процесса
+          if pgrep -f "nettest -s" >/dev/null 2>&1; then
+            echo "Found existing nettest process, stopping..."
+            pkill -TERM -f "nettest -s" >/dev/null 2>&1 || true
+            sleep 3
             
-            # Сначала пытаемся мягко остановить все процессы
-            for pid in $NETTEST_PIDS; do
-              echo "Sending TERM to PID: $pid"
-              kill -TERM $pid >/dev/null 2>&1 || true
-            done
-            
-            sleep 2
-            
-            # Проверяем, какие процессы еще живы
-            REMAINING_PIDS=$(pgrep -f "nettest -s" 2>/dev/null || echo "")
-            if [ ! -z "$REMAINING_PIDS" ]; then
-              echo "Some processes still running: $REMAINING_PIDS"
-              echo "Force killing remaining processes..."
-              
-              for pid in $REMAINING_PIDS; do
-                echo "Sending KILL to PID: $pid"
-                kill -KILL $pid >/dev/null 2>&1 || true
-              done
-              
+            if pgrep -f "nettest -s" >/dev/null 2>&1; then
+              echo "Process still running, force killing..."
+              pkill -KILL -f "nettest -s" >/dev/null 2>&1 || true
               sleep 2
             fi
             
-            # Финальная проверка
-            FINAL_PIDS=$(pgrep -f "nettest -s" 2>/dev/null || echo "")
-            if [ ! -z "$FINAL_PIDS" ]; then
-              echo "Failed to stop processes: $FINAL_PIDS"
-              echo "Attempting to kill with pkill..."
-              pkill -9 -f "nettest -s" >/dev/null 2>&1 || true
-              sleep 1
-              
-              if pgrep -f "nettest -s" >/dev/null 2>&1; then
-                echo "Still cannot stop processes"
-                exit 1
-              fi
+            if pgrep -f "nettest -s" >/dev/null 2>&1; then
+              echo "Failed to stop process"
+              exit 1
+            else
+              echo "Process stopped successfully"
             fi
-            
-            echo "All nettest processes stopped successfully"
           else
-            echo "No existing nettest processes found"
+            echo "No existing process found"
           fi
           
           echo "Process stopping completed, continuing with deployment..."
@@ -144,40 +122,24 @@ jobs:
           
           echo "Waiting for server (PID: $NEW_PID)..."
           
-          # Ждем дольше для запуска
-          for i in {1..15}; do
-            if ps -p $NEW_PID > /dev/null; then
+          # Ждем для запуска
+          for i in {1..10}; do
+            if ps -p $NEW_PID >/dev/null 2>&1; then
               echo "Server started successfully"
               break
             fi
             sleep 1
           done
           
-          if ps -p $NEW_PID > /dev/null; then
+          if ps -p $NEW_PID >/dev/null 2>&1; then
             echo "New server running (PID: $NEW_PID)"
             
-            # Ждем еще немного для полного запуска
-            sleep 5
+            sleep 3
             
-            # Проверяем порт более надежно
-            PORT_CHECK_COUNT=0
-            for i in {1..10}; do
-              if netstat -tuln 2>/dev/null | grep :5005 >/dev/null 2>&1; then
-                echo "Port 5005 listening (attempt $i)"
-                PORT_CHECK_COUNT=1
-                break
-              elif ss -tuln 2>/dev/null | grep :5005 >/dev/null 2>&1; then
-                echo "Port 5005 listening (ss check, attempt $i)"
-                PORT_CHECK_COUNT=1
-                break
-              else
-                echo "Port 5005 not listening yet (attempt $i)"
-                sleep 1
-              fi
-            done
-            
-            if [ $PORT_CHECK_COUNT -eq 0 ]; then
-              echo "Warning: Port 5005 not listening after 10 attempts"
+            if netstat -tuln 2>/dev/null | grep :5005 >/dev/null 2>&1; then
+              echo "Port 5005 listening"
+            else
+              echo "Port 5005 not listening"
             fi
             
             if [ -d "$OLD_BUILD_DIR" ]; then
@@ -192,7 +154,7 @@ jobs:
           else
             echo "Server failed to start"
             echo "Checking logs:"
-            cat $CURRENT_BUILD_DIR/nettest.log || echo "No logs"
+            cat $CURRENT_BUILD_DIR/nettest.log 2>/dev/null || echo "No logs"
             
             echo "Removing failed build..."
             rm -rf $CURRENT_BUILD_DIR $NEW_BUILD_DIR
@@ -205,8 +167,8 @@ jobs:
               nohup ./nettest -s > nettest.log 2>&1 &
               OLD_PID=$!
               
-              sleep 5
-              if ps -p $OLD_PID > /dev/null; then
+              sleep 3
+              if ps -p $OLD_PID >/dev/null 2>&1; then
                 echo "Old server restored (PID: $OLD_PID)"
               else
                 echo "Failed to restore old server"
