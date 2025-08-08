@@ -92,6 +92,17 @@ jobs:
           fi
           
           echo "Process stopping completed, continuing with deployment..."
+          echo "Current directory: $(pwd)"
+          echo "Checking if nettest binary exists: $(ls -la nettest 2>/dev/null || echo 'not found')"
+          
+          # Убеждаемся что мы в правильной директории
+          if [ ! -f nettest ]; then
+            echo "Error: nettest binary not found in current directory"
+            echo "Directory contents: $(ls -la)"
+            exit 1
+          fi
+          
+          echo "Nettest binary found, proceeding..."
           
           # Проверяем, что порт 5005 свободен
           echo "Checking if port 5005 is free..."
