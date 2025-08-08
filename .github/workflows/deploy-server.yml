@@ -64,32 +64,60 @@ jobs:
           chmod +x nettest
           
           echo "Stopping existing process..."
-          # Находим PID процесса nettest
-          NETTEST_PID=$(pgrep -f "nettest -s" | head -1)
+          # Находим все процессы nettest
+          NETTEST_PIDS=$(pgrep -f "nettest -s")
           
-          if [ ! -z "$NETTEST_PID" ]; then
-            echo "Found nettest process (PID: $NETTEST_PID)"
+          if [ ! -z "$NETTEST_PIDS" ]; then
+            echo "Found nettest processes: $NETTEST_PIDS"
             
-            # Пытаемся мягко остановить
-            kill -TERM $NETTEST_PID
-            sleep 3
+            # Сначала пытаемся мягко остановить все процессы
+            for pid in $NETTEST_PIDS; do
+              echo "Sending TERM to PID: $pid"
+              kill -TERM $pid 2>/dev/null || true
+            done
             
-            # Проверяем, остановился ли процесс
-            if kill -0 $NETTEST_PID 2>/dev/null; then
-              echo "Process still running, force killing..."
-              kill -KILL $NETTEST_PID
+            sleep 2
+            
+            # Проверяем, какие процессы еще живы
+            REMAINING_PIDS=$(pgrep -f "nettest -s")
+            if [ ! -z "$REMAINING_PIDS" ]; then
+              echo "Some processes still running: $REMAINING_PIDS"
+              echo "Force killing remaining processes..."
+              
+              for pid in $REMAINING_PIDS; do
+                echo "Sending KILL to PID: $pid"
+                kill -KILL $pid 2>/dev/null || true
+              done
+              
               sleep 2
             fi
             
             # Финальная проверка
-            if kill -0 $NETTEST_PID 2>/dev/null; then
-              echo "Failed to stop process (PID: $NETTEST_PID)"
-              exit 1
-            else
-              echo "Process stopped successfully"
+            FINAL_PIDS=$(pgrep -f "nettest -s")
+            if [ ! -z "$FINAL_PIDS" ]; then
+              echo "Failed to stop processes: $FINAL_PIDS"
+              echo "Attempting to kill with pkill..."
+              pkill -9 -f "nettest -s" || true
+              sleep 1
+              
+              if pgrep -f "nettest -s" > /dev/null; then
+                echo "Still cannot stop processes"
+                exit 1
+              fi
             fi
+            
+            echo "All nettest processes stopped successfully"
           else
-            echo "No existing nettest process found"
+            echo "No existing nettest processes found"
+          fi
+          
+          # Проверяем, что порт 5005 свободен
+          echo "Checking if port 5005 is free..."
+          if netstat -tuln 2>/dev/null | grep :5005 > /dev/null; then
+            echo "Warning: Port 5005 is still in use"
+            sleep 2
+          else
+            echo "Port 5005 is free"
           fi
           
           if [ -d "$CURRENT_BUILD_DIR" ]; then
