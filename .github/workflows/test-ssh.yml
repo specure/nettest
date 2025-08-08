@@ -1,0 +1,17 @@
+name: Test SSH Connection
+
+on:
+  workflow_dispatch: # Только ручной запуск
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Test SSH
+      uses: appleboy/ssh-action@v0.1.5
+      with:
+        host: 172.105.0.231
+        username: root
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: echo "✅ Connected to $(hostname) as $(whoami)" 
