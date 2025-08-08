@@ -22,6 +22,7 @@ jobs:
         host: 172.105.0.231
         username: root
         key: ${{ secrets.SSH_PRIVATE_KEY }}
+        debug: false
         script: |
           echo "🚀 Starting Nettest Server Deployment"
           echo "====================================="
@@ -79,7 +80,14 @@ jobs:
           
           echo "🛑 Stopping existing nettest process..."
           pkill -f "nettest -s" || echo "No existing nettest process found"
-          sleep 2
+          sleep 3
+          
+          # Проверяем что процесс действительно остановлен
+          if pgrep -f "nettest -s" > /dev/null; then
+            echo "⚠️  Force killing nettest process..."
+            pkill -9 -f "nettest -s"
+            sleep 2
+          fi
           
           # Проверяем, есть ли старый билд
           if [ -d "$CURRENT_BUILD_DIR" ]; then
@@ -96,8 +104,17 @@ jobs:
           nohup ./nettest -s > nettest.log 2>&1 &
           NEW_PID=$!
           
-          echo "⏳ Waiting for server to start..."
-          sleep 5
+          echo "⏳ Waiting for server to start (PID: $NEW_PID)..."
+          
+          # Ждем дольше и проверяем статус
+          for i in {1..10}; do
+            echo "Checking attempt $i/10..."
+            if ps -p $NEW_PID > /dev/null; then
+              echo "✅ Process is running"
+              break
+            fi
+            sleep 1
+          done
           
           # Проверяем, запустился ли новый сервер
           if ps -p $NEW_PID > /dev/null; then
@@ -105,6 +122,15 @@ jobs:
             echo "📊 Server info:"
             echo "   Process: $(ps -p $NEW_PID -o pid,ppid,cmd --no-headers)"
             echo "   Logs: tail -f $CURRENT_BUILD_DIR/nettest.log"
+            
+            # Проверяем порт
+            echo "🔍 Checking port 5005..."
+            sleep 2
+            if netstat -tuln | grep :5005 > /dev/null; then
+              echo "✅ Port 5005 is listening"
+            else
+              echo "⚠️  Port 5005 not listening yet"
+            fi
             
             # Удаляем старый билд если новый запустился успешно
             if [ -d "$OLD_BUILD_DIR" ]; then
