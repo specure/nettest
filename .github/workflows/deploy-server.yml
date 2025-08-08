@@ -2,10 +2,8 @@ name: Deploy Nettest Server
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, static-assets ]
   workflow_dispatch:
-  pull_request:
-    branches: [ main ]
 
 jobs:
   deploy:
@@ -27,6 +25,7 @@ jobs:
           
           # Определяем URL для Debian x86_64
           NETTEST_URL="https://github.com/specure/nettest/releases/download/latest/nettest-debian-11-x86_64.tar.gz"
+          
           NEW_BUILD_DIR="/tmp/nettest-new"
           OLD_BUILD_DIR="/tmp/nettest-old"
           CURRENT_BUILD_DIR="/opt/nettest"
@@ -37,18 +36,38 @@ jobs:
           
           echo "📦 Downloading latest build..."
           cd $NEW_BUILD_DIR
-          wget -q $NETTEST_URL -O nettest.tar.gz
           
-          if [ ! -f nettest.tar.gz ]; then
-            echo "❌ Failed to download nettest build"
+          echo "Trying URL: $NETTEST_URL"
+          wget -q --timeout=30 --tries=3 "$NETTEST_URL" -O nettest.tar.gz
+          
+          if [ $? -eq 0 ] && [ -f nettest.tar.gz ]; then
+            # Проверяем размер файла (должен быть больше 1MB)
+            FILE_SIZE=$(stat -c%s nettest.tar.gz 2>/dev/null || echo 0)
+            if [ $FILE_SIZE -gt 1048576 ]; then
+              echo "✅ Successfully downloaded from: $NETTEST_URL"
+              echo "📦 File size: $(($FILE_SIZE / 1024 / 1024))MB"
+            else
+              echo "❌ File too small"
+              exit 1
+            fi
+          else
+            echo "❌ Failed to download from: $NETTEST_URL"
             exit 1
           fi
           
           echo "📦 Extracting new build..."
+          tar -tzf nettest.tar.gz > /dev/null 2>&1
+          if [ $? -ne 0 ]; then
+            echo "❌ Invalid tar.gz file"
+            exit 1
+          fi
+          
           tar -xzf nettest.tar.gz
           
           if [ ! -f nettest ]; then
             echo "❌ Failed to extract nettest binary"
+            echo "📋 Archive contents:"
+            tar -tzf nettest.tar.gz | head -10
             exit 1
           fi
           
