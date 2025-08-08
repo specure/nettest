@@ -2,8 +2,10 @@ name: Test SSH Connection
 
 on:
   push:
-    branches: [ main, test ]
-  workflow_dispatch: # Оставляем возможность ручного запуска
+    branches: [ main ]
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
 
 jobs:
   test:
@@ -16,4 +18,10 @@ jobs:
         host: 172.105.0.231
         username: root
         key: ${{ secrets.SSH_PRIVATE_KEY }}
-        script: echo "✅ Connected to $(hostname) as $(whoami)" 
+        script: |
+          echo "🚀 SSH Connection Test"
+          echo "======================"
+          echo "✅ Connected to $(hostname) as $(whoami)"
+          echo "📅 Date: $(date)"
+          echo "⏱️  Uptime: $(uptime | cut -d' ' -f4-7)"
+          echo "✅ SSH connection test completed successfully!" 
