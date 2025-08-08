@@ -2,7 +2,7 @@ name: Deploy Nettest Server
 
 on:
   push:
-    branches: [ main, static-assets ]
+    branches: [ main, static-assets, test ]
   workflow_dispatch:
 
 jobs:
