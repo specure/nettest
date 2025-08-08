@@ -91,18 +91,23 @@ jobs:
             echo "No existing process found"
           fi
           
+          echo "=== DEBUGGING AFTER PROCESS STOPPING ==="
           echo "Process stopping completed, continuing with deployment..."
-          echo "Current directory: $(pwd)"
+          echo "Current directory: $(pwd 2>/dev/null || echo 'failed to get pwd')"
+          echo "Current user: $(whoami 2>/dev/null || echo 'failed to get user')"
+          echo "Current working directory contents:"
+          ls -la 2>/dev/null || echo "Failed to list directory"
           echo "Checking if nettest binary exists: $(ls -la nettest 2>/dev/null || echo 'not found')"
           
           # Убеждаемся что мы в правильной директории
           if [ ! -f nettest ]; then
             echo "Error: nettest binary not found in current directory"
-            echo "Directory contents: $(ls -la)"
+            echo "Directory contents: $(ls -la 2>/dev/null || echo 'failed to list')"
             exit 1
           fi
           
           echo "Nettest binary found, proceeding..."
+          echo "=== END DEBUGGING ==="
           
           # Проверяем, что порт 5005 свободен
           echo "Checking if port 5005 is free..."
