@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nettest Results - Performance History</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 30px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #00d4ff, #ff6b6b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.8;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 25px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .stat-card h3 {
+            color: #00d4ff;
+            margin-bottom: 15px;
+            font-size: 1.5rem;
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .stat-trend {
+            font-size: 0.9rem;
+            opacity: 0.7;
+        }
+
+        .trend-up { color: #4ade80; }
+        .trend-down { color: #f87171; }
+        .trend-stable { color: #fbbf24; }
+
+        .results-table {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 25px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            overflow-x: auto;
+        }
+
+        .results-table h3 {
+            color: #00d4ff;
+            margin-bottom: 20px;
+            font-size: 1.8rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        th {
+            background: rgba(0, 212, 255, 0.2);
+            font-weight: 600;
+            color: #00d4ff;
+        }
+
+        tr:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .commit-hash {
+            font-family: 'Courier New', monospace;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.9rem;
+        }
+
+        .commit-message {
+            font-style: italic;
+            color: #ccc;
+            font-size: 0.8rem;
+        }
+
+        .performance-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .performance-excellent { background: #4ade80; }
+        .performance-good { background: #fbbf24; }
+        .performance-poor { background: #f87171; }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 1.2rem;
+            opacity: 0.7;
+        }
+
+        .error {
+            background: rgba(248, 113, 113, 0.2);
+            border: 1px solid #f87171;
+            color: #f87171;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .refresh-btn {
+            background: linear-gradient(45deg, #00d4ff, #ff6b6b);
+            border: none;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: transform 0.2s ease;
+            margin-bottom: 20px;
+        }
+
+        .refresh-btn:hover {
+            transform: scale(1.05);
+        }
+
+        .chart-container {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 25px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin-bottom: 30px;
+        }
+
+        .chart-container h3 {
+            color: #00d4ff;
+            margin-bottom: 20px;
+            font-size: 1.8rem;
+        }
+
+        canvas {
+            max-width: 100%;
+            height: auto;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .stat-value {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Nettest Performance History</h1>
+            <p>Track performance changes from API measurements (UUID: ee7760ec-db94-43df-b8dc-001384f0ed38)</p>
+        </div>
+
+        <button class="refresh-btn" onclick="loadTestResults()">🔄 Refresh Results</button>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>📊 Total Tests</h3>
+                <div class="stat-value" id="total-tests">-</div>
+                <div class="stat-trend">All time results</div>
+            </div>
+            <div class="stat-card">
+                <h3>⚡ Best Download</h3>
+                <div class="stat-value" id="best-download">-</div>
+                <div class="stat-trend">Peak performance</div>
+            </div>
+            <div class="stat-card">
+                <h3>📈 Best Upload</h3>
+                <div class="stat-value" id="best-upload">-</div>
+                <div class="stat-trend">Peak performance</div>
+            </div>
+            <div class="stat-card">
+                <h3>🎯 Best Ping</h3>
+                <div class="stat-value" id="best-ping">-</div>
+                <div class="stat-trend">Lowest latency</div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <h3>📈 Performance Trends</h3>
+            <canvas id="performanceChart" width="800" height="400"></canvas>
+        </div>
+
+        <div class="results-table">
+            <h3>📋 Test Results History</h3>
+            <div id="results-content">
+                <div class="loading">Loading test results...</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        let performanceChart = null;
+
+        // Загружаем результаты тестов
+        async function loadTestResults() {
+            try {
+                // Получаем историю измерений из API по захардкоженному UUID
+                const response = await fetch('https://api.nettest.org/reports/basic/history?page=1&size=50&sort=measurementDate%2Cdesc&uuid=ee7760ec-db94-43df-b8dc-001384f0ed38', {
+                    headers: {
+                        'x-nettest-client': 'nt',
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                const results = data.content || [];
+                
+                // Преобразуем данные в нужный формат
+                const formattedResults = results.map(measurement => ({
+                    timestamp: measurement.measurementDate,
+                    ping: measurement.pingMedian || 0,
+                    download: measurement.speedDownload ? (measurement.speedDownload / 1000000) : 0, // Конвертируем в Mbps
+                    upload: measurement.speedUpload ? (measurement.speedUpload / 1000000) : 0, // Конвертируем в Mbps
+                    openTestUuid: measurement.openTestUuid || 'N/A',
+                    branch: 'main'
+                }));
+                
+                // Загружаем git историю для получения commit сообщений
+                await loadGitHistory(formattedResults);
+                
+                displayResults(formattedResults);
+                updateStats(formattedResults);
+                updateChart(formattedResults);
+            } catch (error) {
+                console.error('Error loading test results:', error);
+                document.getElementById('results-content').innerHTML = `
+                    <div class="error">
+                        Failed to load test results from API: ${error.message}
+                    </div>
+                `;
+            }
+        }
+        
+        // Загружаем git историю для получения commit сообщений
+        async function loadGitHistory(results) {
+            try {
+                // Получаем git историю через GitHub API
+                const response = await fetch('https://api.github.com/repos/specure/nettest/commits?per_page=100');
+                if (!response.ok) {
+                    throw new Error(`GitHub API error: ${response.status}`);
+                }
+                
+                const commits = await response.json();
+                
+                // Создаем map для быстрого поиска commit сообщений по SHA
+                const commitMap = new Map();
+                commits.forEach(commit => {
+                    commitMap.set(commit.sha, commit.commit.message);
+                });
+                
+                // Добавляем commit сообщения к результатам
+                results.forEach(result => {
+                    if (result.openTestUuid && result.openTestUuid !== 'N/A') {
+                        // Ищем commit по openTestUuid (который теперь GITHUB_SHA)
+                        const commitMessage = commitMap.get(result.openTestUuid);
+                        if (commitMessage) {
+                            result.commitMessage = commitMessage;
+                            result.commitHash = result.openTestUuid;
+                        } else {
+                            result.commitMessage = 'Commit not found';
+                            result.commitHash = result.openTestUuid;
+                        }
+                    } else {
+                        result.commitMessage = 'N/A';
+                        result.commitHash = 'N/A';
+                    }
+                });
+                
+                console.log('Git history loaded successfully');
+            } catch (error) {
+                console.error('Error loading git history:', error);
+                // Если не удалось загрузить git историю, используем openTestUuid как есть
+                results.forEach(result => {
+                    result.commitMessage = 'Git history unavailable';
+                    result.commitHash = result.openTestUuid;
+                });
+            }
+        }
+
+        // Отображаем результаты в таблице
+        function displayResults(results) {
+            const content = document.getElementById('results-content');
+            
+            if (!results || results.length === 0) {
+                content.innerHTML = '<div class="loading">No test results found</div>';
+                return;
+            }
+
+            let tableHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Commit Hash</th>
+                            <th>Commit Message</th>
+                            <th>Ping (ms)</th>
+                            <th>Download (Mbps)</th>
+                            <th>Upload (Mbps)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            results.forEach(result => {
+                const date = new Date(result.timestamp).toLocaleString();
+                const commitHash = result.commitHash || 'N/A';
+                const commitMessage = result.commitMessage || 'N/A';
+                
+                tableHTML += `
+                    <tr>
+                        <td>${date}</td>
+                        <td><span class="commit-hash">${commitHash}</span></td>
+                        <td><span class="commit-message">${commitMessage}</span></td>
+                        <td>${result.ping.toFixed(2)}</td>
+                        <td>${result.download.toFixed(2)}</td>
+                        <td>${result.upload.toFixed(2)}</td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += '</tbody></table>';
+            content.innerHTML = tableHTML;
+        }
+
+        // Обновляем статистику
+        function updateStats(results) {
+            if (!results || results.length === 0) return;
+
+            const totalTests = results.length;
+            const bestDownload = Math.max(...results.map(r => r.download));
+            const bestUpload = Math.max(...results.map(r => r.upload));
+            const bestPing = Math.min(...results.map(r => r.ping));
+
+            document.getElementById('total-tests').textContent = totalTests;
+            document.getElementById('best-download').textContent = `${bestDownload.toFixed(2)} Gbps`;
+            document.getElementById('best-upload').textContent = `${bestUpload.toFixed(2)} Gbps`;
+            document.getElementById('best-ping').textContent = `${bestPing.toFixed(2)} ms`;
+        }
+
+        // Обновляем график
+        function updateChart(results) {
+            if (results.length === 0) return;
+            
+            if (performanceChart) {
+                performanceChart.destroy();
+            }
+            
+            const ctx = document.getElementById('performanceChart').getContext('2d');
+            
+            const labels = results.map(r => r.commitHash.substring(0, 8));
+            const downloadData = results.map(r => r.download);
+            const uploadData = results.map(r => r.upload);
+            const pingData = results.map(r => r.ping);
+
+            performanceChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Download (Gbps)',
+                            data: downloadData,
+                            borderColor: '#00d4ff',
+                            backgroundColor: 'rgba(0, 212, 255, 0.1)',
+                            tension: 0.4,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Upload (Gbps)',
+                            data: uploadData,
+                            borderColor: '#ff6b6b',
+                            backgroundColor: 'rgba(255, 107, 107, 0.1)',
+                            tension: 0.4,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Ping (ms)',
+                            data: pingData,
+                            borderColor: '#fbbf24',
+                            backgroundColor: 'rgba(251, 191, 36, 0.1)',
+                            tension: 0.4,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: 'Commit Hash'
+                            }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: 'Speed (Gbps)'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: 'Ping (ms)'
+                            },
+                            grid: {
+                                drawOnChartArea: false,
+                            },
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        title: {
+                            display: true,
+                            text: 'Performance Over Time'
+                        }
+                    }
+                }
+            });
+        }
+
+        // Определяем индикатор производительности
+        function getPerformanceIndicator(download, upload, ping) {
+            const avgSpeed = (download + upload) / 2;
+            
+            if (avgSpeed >= 30 && ping <= 1) {
+                return { class: 'performance-excellent', label: 'Excellent' };
+            } else if (avgSpeed >= 20 && ping <= 5) {
+                return { class: 'performance-good', label: 'Good' };
+            } else {
+                return { class: 'performance-poor', label: 'Poor' };
+            }
+        }
+
+        // Загружаем результаты при загрузке страницы
+        document.addEventListener('DOMContentLoaded', loadTestResults);
+    </script>
+</body>
+</html>
