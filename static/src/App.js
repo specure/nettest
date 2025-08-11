@@ -5,6 +5,7 @@ import ServerSelect from './components/ServerSelect';
 import TestModal from './components/TestModal';
 import ServersMap from './components/ServersMap';
 import QuickActions from './components/QuickActions';
+import TestResults from './components/TestResults';
 
 function App() {
   const [servers, setServers] = useState([]);
@@ -12,6 +13,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isTestResultsOpen, setIsTestResultsOpen] = useState(false);
 
   useEffect(() => {
     loadServers();
@@ -118,6 +120,18 @@ function App() {
                 </div>
               </div>
             </div>
+
+            {/* Test Results Button */}
+            <div className="card">
+              <div className="card-content">
+                <button 
+                  className="test-results-btn"
+                  onClick={() => setIsTestResultsOpen(true)}
+                >
+                  📊 View Test Results History
+                </button>
+              </div>
+            </div>
           </>
         ) : (
           <div className="card">
@@ -132,6 +146,11 @@ function App() {
         server={selectedServer}
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
+      />
+      
+      <TestResults
+        isOpen={isTestResultsOpen}
+        onClose={() => setIsTestResultsOpen(false)}
       />
       
       <QuickActions />
