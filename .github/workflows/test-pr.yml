@@ -90,7 +90,30 @@ jobs:
         echo "Running nettest client test..."
         echo "Client test started at: $(date)"
         
-        # Запускаем клиент
+        # Проверяем что сервер все еще работает
+        echo "Checking server status before client test..."
+        if pgrep -f "nettest -s" >/dev/null 2>&1; then
+          echo "✅ Server is still running"
+          ps aux | grep "nettest -s" | grep -v grep
+        else
+          echo "❌ Server is not running"
+          exit 1
+        fi
+        
+        # Проверяем что порт все еще слушается
+        echo "Checking port 5005 status..."
+        if netstat -tuln 2>/dev/null | grep :5005 >/dev/null 2>&1; then
+          echo "✅ Port 5005 is still listening"
+        else
+          echo "❌ Port 5005 is not listening"
+          exit 1
+        fi
+        
+        # Запускаем клиент с подробным логированием
+        echo "Starting client test..."
+        echo "Client command: ./nettest -c 127.0.0.1"
+        
+        # Запускаем клиент и сохраняем вывод
         timeout 60s ./nettest -c 127.0.0.1 > client.log 2>&1
         CLIENT_EXIT_CODE=$?
         
@@ -99,16 +122,72 @@ jobs:
         
         # Выводим результат клиента
         echo "=== CLIENT OUTPUT ==="
-        cat client.log
+        if [ -f client.log ]; then
+          cat client.log
+        else
+          echo "No client.log file found"
+        fi
         echo "=== END CLIENT OUTPUT ==="
+        
+        # Проверяем размер лог файла
+        if [ -f client.log ]; then
+          echo "Client log file size: $(wc -l < client.log) lines"
+        fi
         
         # Проверяем результат
         if [ $CLIENT_EXIT_CODE -eq 0 ]; then
           echo "✅ Client test completed successfully"
+        elif [ $CLIENT_EXIT_CODE -eq 101 ]; then
+          echo "⚠️ Client test failed with exit code 101 (connection error)"
+          echo "This might indicate network configuration issues in test environment"
+        elif [ $CLIENT_EXIT_CODE -eq 124 ]; then
+          echo "⚠️ Client test timed out after 60 seconds"
         else
           echo "❌ Client test failed with exit code: $CLIENT_EXIT_CODE"
-          echo "This might be expected for a test environment"
         fi
+        
+        # Дополнительная диагностика
+        echo "=== ADDITIONAL DIAGNOSTICS ==="
+        echo "Current working directory: $(pwd)"
+        echo "Files in test-run directory:"
+        ls -la
+        
+        echo "Server process details:"
+        ps aux | grep "nettest -s" | grep -v grep || echo "No server process found"
+        
+        echo "Port 5005 status:"
+        netstat -tuln 2>/dev/null | grep :5005 || echo "Port 5005 not found"
+        
+        echo "Network interfaces:"
+        ip addr show 2>/dev/null || echo "ip command not available"
+        
+        echo "=== END DIAGNOSTICS ==="
+        
+        # Попробуем другие варианты подключения
+        echo "=== TESTING ALTERNATIVE CONNECTION METHODS ==="
+        
+        echo "Test 1: Client with localhost"
+        timeout 30s ./nettest -c localhost > client_localhost.log 2>&1
+        LOCALHOST_EXIT_CODE=$?
+        echo "localhost test exit code: $LOCALHOST_EXIT_CODE"
+        echo "localhost test output:"
+        cat client_localhost.log 2>/dev/null || echo "No localhost log"
+        
+        echo "Test 2: Client with 0.0.0.0"
+        timeout 30s ./nettest -c 0.0.0.0 > client_0_0_0_0.log 2>&1
+        ZERO_EXIT_CODE=$?
+        echo "0.0.0.0 test exit code: $ZERO_EXIT_CODE"
+        echo "0.0.0.0 test output:"
+        cat client_0_0_0_0.log 2>/dev/null || echo "No 0.0.0.0 log"
+        
+        echo "Test 3: Client with verbose output"
+        timeout 30s ./nettest -c 127.0.0.1 -v > client_verbose.log 2>&1
+        VERBOSE_EXIT_CODE=$?
+        echo "verbose test exit code: $VERBOSE_EXIT_CODE"
+        echo "verbose test output (first 20 lines):"
+        head -20 client_verbose.log 2>/dev/null || echo "No verbose log"
+        
+        echo "=== END ALTERNATIVE TESTS ==="
         
     - name: Stop server and cleanup
       if: always()
