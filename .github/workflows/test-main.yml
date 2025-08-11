@@ -1,0 +1,182 @@
+name: Test on Main Branch
+
+on:
+  push:
+    branches: [ main, test ]
+
+jobs:
+  test-nettest:
+    runs-on: ubuntu-24.04
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Получаем полную историю для commit hash
+      
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: x86_64-unknown-linux-gnu
+        override: true
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev libfontconfig1-dev netstat-nat
+        
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-x86_64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Build nettest
+      run: |
+        cargo build --release --target x86_64-unknown-linux-gnu
+        echo "Build completed successfully"
+        
+    - name: Prepare test environment
+      run: |
+        mkdir -p test-run
+        cp target/x86_64-unknown-linux-gnu/release/nettest test-run/
+        cd test-run
+        chmod +x nettest
+        
+        echo "Test environment prepared"
+        echo "Current directory: $(pwd)"
+        echo "Binary exists: $(ls -la nettest)"
+        
+    - name: Start nettest server
+      run: |
+        cd test-run
+        
+        echo "Starting nettest server..."
+        nohup ./nettest -s > server.log 2>&1 &
+        SERVER_PID=$!
+        echo "Server started with PID: $SERVER_PID"
+        
+        sleep 3
+        
+        if ps -p $SERVER_PID >/dev/null 2>&1; then
+          echo "✅ Server is running (PID: $SERVER_PID)"
+        else
+          echo "❌ Server failed to start"
+          cat server.log
+          exit 1
+        fi
+        
+        if netstat -tuln 2>/dev/null | grep :5005 >/dev/null 2>&1; then
+          echo "✅ Port 5005 is listening"
+        else
+          echo "❌ Port 5005 is not listening"
+          cat server.log
+          exit 1
+        fi
+        
+    - name: Run nettest client test
+      run: |
+        cd test-run
+        
+        echo "Running nettest client test with raw output..."
+        echo "Client command: ./nettest -c 127.0.0.1 -raw"
+        
+        # Запускаем клиент с raw выводом
+        timeout 60s ./nettest -c 127.0.0.1 -raw > client.log 2>&1
+        CLIENT_EXIT_CODE=$?
+        
+        echo "Client test completed"
+        echo "Client exit code: $CLIENT_EXIT_CODE"
+        echo "Client output:"
+        cat client.log
+        
+        if [ $CLIENT_EXIT_CODE -ne 0 ]; then
+          echo "❌ Client test failed"
+          exit 1
+        fi
+        
+    - name: Parse test results
+      run: |
+        cd test-run
+        
+        echo "Parsing test results from raw output..."
+        
+        # Читаем raw вывод и парсим результаты
+        RAW_OUTPUT=$(cat client.log | tail -1)
+        echo "Raw output: $RAW_OUTPUT"
+        
+        # Парсим формат: ping/X.XX/download/X.XX/upload/X.XX
+        if [[ $RAW_OUTPUT =~ ([0-9]+\.[0-9]+)/([0-9]+\.[0-9]+)/([0-9]+\.[0-9]+) ]]; then
+          PING_MS="${BASH_REMATCH[1]}"
+          DOWNLOAD_GBPS="${BASH_REMATCH[2]}"
+          UPLOAD_GBPS="${BASH_REMATCH[3]}"
+          
+          echo "Parsed results:"
+          echo "Ping: ${PING_MS} ms"
+          echo "Download: ${DOWNLOAD_GBPS} Gbps"
+          echo "Upload: ${UPLOAD_GBPS} Gbps"
+          
+          # Сохраняем результаты в JSON
+          cat > test_results.json << EOF
+{
+  "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "commit_hash": "${{ github.sha }}",
+  "commit_message": "${{ github.event.head_commit.message }}",
+  "branch": "${{ github.ref_name }}",
+  "ping": $PING_MS,
+  "download": $DOWNLOAD_GBPS,
+  "upload": $UPLOAD_GBPS,
+  "runner": "${{ runner.os }}-${{ runner.arch }}",
+  "workflow_run": "${{ github.run_id }}"
+}
+EOF
+          
+          echo "Test results saved to test_results.json"
+          cat test_results.json
+          
+        else
+          echo "❌ Failed to parse raw output: $RAW_OUTPUT"
+          exit 1
+        fi
+        
+    - name: Stop server and cleanup
+      if: always()
+      run: |
+        cd test-run
+        
+        echo "Stopping server..."
+        if [ ! -z "$SERVER_PID" ]; then
+          kill -TERM $SERVER_PID 2>/dev/null || true
+          sleep 2
+          kill -KILL $SERVER_PID 2>/dev/null || true
+        else
+          pkill -TERM -f "nettest -s" 2>/dev/null || true
+          sleep 2
+          pkill -KILL -f "nettest -s" 2>/dev/null || true
+        fi
+        
+        if pgrep -f "nettest -s" >/dev/null 2>&1; then
+          echo "❌ Some nettest processes still running"
+        else
+          echo "✅ All nettest processes stopped"
+        fi
+        
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-${{ github.sha }}
+        path: test-run/test_results.json
+        retention-days: 90
+        
+    - name: Test summary
+      run: |
+        echo "=== TEST SUMMARY ==="
+        echo "✅ Build: Completed successfully"
+        echo "✅ Server: Started and listening on port 5005"
+        echo "✅ Client: Test executed with raw output"
+        echo "✅ Results: Parsed and saved to JSON"
+        echo "=== END TEST SUMMARY ==="

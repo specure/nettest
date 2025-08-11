@@ -7,6 +7,7 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
         use_tls: default_config.client_use_tls,
         use_websocket: default_config.client_use_websocket,
         graphs: false,
+        raw_output: false,
         log: None,
         thread_count: default_config.client_thread_count,
         server: None,
@@ -46,6 +47,9 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
             }
             "-g" => {
                 config.graphs = true;
+            }
+            "-raw" => {
+                config.raw_output = true;
             }
             "-log" => {
                 i += 1;
@@ -115,6 +119,7 @@ pub fn print_help() {
     println!("-tls - use tls");
     println!("-log - `RUST_LOG=debug ./nettest 127.0.0.1  -t5 -tls -log`");
     println!("-t<num_threads> - number of threads");
+    println!("-raw - output results in parseable format (ping/download/upload)");
     println!("-help - print help");
     println!("-h - print help");
     println!("-g - print graphs");

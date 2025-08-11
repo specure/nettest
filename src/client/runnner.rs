@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use log::debug;
 
 use crate::client::{
-    calculator::{calculate_download_speed_from_stats, calculate_upload_speed_from_stats}, client::{ClientConfig, Measurement, SharedStats}, print::printer::print_float_result, state::TestState
+    calculator::{ calculate_download_speed_from_stats_silent, calculate_upload_speed_from_stats_silent}, client::{ClientConfig, Measurement, SharedStats}, print::printer::{print_float_result, print_test_result}, state::TestState
 };
 
 pub fn run_threads(
@@ -76,7 +76,13 @@ pub fn run_threads(
             if i == 0 {
                 state.run_ping().unwrap();
                 let median = state.measurement_state().ping_median.unwrap();
-                print_float_result("Ping Median", "ms", Some(median as f64 / 1000000.0 ));
+                let ping_ms = median as f64 / 1000000.0;
+                
+                if config.raw_output {
+                    print!("{:.2}", ping_ms);
+                } else {
+                    print_float_result("Ping Median", "ms", Some(ping_ms));
+                }
             }
             barrier.wait();
 
@@ -97,7 +103,13 @@ pub fn run_threads(
 
             if i == 0 {
                 let stats_guard = stats.lock().unwrap();
-                calculate_download_speed_from_stats(&stats_guard.download_measurements);
+                let speed = calculate_download_speed_from_stats_silent(&stats_guard.download_measurements);
+                
+                if config.raw_output {
+                    print!("/{:.2}", speed.1); // speed.1 - это Gbps
+                } else {
+                    print_test_result("Download Test", "Completed", Some(speed));
+                }
             }
 
             barrier.wait();
@@ -119,7 +131,13 @@ pub fn run_threads(
 
             if i == 0 {
                 let stats_guard = stats.lock().unwrap();
-                calculate_upload_speed_from_stats(&stats_guard.upload_measurements);
+                let speed = calculate_upload_speed_from_stats_silent(&stats_guard.upload_measurements);
+                
+                if config.raw_output {
+                    println!("/{:.2}", speed.1); // speed.1 - это Gbps, println! для перевода строки
+                } else {
+                    print_test_result("Upload Test", "Completed", Some(speed));
+                }
             }
 
             let result: Measurement = Measurement {

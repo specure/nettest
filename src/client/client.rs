@@ -33,6 +33,7 @@ pub struct ClientConfig {
     pub use_tls: bool,
     pub use_websocket: bool,
     pub graphs: bool,
+    pub raw_output: bool,
     pub thread_count: usize,
     pub log: Option<LevelFilter>,
     pub server: Option<String>,
@@ -45,13 +46,16 @@ pub struct ClientConfig {
 pub async fn client_run(args: Vec<String>, dafault_config: FileConfig) -> anyhow::Result<()> {
     info!("Starting measurement client...");
 
-    print_test_header();
-
     if args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
         print_help();
+        return Ok(());
     }
 
     let config = parse_args(args, dafault_config).await?;
+
+    if !config.raw_output {
+        print_test_header();
+    }
 
     let stats: Arc<Mutex<SharedStats>> = Arc::new(Mutex::new(SharedStats::default()));
 

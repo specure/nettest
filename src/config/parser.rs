@@ -132,7 +132,6 @@ fn parse_config_content(content: &str) -> FileConfig {
                     }
                 }
                 "server_registration" => {
-                    println!("server_registration: {}", value);
                     if value == "true" {
                         config.server_registration = true;
                     } else {
