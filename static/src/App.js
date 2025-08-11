@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import './App.css';
 import SpeedTest from './components/SpeedTest';
 import ServerSelect from './components/ServerSelect';
@@ -7,7 +6,6 @@ import TestModal from './components/TestModal';
 import ServersMap from './components/ServersMap';
 import QuickActions from './components/QuickActions';
 import TestResults from './components/TestResults';
-import TestResultsPage from './components/TestResultsPage';
 
 function App() {
   const [servers, setServers] = useState([]);
@@ -15,29 +13,6 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isTestResultsOpen, setIsTestResultsOpen] = useState(false);
-
-  // Компонент для отладки маршрутизации
-  const AppContent = () => {
-    const location = useLocation();
-    const navigate = useNavigate();
-    
-    console.log('Current location:', location);
-    console.log('Current pathname:', location.pathname);
-    console.log('Current hash:', location.hash);
-    
-    useEffect(() => {
-      console.log('Location changed to:', location.pathname);
-    }, [location]);
-    
-    return (
-      <Routes>
-        <Route path="/" element={<MainApp />} />
-        <Route path="/test-results" element={<TestResultsPage />} />
-        <Route path="*" element={<MainApp />} />
-      </Routes>
-    );
-  };
 
   useEffect(() => {
     loadServers();
@@ -99,9 +74,7 @@ function App() {
     }, 800);
   };
 
-  const MainApp = () => {
-    console.log('MainApp component rendered'); // Отладочная информация
-    return (
+  return (
     <div className="App">
       <div className="App-header">
         <h1 className="App-title text-glow">Nettest</h1>
@@ -146,15 +119,6 @@ function App() {
                 </div>
               </div>
             </div>
-
-            {/* Test Results Button */}
-            <div className="card">
-              <div className="card-content">
-                <Link to="/test-results" className="test-results-btn">
-                  📊 View Test Results History
-                </Link>
-              </div>
-            </div>
           </>
         ) : (
           <div className="card">
@@ -171,22 +135,8 @@ function App() {
         onClose={() => setIsModalOpen(false)}
       />
       
-      <TestResults
-        isOpen={isTestResultsOpen}
-        onClose={() => setIsTestResultsOpen(false)}
-      />
-      
       <QuickActions />
     </div>
-    );
-  };
-
-  console.log('App component rendering, current path:', window.location.pathname); // Отладочная информация
-  
-  return (
-    <Router>
-      <AppContent />
-    </Router>
   );
 }
 
