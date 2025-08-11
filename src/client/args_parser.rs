@@ -7,13 +7,16 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
         use_tls: default_config.client_use_tls,
         use_websocket: default_config.client_use_websocket,
         graphs: false,
-        log: Some(LevelFilter::Info),
+        raw_output: false,
+        log: None,
         thread_count: default_config.client_thread_count,
         server: None,
         port: default_config.server_tcp_port.parse().unwrap_or(5005),
         tls_port: default_config.server_tls_port.unwrap_or("443".to_string()).parse().unwrap(),
         x_nettest_client: default_config.x_nettest_client,
         control_server: default_config.control_server,
+        save_results: false,
+        client_uuid: default_config.client_uuid,
     };
 
     let mut i = 0;
@@ -46,6 +49,12 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
             }
             "-g" => {
                 config.graphs = true;
+            }
+            "-raw" => {
+                config.raw_output = true;
+            }
+            "-save" => {
+                config.save_results = true;
             }
             "-log" => {
                 i += 1;
@@ -115,6 +124,7 @@ pub fn print_help() {
     println!("-tls - use tls");
     println!("-log - `RUST_LOG=debug ./nettest 127.0.0.1  -t5 -tls -log`");
     println!("-t<num_threads> - number of threads");
+    println!("-raw - output results in parseable format (ping/download/upload)");
     println!("-help - print help");
     println!("-h - print help");
     println!("-g - print graphs");

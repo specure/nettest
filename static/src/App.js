@@ -5,6 +5,7 @@ import ServerSelect from './components/ServerSelect';
 import TestModal from './components/TestModal';
 import ServersMap from './components/ServersMap';
 import QuickActions from './components/QuickActions';
+import TestResults from './components/TestResults';
 
 function App() {
   const [servers, setServers] = useState([]);

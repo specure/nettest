@@ -435,3 +435,25 @@
     font-size: 11px;
   }
 } 
+
+.test-results-btn {
+  background: linear-gradient(45deg, #00d4ff, #ff6b6b);
+  color: white;
+  border: none;
+  padding: 15px 30px;
+  border-radius: 25px;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  display: block;
+  margin: 0 auto;
+  width: 100%;
+  max-width: 400px;
+  text-decoration: none;
+  text-align: center;
+}
+
+.test-results-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+} 

@@ -27,6 +27,10 @@ pub fn print_test_result(phase: &str, status: &str, speed: Option<(f64, f64, f64
     println!("{}", table);
 }
 
+pub fn print_raw_results(ping_ms: f64, download_gbps: f64, upload_gbps: f64) {
+    println!("ping/{:.2}/download/{:.2}/upload/{:.2}", ping_ms, download_gbps, upload_gbps);
+}
+
 pub fn print_test_header() {
     // Print centered green title
     let title = "Nettest Broadband Test";

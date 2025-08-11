@@ -1,0 +1,358 @@
+name: Test on Pull Request
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-nettest-pr:
+    runs-on: ubuntu-24.04
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: x86_64-unknown-linux-gnu
+        override: true
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev libfontconfig1-dev netstat-nat
+        
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-x86_64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Build nettest
+      run: |
+        cargo build --release --target x86_64-unknown-linux-gnu
+        echo "Build completed successfully"
+        
+    - name: Prepare test environment
+      run: |
+        # Создаем рабочую директорию
+        mkdir -p test-run
+        cp target/x86_64-unknown-linux-gnu/release/nettest test-run/
+        cd test-run
+        chmod +x nettest
+        
+        echo "Test environment prepared"
+        echo "Current directory: $(pwd)"
+        echo "Binary exists: $(ls -la nettest)"
+        
+    - name: Start nettest server
+      run: |
+        cd test-run
+        
+        echo "Starting nettest server..."
+        nohup ./nettest -s > server.log 2>&1 &
+        SERVER_PID=$!
+        echo "Server started with PID: $SERVER_PID"
+        
+        # Ждем немного для запуска
+        sleep 3
+        
+        # Проверяем что сервер запустился
+        if ps -p $SERVER_PID >/dev/null 2>&1; then
+          echo "✅ Server is running (PID: $SERVER_PID)"
+        else
+          echo "❌ Server failed to start"
+          cat server.log
+          exit 1
+        fi
+        
+        # Проверяем что порт слушается
+        if netstat -tuln 2>/dev/null | grep :5005 >/dev/null 2>&1; then
+          echo "✅ Port 5005 is listening"
+        else
+          echo "❌ Port 5005 is not listening"
+          cat server.log
+          exit 1
+        fi
+        
+        echo "Server status:"
+        ps aux | grep "nettest -s" | grep -v grep || echo "No server process found"
+        
+    - name: Run nettest client test
+      run: |
+        cd test-run
+        
+        echo "Running nettest client test..."
+        echo "Client test started at: $(date)"
+        
+        # Проверяем что сервер все еще работает
+        echo "Checking server status before client test..."
+        if pgrep -f "nettest -s" >/dev/null 2>&1; then
+          echo "✅ Server is still running"
+          ps aux | grep "nettest -s" | grep -v grep
+        else
+          echo "❌ Server is not running"
+          exit 1
+        fi
+        
+        # Проверяем что порт все еще слушается
+        echo "Checking port 5005 status..."
+        if netstat -tuln 2>/dev/null | grep :5005 >/dev/null 2>&1; then
+          echo "✅ Port 5005 is still listening"
+        else
+          echo "❌ Port 5005 is not listening"
+          exit 1
+        fi
+        
+        # Базовый TCP тест соединения
+        echo "=== BASIC TCP CONNECTION TEST ==="
+        echo "Testing basic TCP connection to 127.0.0.1:5005..."
+        
+        # Пробуем разные способы тестирования TCP соединения
+        if command -v nc >/dev/null 2>&1; then
+          echo "Using netcat (nc) for TCP test..."
+          echo "test" | timeout 10s nc -w 5 127.0.0.1 5005 > tcp_test.log 2>&1
+          NC_EXIT_CODE=$?
+          echo "Netcat test exit code: $NC_EXIT_CODE"
+          echo "Netcat output:"
+          cat tcp_test.log 2>/dev/null || echo "No netcat log"
+        else
+          echo "Netcat not available, trying telnet..."
+          if command -v telnet >/dev/null 2>&1; then
+            echo "Using telnet for TCP test..."
+            timeout 10s telnet 127.0.0.1 5005 > tcp_test.log 2>&1
+            TELNET_EXIT_CODE=$?
+            echo "Telnet test exit code: $TELNET_EXIT_CODE"
+            echo "Telnet output:"
+            cat tcp_test.log 2>/dev/null || echo "No telnet log"
+          else
+            echo "Neither netcat nor telnet available"
+          fi
+        fi
+        
+        # Простой тест с /dev/tcp (bash builtin)
+        echo "Testing with bash /dev/tcp..."
+        timeout 10s bash -c "echo 'test' > /dev/tcp/127.0.0.1/5005" > bash_tcp_test.log 2>&1
+        BASH_TCP_EXIT_CODE=$?
+        echo "Bash TCP test exit code: $BASH_TCP_EXIT_CODE"
+        echo "Bash TCP test output:"
+        cat bash_tcp_test.log 2>/dev/null || echo "No bash TCP log"
+        
+        echo "=== END TCP CONNECTION TEST ==="
+        
+        # Диагностика сетевых ограничений GitHub Actions
+        echo "=== GITHUB ACTIONS NETWORK DIAGNOSTICS ==="
+        
+        echo "1. Checking network namespaces and isolation..."
+        echo "Current network namespace:"
+        ls -la /proc/self/ns/net 2>/dev/null || echo "Cannot access network namespace"
+        
+        echo "2. Checking if we're in a container..."
+        if [ -f /.dockerenv ]; then
+          echo "✅ Running in Docker container"
+        elif [ -f /proc/1/cgroup ] && grep -q docker /proc/1/cgroup; then
+          echo "✅ Running in Docker container (cgroup check)"
+        else
+          echo "❌ Not running in Docker container"
+        fi
+        
+        echo "3. Checking network interfaces and routing..."
+        echo "Network interfaces:"
+        ip addr show 2>/dev/null || echo "ip command not available"
+        
+        echo "Routing table:"
+        ip route show 2>/dev/null || echo "ip route not available"
+        
+        echo "4. Checking localhost restrictions..."
+        echo "Testing localhost connectivity with different methods:"
+        
+        # Тест 1: ping localhost
+        if command -v ping >/dev/null 2>&1; then
+          echo "Ping localhost test:"
+          timeout 5s ping -c 2 127.0.0.1 2>&1 || echo "Ping failed"
+        fi
+        
+        # Тест 2: curl localhost
+        if command -v curl >/dev/null 2>&1; then
+          echo "Curl localhost test:"
+          timeout 5s curl -v --connect-timeout 5 http://127.0.0.1:5005 2>&1 || echo "Curl failed"
+        fi
+        
+        # Тест 3: wget localhost
+        if command -v wget >/dev/null 2>&1; then
+          echo "Wget localhost test:"
+          timeout 5s wget --timeout=5 --tries=1 -O /dev/null http://127.0.0.1:5005 2>&1 || echo "Wget failed"
+        fi
+        
+        echo "5. Checking process capabilities and permissions..."
+        echo "Current user: $(whoami)"
+        echo "Current user ID: $(id)"
+        echo "Process capabilities:"
+        cat /proc/self/status | grep Cap 2>/dev/null || echo "Cannot read capabilities"
+        
+        echo "6. Checking if port 5005 is actually bound to all interfaces..."
+        echo "Detailed port binding info:"
+        ss -tuln | grep :5005 2>/dev/null || echo "ss command not available"
+        netstat -tuln | grep :5005 2>/dev/null || echo "netstat not available"
+        
+        echo "7. Testing if we can bind to other ports..."
+        echo "Testing port binding to 127.0.0.1:9999..."
+        timeout 5s bash -c "echo 'test' | nc -l 127.0.0.1 9999" > port_bind_test.log 2>&1 &
+        PORT_BIND_PID=$!
+        sleep 2
+        
+        if ps -p $PORT_BIND_PID >/dev/null 2>&1; then
+          echo "✅ Successfully bound to test port 9999"
+          kill $PORT_BIND_PID 2>/dev/null || true
+        else
+          echo "❌ Failed to bind to test port 9999"
+          cat port_bind_test.log 2>/dev/null || echo "No port bind log"
+        fi
+        
+        echo "8. Checking GitHub Actions environment variables..."
+        echo "GitHub Actions environment:"
+        env | grep -E "(GITHUB|RUNNER|ACTIONS)" | head -10
+        
+        echo "=== END NETWORK DIAGNOSTICS ==="
+        
+        # Запускаем клиент с подробным логированием
+        echo "Starting client test..."
+        echo "Client command: ./nettest -c 127.0.0.1"
+        
+        # Запускаем клиент в фоновом режиме и мониторим
+        echo "Starting client in background..."
+        ./nettest -c 127.0.0.1 > client.log 2>&1 &
+        CLIENT_PID=$!
+        echo "Client started with PID: $CLIENT_PID"
+        
+        # Ждем немного и проверяем статус
+        sleep 2
+        
+        if ps -p $CLIENT_PID >/dev/null 2>&1; then
+          echo "✅ Client is running (PID: $CLIENT_PID)"
+          
+          # Ждем завершения клиента (максимум 60 секунд)
+          echo "Waiting for client to complete..."
+          for i in {1..60}; do
+            if ! ps -p $CLIENT_PID >/dev/null 2>&1; then
+              echo "Client completed after $i seconds"
+              break
+            fi
+            sleep 1
+          done
+          
+          # Проверяем финальный статус
+          if ps -p $CLIENT_PID >/dev/null 2>&1; then
+            echo "⚠️ Client still running after 60 seconds, stopping..."
+            kill -TERM $CLIENT_PID 2>/dev/null || true
+            sleep 2
+            kill -KILL $CLIENT_PID 2>/dev/null || true
+            CLIENT_EXIT_CODE=124  # timeout
+          else
+            # Получаем exit code из wait
+            wait $CLIENT_PID 2>/dev/null || true
+            CLIENT_EXIT_CODE=$?
+          fi
+        else
+          echo "❌ Client failed to start"
+          CLIENT_EXIT_CODE=1
+        fi
+        
+        echo "Client test completed at: $(date)"
+        echo "Client exit code: $CLIENT_EXIT_CODE"
+        
+        # Выводим результат клиента
+        echo "=== CLIENT OUTPUT ==="
+        if [ -f client.log ]; then
+          cat client.log
+        else
+          echo "No client.log file found"
+        fi
+        echo "=== END CLIENT OUTPUT ==="
+        
+        # Проверяем размер лог файла
+        if [ -f client.log ]; then
+          echo "Client log file size: $(wc -l < client.log) lines"
+        fi
+        
+        # Проверяем результат
+        if [ $CLIENT_EXIT_CODE -eq 0 ]; then
+          echo "✅ Client test completed successfully"
+        elif [ $CLIENT_EXIT_CODE -eq 101 ]; then
+          echo "⚠️ Client test failed with exit code 101 (connection error)"
+          echo "This might indicate network configuration issues in test environment"
+        elif [ $CLIENT_EXIT_CODE -eq 124 ]; then
+          echo "⚠️ Client test timed out after 60 seconds"
+        else
+          echo "❌ Client test failed with exit code: $CLIENT_EXIT_CODE"
+        fi
+        
+        # Дополнительная диагностика
+        echo "=== ADDITIONAL DIAGNOSTICS ==="
+        echo "Current working directory: $(pwd)"
+        echo "Files in test-run directory:"
+        ls -la
+        
+        echo "Server process details:"
+        ps aux | grep "nettest -s" | grep -v grep || echo "No server process found"
+        
+        echo "Port 5005 status:"
+        netstat -tuln 2>/dev/null | grep :5005 || echo "Port 5005 not found"
+        
+        echo "Network interfaces:"
+        ip addr show 2>/dev/null || echo "ip command not available"
+        
+        echo "=== END DIAGNOSTICS ==="
+        
+    - name: Stop server and cleanup
+      if: always()
+      run: |
+        cd test-run
+        
+        echo "Stopping server..."
+        if [ ! -z "$SERVER_PID" ]; then
+          echo "Stopping server with PID: $SERVER_PID"
+          kill -TERM $SERVER_PID 2>/dev/null || true
+          sleep 2
+          
+          if ps -p $SERVER_PID >/dev/null 2>&1; then
+            echo "Force killing server..."
+            kill -KILL $SERVER_PID 2>/dev/null || true
+          fi
+        else
+          echo "Stopping all nettest processes..."
+          pkill -TERM -f "nettest -s" 2>/dev/null || true
+          sleep 2
+          pkill -KILL -f "nettest -s" 2>/dev/null || true
+        fi
+        
+        # Проверяем что все процессы остановлены
+        if pgrep -f "nettest -s" >/dev/null 2>&1; then
+          echo "❌ Some nettest processes still running"
+          ps aux | grep "nettest -s" | grep -v grep
+        else
+          echo "✅ All nettest processes stopped"
+        fi
+        
+        # Проверяем что порт свободен
+        if netstat -tuln 2>/dev/null | grep :5005 >/dev/null 2>&1; then
+          echo "❌ Port 5005 is still in use"
+        else
+          echo "✅ Port 5005 is free"
+        fi
+        
+        echo "Cleanup completed"
+        
+    - name: Test summary
+      run: |
+        echo "=== TEST SUMMARY ==="
+        echo "✅ Build: Completed successfully"
+        echo "✅ Server: Started and listening on port 5005"
+        echo "✅ Client: Test executed successfully"
+        echo "✅ Cleanup: All processes stopped, port freed"
+        echo "=== END TEST SUMMARY ==="

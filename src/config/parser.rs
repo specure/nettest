@@ -7,10 +7,13 @@ use crate::config::{App, FileConfig};
 pub fn read_config_file() -> FileConfig {
     use std::fs;
     use std::path::PathBuf;
+    use std::env;
 
     // Определяем путь к конфигурационному файлу в зависимости от ОС
     let config_path = if cfg!(target_os = "macos") {
-        PathBuf::from("/usr/local/etc/nettest.conf")
+        // На macOS используем ~/.config/ как основную директорию
+        let home_dir = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        PathBuf::from(format!("{}/.config/nettest.conf", home_dir))
     } else {
         PathBuf::from("/etc/nettest.conf")
     };
@@ -132,7 +135,6 @@ fn parse_config_content(content: &str) -> FileConfig {
                     }
                 }
                 "server_registration" => {
-                    println!("server_registration: {}", value);
                     if value == "true" {
                         config.server_registration = true;
                     } else {
@@ -142,6 +144,13 @@ fn parse_config_content(content: &str) -> FileConfig {
                 "hostname" => config.hostname = Some(value.to_string()),
                 "x_nettest_client" => config.x_nettest_client = value.to_string(),
                 "control_server" => config.control_server = value.to_string(),
+                "client_uuid" => {
+                    // Убираем кавычки если они есть
+                    let clean_value = value.trim_matches('"').trim();
+                    if !clean_value.is_empty() {
+                        config.client_uuid = Some(clean_value.to_string());
+                    }
+                }
                 _ => {
                     println!("Warning: Unknown config key: {}", key);
                 }

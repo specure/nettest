@@ -1,0 +1,146 @@
+name: Test on Main Branch
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  test-nettest:
+    runs-on: ubuntu-24.04
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: x86_64-unknown-linux-gnu
+        override: true
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev libfontconfig1-dev netstat-nat
+        
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-x86_64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Build nettest
+      run: |
+        cargo build --release --target x86_64-unknown-linux-gnu
+        echo "Build completed successfully"
+        
+    - name: Prepare test environment
+      run: |
+        mkdir -p test-run
+        cp target/x86_64-unknown-linux-gnu/release/nettest test-run/
+        cd test-run
+        chmod +x nettest
+        
+        # Создаем локальный конфиг для тестов
+        cat > nettest.conf << 'EOF'
+        # Nettest Configuration File for CI/CD
+        default_mode = "client"
+        server_tcp_port = 5005
+        client_use_tls = false
+        client_use_websocket = false
+        x_nettest_client = "nt"
+        control_server = "https://api.nettest.org"
+        client_uuid = "ee7760ec-db94-43df-b8dc-001384f0ed39"
+        EOF
+        
+        echo "Test environment prepared"
+        echo "Current directory: $(pwd)"
+        echo "Binary exists: $(ls -la nettest)"
+        echo "Local config created:"
+        cat nettest.conf
+        
+    - name: Create system config file
+      run: |
+        # Создаем системный конфиг файл с правами sudo
+        sudo mkdir -p /etc
+        sudo tee /etc/nettest.conf > /dev/null << 'EOF'
+        # Nettest Configuration File for CI/CD
+        default_mode = "client"
+        server_tcp_port = 5005
+        client_use_tls = false
+        client_use_websocket = false
+        x_nettest_client = "nt"
+        control_server = "https://api.nettest.org"
+        client_uuid = "ee7760ec-db94-43df-b8dc-001384f0ed39"
+        EOF
+        
+        echo "System config file created at /etc/nettest.conf"
+        echo "System config content:"
+        sudo cat /etc/nettest.conf
+        
+    - name: Start nettest server
+      run: |
+        cd test-run
+        
+        echo "Starting nettest server..."
+        nohup ./nettest -s > server.log 2>&1 &
+        echo "Server started in background"
+        
+        sleep 3
+        
+        if pgrep -f "nettest -s" >/dev/null 2>&1; then
+          echo "✅ Server is running"
+        else
+          echo "❌ Server failed to start"
+          cat server.log
+          exit 1
+        fi
+        
+        if netstat -tuln 2>/dev/null | grep :5005 >/dev/null 2>&1; then
+          echo "✅ Port 5005 is listening"
+        else
+          echo "❌ Port 5005 is not listening"
+          cat server.log
+          exit 1
+        fi
+        
+    - name: Run nettest client test
+      run: |
+        cd test-run
+        
+        echo "Running nettest client test with -save..."
+        echo "Client command: ./nettest -c 127.0.0.1 -save"
+        
+        GITHUB_SHA="${{ github.sha }}" \
+        timeout 60s ./nettest -c 127.0.0.1 -save
+        CLIENT_EXIT_CODE=$?
+        
+        echo "Client test completed"
+        echo "Client exit code: $CLIENT_EXIT_CODE"
+        
+        if [ $CLIENT_EXIT_CODE -ne 0 ]; then
+          echo "❌ Client test failed"
+          exit 1
+        fi
+        
+        echo "✅ Client test completed successfully"
+        
+    - name: Test completed
+      run: |
+        echo "✅ All tests completed successfully"
+        echo "Results have been saved to the control server"
+        
+    - name: Test summary
+      run: |
+        echo "=== TEST SUMMARY ==="
+        echo "✅ Build: Completed successfully"
+        echo "✅ Server: Started and listening on port 5005"
+        echo "✅ Client: Test executed with -save"
+        echo "✅ Results: Saved to control server"
+        echo "=== END TEST SUMMARY ==="

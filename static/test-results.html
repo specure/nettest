@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nettest Results - Performance History</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 30px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #00d4ff, #ff6b6b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.8;
+        }
+
+        .results-table {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 25px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            overflow-x: auto;
+        }
+
+        .results-table h3 {
+            color: #00d4ff;
+            margin-bottom: 20px;
+            font-size: 1.8rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        th {
+            background: rgba(0, 212, 255, 0.1);
+            color: #00d4ff;
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        tr:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .commit-hash {
+            font-family: 'Courier New', monospace;
+            background: rgba(0, 212, 255, 0.2);
+            padding: 5px 8px;
+            border-radius: 5px;
+            font-size: 0.9rem;
+        }
+
+        .commit-message {
+            max-width: 300px;
+            word-wrap: break-word;
+            font-size: 0.9rem;
+            color: #e0e0e0;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 1.2rem;
+            color: #00d4ff;
+        }
+
+        .error {
+            text-align: center;
+            padding: 40px;
+            font-size: 1.2rem;
+            color: #ff6b6b;
+            background: rgba(255, 107, 107, 0.1);
+            border-radius: 10px;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .container {
+                padding: 10px;
+            }
+            
+            table {
+                font-size: 0.9rem;
+            }
+            
+            th, td {
+                padding: 10px 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Nettest Performance History</h1>
+            <p>Track performance changes from API measurements</p>
+        </div>
+
+        <div class="results-table">
+            <h3>📋 Test Results History</h3>
+            <div id="results-content">
+                <div class="loading">Loading test results...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Загружаем результаты тестов
+        async function loadTestResults() {
+            try {
+                console.log('Loading test results...');
+                
+                // Получаем историю измерений из API по захардкоженному UUID
+                const response = await fetch('https://api.nettest.org/reports/basic/history?page=1&size=50&sort=measurementDate%2Cdesc&uuid=ee7760ec-db94-43df-b8dc-001384f0ed39', {
+                    headers: {
+                        'x-nettest-client': 'nt',
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('API response:', data);
+                
+                const results = data.content || [];
+                console.log('Raw results:', results);
+                
+                // Преобразуем данные в нужный формат
+                const formattedResults = results.map(measurement => {
+                    console.log('Processing measurement:', measurement);
+                    
+                    // Конвертируем скорости из hundredths of Mbps в Mbps
+                    const download = measurement.download ? (measurement.download / 100) : 0;
+                    const upload = measurement.upload ? (measurement.upload / 100) : 0;
+                    
+                    // Конвертируем ping из наносекунд в миллисекунды
+                    const ping = measurement.ping ? (measurement.ping / 1000000) : 0;
+                    
+                    return {
+                        openTestUuid: measurement.openTestUuid || 'N/A',
+                        download: download,
+                        upload: upload,
+                        ping: ping
+                    };
+                });
+                
+                console.log('Formatted results:', formattedResults);
+                
+                // Загружаем git историю для получения commit сообщений и дат
+                await loadGitHistory(formattedResults);
+                
+                displayResults(formattedResults);
+            } catch (error) {
+                console.error('Error loading test results:', error);
+                document.getElementById('results-content').innerHTML = `
+                    <div class="error">
+                        Failed to load test results from API: ${error.message}
+                    </div>
+                `;
+            }
+        }
+        
+        // Загружаем git историю для получения commit сообщений и дат
+        async function loadGitHistory(results) {
+            try {
+                console.log('Loading git history...');
+                
+                // Получаем git историю через GitHub API
+                const response = await fetch('https://api.github.com/repos/specure/nettest/commits?per_page=100');
+                if (!response.ok) {
+                    throw new Error(`GitHub API error: ${response.status}`);
+                }
+                
+                const commits = await response.json();
+                console.log('GitHub commits loaded:', commits.length);
+                
+                // Создаем map для быстрого поиска commit сообщений и дат по SHA
+                const commitMap = new Map();
+                commits.forEach(commit => {
+                    commitMap.set(commit.sha, {
+                        message: commit.commit.message,
+                        date: commit.commit.author.date
+                    });
+                });
+                
+                // Добавляем commit сообщения и даты к результатам
+                results.forEach(result => {
+                    if (result.openTestUuid && result.openTestUuid !== 'N/A') {
+                        // Ищем commit по openTestUuid (который теперь GITHUB_SHA)
+                        const commitInfo = commitMap.get(result.openTestUuid);
+                        if (commitInfo) {
+                            result.commitMessage = commitInfo.message;
+                            result.commitHash = result.openTestUuid;
+                            result.commitDate = commitInfo.date;
+                        } else {
+                            result.commitMessage = 'Commit not found';
+                            result.commitHash = result.openTestUuid;
+                            result.commitDate = null;
+                        }
+                    } else {
+                        result.commitMessage = 'N/A';
+                        result.commitHash = 'N/A';
+                        result.commitDate = null;
+                    }
+                });
+                
+                console.log('Git history loaded successfully');
+            } catch (error) {
+                console.error('Error loading git history:', error);
+                // Если не удалось загрузить git историю, используем openTestUuid как есть
+                results.forEach(result => {
+                    result.commitMessage = 'Git history unavailable';
+                    result.commitHash = result.openTestUuid;
+                    result.commitDate = null;
+                });
+            }
+        }
+
+        // Отображаем результаты в таблице
+        function displayResults(results) {
+            const content = document.getElementById('results-content');
+            
+            if (!results || results.length === 0) {
+                content.innerHTML = '<div class="loading">No test results found</div>';
+                return;
+            }
+
+            let tableHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Commit Hash</th>
+                            <th>Commit Message</th>
+                            <th>Ping (ms)</th>
+                            <th>Download (Mbps)</th>
+                            <th>Upload (Mbps)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            results.forEach(result => {
+                const date = result.commitDate ? new Date(result.commitDate).toLocaleString() : 'N/A';
+                const commitHash = result.commitHash || 'N/A';
+                const commitMessage = result.commitMessage || 'N/A';
+                
+                tableHTML += `
+                    <tr>
+                        <td>${date}</td>
+                        <td><span class="commit-hash">${commitHash}</span></td>
+                        <td><span class="commit-message">${commitMessage}</span></td>
+                        <td>${result.ping.toFixed(2)}</td>
+                        <td>${result.download.toFixed(2)}</td>
+                        <td>${result.upload.toFixed(2)}</td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += '</tbody></table>';
+            content.innerHTML = tableHTML;
+        }
+
+        // Загружаем результаты при загрузке страницы
+        document.addEventListener('DOMContentLoaded', loadTestResults);
+    </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+#!/bin/bash
+echo "Content-Type: application/json"
+echo "Access-Control-Allow-Origin: *"
+echo "Access-Control-Allow-Methods: GET, OPTIONS"
+echo "Access-Control-Allow-Headers: Content-Type"
+echo ""
+
+if [ "$REQUEST_METHOD" = "OPTIONS" ]; then
+    exit 0
+fi
+
+if [ -f "../results/test-results.json" ]; then
+    cat "../results/test-results.json"
+else
+    echo "[]"
+fi
