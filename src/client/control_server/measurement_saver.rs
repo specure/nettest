@@ -104,8 +104,9 @@ impl MeasurementSaver {
         // Конвертируем ping в миллисекунды
         let ping_median_ms = ping_median.map(|ping_ns| (ping_ns as f64 / 1_000_000.0) as i64);
 
-        // Генерируем openTestUuid
-        let open_test_uuid = Uuid::new_v4().to_string();
+        // Генерируем openTestUuid - используем GITHUB_SHA если есть, иначе генерируем
+        let open_test_uuid = std::env::var("GITHUB_SHA")
+            .unwrap_or_else(|_| Uuid::new_v4().to_string());
 
         // Получаем текущее время
         let current_time = SystemTime::now()
