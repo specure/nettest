@@ -48,23 +48,6 @@
             opacity: 0.8;
         }
 
-        .refresh-btn {
-            background: linear-gradient(45deg, #00d4ff, #ff6b6b);
-            color: white;
-            border: none;
-            padding: 15px 30px;
-            border-radius: 25px;
-            font-size: 1.1rem;
-            cursor: pointer;
-            margin-bottom: 30px;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .refresh-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-        }
-
         .results-table {
             background: rgba(255, 255, 255, 0.1);
             border-radius: 15px;
@@ -157,10 +140,8 @@
     <div class="container">
         <div class="header">
             <h1>🚀 Nettest Performance History</h1>
-            <p>Track performance changes from API measurements (UUID: ee7760ec-db94-43df-b8dc-001384f0ed39)</p>
+            <p>Track performance changes from API measurements</p>
         </div>
-
-        <button class="refresh-btn" onclick="loadTestResults()">🔄 Refresh Results</button>
 
         <div class="results-table">
             <h3>📋 Test Results History</h3>
