@@ -5,7 +5,7 @@ on:
     branches: [ main ]
 
 jobs:
-  test-nettest:
+  test-nettest-pr:
     runs-on: ubuntu-24.04
     
     steps:
