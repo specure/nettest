@@ -96,67 +96,23 @@ EOF
       run: |
         cd test-run
         
-        echo "Running nettest client test with -save and raw output..."
-        echo "Client command: ./nettest -c 127.0.0.1 -save -raw"
+        echo "Running nettest client test with -save..."
+        echo "Client command: ./nettest -c 127.0.0.1 -save"
         
-        # Запускаем клиент с -save и raw выводом, передавая commit информацию
+        # Запускаем клиент с -save, передавая commit информацию
         GITHUB_SHA="${{ github.sha }}" \
-        timeout 60s ./nettest -c 127.0.0.1 -save -raw > client.log 2>&1
+        timeout 60s ./nettest -c 127.0.0.1 -save
         CLIENT_EXIT_CODE=$?
         
         echo "Client test completed"
         echo "Client exit code: $CLIENT_EXIT_CODE"
-        echo "Client output:"
-        cat client.log
         
         if [ $CLIENT_EXIT_CODE -ne 0 ]; then
           echo "❌ Client test failed"
           exit 1
         fi
         
-    - name: Parse test results
-      run: |
-        cd test-run
-        
-        echo "Parsing test results from raw output..."
-        
-        # Читаем raw вывод и парсим результаты
-        RAW_OUTPUT=$(cat client.log | tail -1)
-        echo "Raw output: $RAW_OUTPUT"
-        
-        # Парсим формат: ping/X.XX/download/X.XX/upload/X.XX
-        if [[ $RAW_OUTPUT =~ ([0-9]+\.[0-9]+)/([0-9]+\.[0-9]+)/([0-9]+\.[0-9]+) ]]; then
-          PING_MS="${BASH_REMATCH[1]}"
-          DOWNLOAD_GBPS="${BASH_REMATCH[2]}"
-          UPLOAD_GBPS="${BASH_REMATCH[3]}"
-          
-          echo "Parsed results:"
-          echo "Ping: ${PING_MS} ms"
-          echo "Download: ${DOWNLOAD_GBPS} Gbps"
-          echo "Upload: ${UPLOAD_GBPS} Gbps"
-          
-          # Сохраняем результаты в JSON
-          cat > test_results.json << EOF
-{
-  "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-  "commit_hash": "${{ github.sha }}",
-  "commit_message": "${{ github.event.head_commit.message }}",
-  "branch": "${{ github.ref_name }}",
-  "ping": $PING_MS,
-  "download": $DOWNLOAD_GBPS,
-  "upload": $UPLOAD_GBPS,
-  "runner": "${{ runner.os }}-${{ runner.arch }}",
-  "workflow_run": "${{ github.run_id }}"
-}
-EOF
-          
-          echo "Test results saved to test_results.json"
-          cat test_results.json
-          
-        else
-          echo "❌ Failed to parse raw output: $RAW_OUTPUT"
-          exit 1
-        fi
+        echo "✅ Client test completed successfully"
         
     - name: Stop server and cleanup
       if: always()
@@ -180,18 +136,16 @@ EOF
           echo "✅ All nettest processes stopped"
         fi
         
-    - name: Upload test results
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results-${{ github.sha }}
-        path: test-run/test_results.json
-        retention-days: 90
+    - name: Test completed
+      run: |
+        echo "✅ All tests completed successfully"
+        echo "Results have been saved to the control server"
         
     - name: Test summary
       run: |
         echo "=== TEST SUMMARY ==="
         echo "✅ Build: Completed successfully"
         echo "✅ Server: Started and listening on port 5005"
-        echo "✅ Client: Test executed with -save and raw output"
-        echo "✅ Results: Parsed and saved to JSON"
+        echo "✅ Client: Test executed with -save"
+        echo "✅ Results: Saved to control server"
         echo "=== END TEST SUMMARY ==="

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import './App.css';
 import SpeedTest from './components/SpeedTest';
 import ServerSelect from './components/ServerSelect';
@@ -6,6 +7,7 @@ import TestModal from './components/TestModal';
 import ServersMap from './components/ServersMap';
 import QuickActions from './components/QuickActions';
 import TestResults from './components/TestResults';
+import TestResultsPage from './components/TestResultsPage';
 
 function App() {
   const [servers, setServers] = useState([]);
@@ -75,7 +77,7 @@ function App() {
     }, 800);
   };
 
-  return (
+  const MainApp = () => (
     <div className="App">
       <div className="App-header">
         <h1 className="App-title text-glow">Nettest</h1>
@@ -124,12 +126,9 @@ function App() {
             {/* Test Results Button */}
             <div className="card">
               <div className="card-content">
-                <button 
-                  className="test-results-btn"
-                  onClick={() => setIsTestResultsOpen(true)}
-                >
+                <Link to="/test-results" className="test-results-btn">
                   📊 View Test Results History
-                </button>
+                </Link>
               </div>
             </div>
           </>
@@ -155,6 +154,15 @@ function App() {
       
       <QuickActions />
     </div>
+  );
+
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<MainApp />} />
+        <Route path="/test-results" element={<TestResultsPage />} />
+      </Routes>
+    </Router>
   );
 }
 
