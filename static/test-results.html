@@ -243,7 +243,8 @@
                             result.commitHash = result.openTestUuid;
                             result.commitDate = commitInfo.date;
                         } else {
-                            result.commitMessage = 'Commit not found';
+                            // Если commit не найден, возможно это не SHA коммита
+                            result.commitMessage = 'Not a commit SHA';
                             result.commitHash = result.openTestUuid;
                             result.commitDate = null;
                         }
@@ -291,7 +292,7 @@
             `;
             
             results.forEach(result => {
-                const date = result.commitDate ? new Date(result.commitDate).toLocaleString() : 'N/A';
+                const date = result.measurementDate ? new Date(result.measurementDate).toLocaleString() : 'N/A';
                 const commitHash = result.commitHash || 'N/A';
                 const commitMessage = result.commitMessage || 'N/A';
                 
