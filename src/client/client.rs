@@ -41,6 +41,8 @@ pub struct ClientConfig {
     pub tls_port: u16,
     pub x_nettest_client: String,
     pub control_server: String,
+    pub save_results: bool,
+    pub client_uuid: Option<String>,
 }
 
 pub async fn client_run(args: Vec<String>, dafault_config: FileConfig) -> anyhow::Result<()> {
@@ -61,7 +63,7 @@ pub async fn client_run(args: Vec<String>, dafault_config: FileConfig) -> anyhow
 
     info!("Config: {:?}", config);
 
-    let state_refs = run_threads(config.clone(), stats);
+    let state_refs = run_threads(config.clone(), stats).await;
 
     if config.graphs {
         GraphService::print_graph(&state_refs.unwrap());

@@ -15,6 +15,8 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
         tls_port: default_config.server_tls_port.unwrap_or("443".to_string()).parse().unwrap(),
         x_nettest_client: default_config.x_nettest_client,
         control_server: default_config.control_server,
+        save_results: false,
+        client_uuid: default_config.client_uuid,
     };
 
     let mut i = 0;
@@ -50,6 +52,9 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
             }
             "-raw" => {
                 config.raw_output = true;
+            }
+            "-save" => {
+                config.save_results = true;
             }
             "-log" => {
                 i += 1;
