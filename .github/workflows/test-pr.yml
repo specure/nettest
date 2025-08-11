@@ -109,13 +109,84 @@ jobs:
           exit 1
         fi
         
+        # Базовый TCP тест соединения
+        echo "=== BASIC TCP CONNECTION TEST ==="
+        echo "Testing basic TCP connection to 127.0.0.1:5005..."
+        
+        # Пробуем разные способы тестирования TCP соединения
+        if command -v nc >/dev/null 2>&1; then
+          echo "Using netcat (nc) for TCP test..."
+          echo "test" | timeout 10s nc -w 5 127.0.0.1 5005 > tcp_test.log 2>&1
+          NC_EXIT_CODE=$?
+          echo "Netcat test exit code: $NC_EXIT_CODE"
+          echo "Netcat output:"
+          cat tcp_test.log 2>/dev/null || echo "No netcat log"
+        else
+          echo "Netcat not available, trying telnet..."
+          if command -v telnet >/dev/null 2>&1; then
+            echo "Using telnet for TCP test..."
+            timeout 10s telnet 127.0.0.1 5005 > tcp_test.log 2>&1
+            TELNET_EXIT_CODE=$?
+            echo "Telnet test exit code: $TELNET_EXIT_CODE"
+            echo "Telnet output:"
+            cat tcp_test.log 2>/dev/null || echo "No telnet log"
+          else
+            echo "Neither netcat nor telnet available"
+          fi
+        fi
+        
+        # Простой тест с /dev/tcp (bash builtin)
+        echo "Testing with bash /dev/tcp..."
+        timeout 10s bash -c "echo 'test' > /dev/tcp/127.0.0.1/5005" > bash_tcp_test.log 2>&1
+        BASH_TCP_EXIT_CODE=$?
+        echo "Bash TCP test exit code: $BASH_TCP_EXIT_CODE"
+        echo "Bash TCP test output:"
+        cat bash_tcp_test.log 2>/dev/null || echo "No bash TCP log"
+        
+        echo "=== END TCP CONNECTION TEST ==="
+        
         # Запускаем клиент с подробным логированием
         echo "Starting client test..."
         echo "Client command: ./nettest -c 127.0.0.1"
         
-        # Запускаем клиент и сохраняем вывод
-        timeout 60s ./nettest -c 127.0.0.1 > client.log 2>&1
-        CLIENT_EXIT_CODE=$?
+        # Запускаем клиент в фоновом режиме и мониторим
+        echo "Starting client in background..."
+        ./nettest -c 127.0.0.1 > client.log 2>&1 &
+        CLIENT_PID=$!
+        echo "Client started with PID: $CLIENT_PID"
+        
+        # Ждем немного и проверяем статус
+        sleep 2
+        
+        if ps -p $CLIENT_PID >/dev/null 2>&1; then
+          echo "✅ Client is running (PID: $CLIENT_PID)"
+          
+          # Ждем завершения клиента (максимум 60 секунд)
+          echo "Waiting for client to complete..."
+          for i in {1..60}; do
+            if ! ps -p $CLIENT_PID >/dev/null 2>&1; then
+              echo "Client completed after $i seconds"
+              break
+            fi
+            sleep 1
+          done
+          
+          # Проверяем финальный статус
+          if ps -p $CLIENT_PID >/dev/null 2>&1; then
+            echo "⚠️ Client still running after 60 seconds, stopping..."
+            kill -TERM $CLIENT_PID 2>/dev/null || true
+            sleep 2
+            kill -KILL $CLIENT_PID 2>/dev/null || true
+            CLIENT_EXIT_CODE=124  # timeout
+          else
+            # Получаем exit code из wait
+            wait $CLIENT_PID 2>/dev/null || true
+            CLIENT_EXIT_CODE=$?
+          fi
+        else
+          echo "❌ Client failed to start"
+          CLIENT_EXIT_CODE=1
+        fi
         
         echo "Client test completed at: $(date)"
         echo "Client exit code: $CLIENT_EXIT_CODE"
