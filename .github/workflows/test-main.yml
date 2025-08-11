@@ -12,8 +12,8 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # Получаем полную историю для commit hash
-      
+        fetch-depth: 0
+        
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
@@ -47,17 +47,16 @@ jobs:
         cd test-run
         chmod +x nettest
         
-        # Создаем конфиг с захардкоженным UUID для сохранения результатов
-        cat > nettest.conf << EOF
-# Nettest Configuration File for CI/CD
-default_mode = "client"
-server_tcp_port = 5005
-client_use_tls = false
-client_use_websocket = false
-x_nettest_client = "nt"
-control_server = "https://api.nettest.org"
-client_uuid = "ee7760ec-db94-43df-b8dc-001384f0ed38"
-EOF
+        cat > nettest.conf << 'EOF'
+        # Nettest Configuration File for CI/CD
+        default_mode = "client"
+        server_tcp_port = 5005
+        client_use_tls = false
+        client_use_websocket = false
+        x_nettest_client = "nt"
+        control_server = "https://api.nettest.org"
+        client_uuid = "ee7760ec-db94-43df-b8dc-001384f0ed38"
+        EOF
         
         echo "Test environment prepared"
         echo "Current directory: $(pwd)"
@@ -71,13 +70,12 @@ EOF
         
         echo "Starting nettest server..."
         nohup ./nettest -s > server.log 2>&1 &
-        SERVER_PID=$!
-        echo "Server started with PID: $SERVER_PID"
+        echo "Server started in background"
         
         sleep 3
         
-        if ps -p $SERVER_PID >/dev/null 2>&1; then
-          echo "✅ Server is running (PID: $SERVER_PID)"
+        if pgrep -f "nettest -s" >/dev/null 2>&1; then
+          echo "✅ Server is running"
         else
           echo "❌ Server failed to start"
           cat server.log
@@ -99,7 +97,6 @@ EOF
         echo "Running nettest client test with -save..."
         echo "Client command: ./nettest -c 127.0.0.1 -save"
         
-        # Запускаем клиент с -save, передавая commit информацию
         GITHUB_SHA="${{ github.sha }}" \
         timeout 60s ./nettest -c 127.0.0.1 -save
         CLIENT_EXIT_CODE=$?
@@ -113,28 +110,6 @@ EOF
         fi
         
         echo "✅ Client test completed successfully"
-        
-    - name: Stop server and cleanup
-      if: always()
-      run: |
-        cd test-run
-        
-        echo "Stopping server..."
-        if [ ! -z "$SERVER_PID" ]; then
-          kill -TERM $SERVER_PID 2>/dev/null || true
-          sleep 2
-          kill -KILL $SERVER_PID 2>/dev/null || true
-        else
-          pkill -TERM -f "nettest -s" 2>/dev/null || true
-          sleep 2
-          pkill -KILL -f "nettest -s" 2>/dev/null || true
-        fi
-        
-        if pgrep -f "nettest -s" >/dev/null 2>&1; then
-          echo "❌ Some nettest processes still running"
-        else
-          echo "✅ All nettest processes stopped"
-        fi
         
     - name: Test completed
       run: |
