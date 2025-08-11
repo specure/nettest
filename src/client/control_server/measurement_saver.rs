@@ -89,14 +89,14 @@ impl MeasurementSaver {
         // Вычисляем скорости используя calculate_speed_from_measurements
         let download_speed = if !stats_guard.download_measurements.is_empty() {
             let (_, _, speed_mbps) = calculate_speed_from_measurements(stats_guard.download_measurements.clone());
-            Some((speed_mbps * 1_000_000.0) as i64) // Конвертируем в bps как i64
+            Some((speed_mbps * 100.0) as i32) // Конвертируем в сотые доли Mbps
         } else {
             None
         };
 
         let upload_speed = if !stats_guard.upload_measurements.is_empty() {
             let (_, _, speed_mbps) = calculate_speed_from_measurements(stats_guard.upload_measurements.clone());
-            Some((speed_mbps * 1_000_000.0) as i64) // Конвертируем в bps как i64
+            Some((speed_mbps * 100.0) as i32) // Конвертируем в сотые доли Mbps
         } else {
             None
         };
@@ -158,9 +158,9 @@ impl MeasurementSaver {
         // Обеспечиваем наличие client_uuid
         let client_uuid = self.ensure_client_uuid()?;
 
-        // Конвертируем скорости из Gbps в bps
-        let download_speed = download_speed_gbps.map(|speed| (speed * 1_000_000_000.0) as i64);
-        let upload_speed = upload_speed_gbps.map(|speed| (speed * 1_000_000_000.0) as i64);
+        // Конвертируем скорости из Gbps в сотые доли Mbps (например: 57.3 Gbps -> 5730)
+        let download_speed = download_speed_gbps.map(|speed| (speed * 100.0) as i32);
+        let upload_speed = upload_speed_gbps.map(|speed| (speed * 100.0) as i32);
 
         // Сохраняем ping в наносекундах для большей точности
         let ping_median_ns = ping_median;

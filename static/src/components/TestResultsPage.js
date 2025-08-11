@@ -39,8 +39,8 @@ const TestResultsPage = () => {
               id: item.openTestUuid,
               timestamp: item.measurementDate,
               ping: item.ping ? (item.ping / 1000000) : 0, // Конвертируем наносекунды в миллисекунды
-              download: item.download ? (item.download / 1000000) : 0, // Конвертируем в Mbps из bps
-              upload: item.upload ? (item.upload / 1000000) : 0, // Конвертируем в Mbps из bps
+              download: item.download ? (item.download / 100) : 0, // Конвертируем сотые доли Mbps в Mbps
+              upload: item.upload ? (item.upload / 100) : 0, // Конвертируем сотые доли Mbps в Mbps
               openTestUuid: item.openTestUuid || 'N/A'
             };
             
