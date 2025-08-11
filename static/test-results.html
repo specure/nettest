@@ -219,7 +219,7 @@
     <div class="container">
         <div class="header">
             <h1>🚀 Nettest Performance History</h1>
-            <p>Track performance changes across commits and deployments</p>
+            <p>Track performance changes from API measurements (UUID: ee7760ec-db94-43df-b8dc-001384f0ed38)</p>
         </div>
 
         <button class="refresh-btn" onclick="loadTestResults()">🔄 Refresh Results</button>
@@ -267,20 +267,39 @@
         // Загружаем результаты тестов
         async function loadTestResults() {
             try {
-                const response = await fetch('/api/test-results');
+                // Получаем историю измерений из API по захардкоженному UUID
+                const response = await fetch('https://api.nettest.org/reports/basic/history?page=1&size=50&sort=measurementDate%2Cdesc&uuid=ee7760ec-db94-43df-b8dc-001384f0ed38', {
+                    headers: {
+                        'x-nettest-client': 'nt',
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 
-                const results = await response.json();
-                displayResults(results);
-                updateStats(results);
-                updateChart(results);
+                const data = await response.json();
+                const results = data.content || [];
+                
+                // Преобразуем данные в нужный формат
+                const formattedResults = results.map(measurement => ({
+                    timestamp: measurement.measurementDate,
+                    ping: measurement.pingMedian || 0,
+                    download: measurement.speedDownload ? (measurement.speedDownload / 1000000) : 0, // Конвертируем в Mbps
+                    upload: measurement.speedUpload ? (measurement.speedUpload / 1000000) : 0, // Конвертируем в Mbps
+                    commit: measurement.openTestUuid || 'N/A',
+                    branch: 'main'
+                }));
+                
+                displayResults(formattedResults);
+                updateStats(formattedResults);
+                updateChart(formattedResults);
             } catch (error) {
                 console.error('Error loading test results:', error);
                 document.getElementById('results-content').innerHTML = `
                     <div class="error">
-                        Failed to load test results: ${error.message}
+                        Failed to load test results from API: ${error.message}
                     </div>
                 `;
             }
@@ -317,7 +336,7 @@
                 tableHTML += `
                     <tr>
                         <td>${date}</td>
-                        <td><span class="commit-hash">${result.commit_hash}</span></td>
+                        <td><span class="commit-hash">${result.commit}</span></td>
                         <td>${result.ping.toFixed(2)}</td>
                         <td>${result.download.toFixed(2)}</td>
                         <td>${result.upload.toFixed(2)}</td>
@@ -359,7 +378,7 @@
                 performanceChart.destroy();
             }
 
-            const labels = results.map(r => r.commit_hash.substring(0, 8));
+            const labels = results.map(r => r.commit);
             const downloadData = results.map(r => r.download);
             const uploadData = results.map(r => r.upload);
             const pingData = results.map(r => r.ping);
