@@ -7,7 +7,7 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
         use_tls: default_config.client_use_tls,
         use_websocket: default_config.client_use_websocket,
         graphs: false,
-        log: Some(LevelFilter::Info),
+        log: None,
         thread_count: default_config.client_thread_count,
         server: None,
         port: default_config.server_tcp_port.parse().unwrap_or(5005),
