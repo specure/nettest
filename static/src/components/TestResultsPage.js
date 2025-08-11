@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import './TestResultsPage.css';
 
 const TestResultsPage = () => {
+  console.log('TestResultsPage component rendered'); // Отладочная информация
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -10,6 +11,7 @@ const TestResultsPage = () => {
   const HARDCODED_UUID = 'ee7760ec-db94-43df-b8dc-001384f0ed39';
 
   useEffect(() => {
+    console.log('TestResultsPage useEffect triggered'); // Отладочная информация
     loadResults();
   }, []);
 

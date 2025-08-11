@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { HashRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import './App.css';
 import SpeedTest from './components/SpeedTest';
 import ServerSelect from './components/ServerSelect';
@@ -16,6 +16,28 @@ function App() {
   const [error, setError] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isTestResultsOpen, setIsTestResultsOpen] = useState(false);
+
+  // Компонент для отладки маршрутизации
+  const AppContent = () => {
+    const location = useLocation();
+    const navigate = useNavigate();
+    
+    console.log('Current location:', location);
+    console.log('Current pathname:', location.pathname);
+    console.log('Current hash:', location.hash);
+    
+    useEffect(() => {
+      console.log('Location changed to:', location.pathname);
+    }, [location]);
+    
+    return (
+      <Routes>
+        <Route path="/" element={<MainApp />} />
+        <Route path="/test-results" element={<TestResultsPage />} />
+        <Route path="*" element={<MainApp />} />
+      </Routes>
+    );
+  };
 
   useEffect(() => {
     loadServers();
@@ -77,7 +99,9 @@ function App() {
     }, 800);
   };
 
-  const MainApp = () => (
+  const MainApp = () => {
+    console.log('MainApp component rendered'); // Отладочная информация
+    return (
     <div className="App">
       <div className="App-header">
         <h1 className="App-title text-glow">Nettest</h1>
@@ -154,14 +178,14 @@ function App() {
       
       <QuickActions />
     </div>
-  );
+    );
+  };
 
+  console.log('App component rendering, current path:', window.location.pathname); // Отладочная информация
+  
   return (
     <Router>
-      <Routes>
-        <Route path="/" element={<MainApp />} />
-        <Route path="/test-results" element={<TestResultsPage />} />
-      </Routes>
+      <AppContent />
     </Router>
   );
 }
