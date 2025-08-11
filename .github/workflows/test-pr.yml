@@ -145,6 +145,81 @@ jobs:
         
         echo "=== END TCP CONNECTION TEST ==="
         
+        # Диагностика сетевых ограничений GitHub Actions
+        echo "=== GITHUB ACTIONS NETWORK DIAGNOSTICS ==="
+        
+        echo "1. Checking network namespaces and isolation..."
+        echo "Current network namespace:"
+        ls -la /proc/self/ns/net 2>/dev/null || echo "Cannot access network namespace"
+        
+        echo "2. Checking if we're in a container..."
+        if [ -f /.dockerenv ]; then
+          echo "✅ Running in Docker container"
+        elif [ -f /proc/1/cgroup ] && grep -q docker /proc/1/cgroup; then
+          echo "✅ Running in Docker container (cgroup check)"
+        else
+          echo "❌ Not running in Docker container"
+        fi
+        
+        echo "3. Checking network interfaces and routing..."
+        echo "Network interfaces:"
+        ip addr show 2>/dev/null || echo "ip command not available"
+        
+        echo "Routing table:"
+        ip route show 2>/dev/null || echo "ip route not available"
+        
+        echo "4. Checking localhost restrictions..."
+        echo "Testing localhost connectivity with different methods:"
+        
+        # Тест 1: ping localhost
+        if command -v ping >/dev/null 2>&1; then
+          echo "Ping localhost test:"
+          timeout 5s ping -c 2 127.0.0.1 2>&1 || echo "Ping failed"
+        fi
+        
+        # Тест 2: curl localhost
+        if command -v curl >/dev/null 2>&1; then
+          echo "Curl localhost test:"
+          timeout 5s curl -v --connect-timeout 5 http://127.0.0.1:5005 2>&1 || echo "Curl failed"
+        fi
+        
+        # Тест 3: wget localhost
+        if command -v wget >/dev/null 2>&1; then
+          echo "Wget localhost test:"
+          timeout 5s wget --timeout=5 --tries=1 -O /dev/null http://127.0.0.1:5005 2>&1 || echo "Wget failed"
+        fi
+        
+        echo "5. Checking process capabilities and permissions..."
+        echo "Current user: $(whoami)"
+        echo "Current user ID: $(id)"
+        echo "Process capabilities:"
+        cat /proc/self/status | grep Cap 2>/dev/null || echo "Cannot read capabilities"
+        
+        echo "6. Checking if port 5005 is actually bound to all interfaces..."
+        echo "Detailed port binding info:"
+        ss -tuln | grep :5005 2>/dev/null || echo "ss command not available"
+        netstat -tuln | grep :5005 2>/dev/null || echo "netstat not available"
+        
+        echo "7. Testing if we can bind to other ports..."
+        echo "Testing port binding to 127.0.0.1:9999..."
+        timeout 5s bash -c "echo 'test' | nc -l 127.0.0.1 9999" > port_bind_test.log 2>&1 &
+        PORT_BIND_PID=$!
+        sleep 2
+        
+        if ps -p $PORT_BIND_PID >/dev/null 2>&1; then
+          echo "✅ Successfully bound to test port 9999"
+          kill $PORT_BIND_PID 2>/dev/null || true
+        else
+          echo "❌ Failed to bind to test port 9999"
+          cat port_bind_test.log 2>/dev/null || echo "No port bind log"
+        fi
+        
+        echo "8. Checking GitHub Actions environment variables..."
+        echo "GitHub Actions environment:"
+        env | grep -E "(GITHUB|RUNNER|ACTIONS)" | head -10
+        
+        echo "=== END NETWORK DIAGNOSTICS ==="
+        
         # Запускаем клиент с подробным логированием
         echo "Starting client test..."
         echo "Client command: ./nettest -c 127.0.0.1"
