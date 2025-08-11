@@ -143,6 +143,20 @@
   font-size: 0.9rem;
 }
 
+.commit-message {
+  max-width: 300px;
+  word-wrap: break-word;
+  line-height: 1.4;
+  font-size: 0.9rem;
+  color: #e0e0e0;
+}
+
+.commit-message:empty::before {
+  content: 'Loading...';
+  color: #888;
+  font-style: italic;
+}
+
 .loading {
   text-align: center;
   padding: 60px;

@@ -2,7 +2,7 @@ name: Test on Main Branch
 
 on:
   push:
-    branches: [ main, test ]
+    branches: [ main ]
 
 jobs:
   test-nettest:
@@ -56,7 +56,7 @@ jobs:
         client_use_websocket = false
         x_nettest_client = "nt"
         control_server = "https://api.nettest.org"
-        client_uuid = "ee7760ec-db94-43df-b8dc-001384f0ed38"
+        client_uuid = "ee7760ec-db94-43df-b8dc-001384f0ed39"
         EOF
         
         echo "Test environment prepared"
@@ -77,7 +77,7 @@ jobs:
         client_use_websocket = false
         x_nettest_client = "nt"
         control_server = "https://api.nettest.org"
-        client_uuid = "ee7760ec-db94-43df-b8dc-001384f0ed38"
+        client_uuid = "ee7760ec-db94-43df-b8dc-001384f0ed39"
         EOF
         
         echo "System config file created at /etc/nettest.conf"

@@ -5,13 +5,9 @@ import './TestResultsPage.css';
 const TestResultsPage = () => {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [stats, setStats] = useState({
-    latestDownload: 0,
-    latestUpload: 0,
-    latestPing: 0
-  });
 
-  const HARDCODED_UUID = 'ee7760ec-db94-43df-b8dc-001384f0ed38';
+
+  const HARDCODED_UUID = 'ee7760ec-db94-43df-b8dc-001384f0ed39';
 
   useEffect(() => {
     loadResults();
@@ -49,7 +45,9 @@ const TestResultsPage = () => {
           });
           
           setResults(formattedResults);
-          updateStats(formattedResults);
+          
+          // Загружаем Git историю для каждого результата
+          await loadGitHistory(formattedResults);
         } else {
           setResults([]);
         }
@@ -65,18 +63,51 @@ const TestResultsPage = () => {
     }
   };
 
-  const updateStats = (results) => {
-    if (results.length === 0) return;
-    
-    // Берем первый (самый последний) результат для latest значений
-    const latestResult = results[0];
-    
-    setStats({
-      latestDownload: latestResult.download,
-      latestUpload: latestResult.upload,
-      latestPing: latestResult.ping
-    });
+  const loadGitHistory = async (results) => {
+    try {
+      // Получаем Git историю из GitHub API
+      const response = await fetch('https://api.github.com/repos/specure/nettest/commits?per_page=100');
+      
+      if (!response.ok) {
+        console.error('Failed to fetch Git history:', response.status);
+        return;
+      }
+      
+      const commits = await response.json();
+      const commitMap = new Map();
+      
+      // Создаем карту commit hash -> commit message
+      commits.forEach(commit => {
+        commitMap.set(commit.sha, commit.commit.message);
+      });
+      
+      // Обновляем результаты с commit message
+      const updatedResults = results.map(result => {
+        if (result.openTestUuid && result.openTestUuid !== 'N/A') {
+          const commitMessage = commitMap.get(result.openTestUuid);
+          if (commitMessage) {
+            return { ...result, commitMessage };
+          } else {
+            return { ...result, commitMessage: 'Commit not found' };
+          }
+        } else {
+          return { ...result, commitMessage: 'N/A' };
+        }
+      });
+      
+      setResults(updatedResults);
+    } catch (error) {
+      console.error('Error loading Git history:', error);
+      // В случае ошибки, добавляем заглушку для commit message
+      const updatedResults = results.map(result => ({
+        ...result,
+        commitMessage: 'Git history unavailable'
+      }));
+      setResults(updatedResults);
+    }
   };
+
+
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
@@ -103,24 +134,7 @@ const TestResultsPage = () => {
       </div>
       
       <div className="container">
-        {/* Statistics Cards */}
-        <div className="stats-grid">
-          <div className="stat-card">
-            <h3>⚡ Latest Download</h3>
-            <div className="stat-value">{formatSpeed(stats.latestDownload)}</div>
-            <div className="stat-trend">Most recent test</div>
-          </div>
-          <div className="stat-card">
-            <h3>📈 Latest Upload</h3>
-            <div className="stat-value">{formatSpeed(stats.latestUpload)}</div>
-            <div className="stat-trend">Most recent test</div>
-          </div>
-          <div className="stat-card">
-            <h3>🎯 Latest Ping</h3>
-            <div className="stat-value">{formatPing(stats.latestPing)}</div>
-            <div className="stat-trend">Most recent test</div>
-          </div>
-        </div>
+
         
         {/* Results Table */}
         <div className="results-table">
@@ -139,6 +153,7 @@ const TestResultsPage = () => {
                   <tr>
                     <th>Date</th>
                     <th>Test ID</th>
+                    <th>Commit Message</th>
                     <th>Ping (ms)</th>
                     <th>Download (Mbps)</th>
                     <th>Upload (Mbps)</th>
@@ -150,6 +165,9 @@ const TestResultsPage = () => {
                       <td>{formatDate(result.timestamp)}</td>
                       <td>
                         <span className="test-id">{result.openTestUuid.substring(0, 8)}</span>
+                      </td>
+                      <td className="commit-message">
+                        {result.commitMessage || 'Loading...'}
                       </td>
                       <td>{formatPing(result.ping)}</td>
                       <td>{formatSpeed(result.download)}</td>
