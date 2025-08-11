@@ -292,7 +292,16 @@
             `;
             
             results.forEach(result => {
-                const date = result.measurementDate ? new Date(result.measurementDate).toLocaleString() : 'N/A';
+                // Используем commit date если есть, иначе measurementDate
+                let date;
+                if (result.commitDate) {
+                    date = new Date(result.commitDate).toLocaleString();
+                } else if (result.measurementDate) {
+                    date = new Date(result.measurementDate).toLocaleString();
+                } else {
+                    date = 'N/A';
+                }
+                
                 const commitHash = result.commitHash || 'N/A';
                 const commitMessage = result.commitMessage || 'N/A';
                 
