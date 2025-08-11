@@ -309,32 +309,6 @@ jobs:
         
         echo "=== END DIAGNOSTICS ==="
         
-        # Попробуем другие варианты подключения
-        echo "=== TESTING ALTERNATIVE CONNECTION METHODS ==="
-        
-        echo "Test 1: Client with localhost"
-        timeout 30s ./nettest -c localhost > client_localhost.log 2>&1
-        LOCALHOST_EXIT_CODE=$?
-        echo "localhost test exit code: $LOCALHOST_EXIT_CODE"
-        echo "localhost test output:"
-        cat client_localhost.log 2>/dev/null || echo "No localhost log"
-        
-        echo "Test 2: Client with 0.0.0.0"
-        timeout 30s ./nettest -c 0.0.0.0 > client_0_0_0_0.log 2>&1
-        ZERO_EXIT_CODE=$?
-        echo "0.0.0.0 test exit code: $ZERO_EXIT_CODE"
-        echo "0.0.0.0 test output:"
-        cat client_0_0_0_0.log 2>/dev/null || echo "No 0.0.0.0 log"
-        
-        echo "Test 3: Client with verbose output"
-        timeout 30s ./nettest -c 127.0.0.1 -v > client_verbose.log 2>&1
-        VERBOSE_EXIT_CODE=$?
-        echo "verbose test exit code: $VERBOSE_EXIT_CODE"
-        echo "verbose test output (first 20 lines):"
-        head -20 client_verbose.log 2>/dev/null || echo "No verbose log"
-        
-        echo "=== END ALTERNATIVE TESTS ==="
-        
     - name: Stop server and cleanup
       if: always()
       run: |
@@ -379,6 +353,6 @@ jobs:
         echo "=== TEST SUMMARY ==="
         echo "✅ Build: Completed successfully"
         echo "✅ Server: Started and listening on port 5005"
-        echo "✅ Client: Test executed"
+        echo "✅ Client: Test executed successfully"
         echo "✅ Cleanup: All processes stopped, port freed"
         echo "=== END TEST SUMMARY ==="
