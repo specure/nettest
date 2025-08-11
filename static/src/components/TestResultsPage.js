@@ -32,14 +32,21 @@ const TestResultsPage = () => {
       if (response.ok) {
         const data = await response.json();
         if (data && data.content && Array.isArray(data.content)) {
-          const formattedResults = data.content.map(item => ({
-            id: item.openTestUuid,
-            timestamp: item.measurementDate,
-            ping: item.pingMedian || 0,
-            download: item.speedDownload ? (item.speedDownload / 1000000) : 0, // Конвертируем в Mbps
-            upload: item.speedUpload ? (item.speedUpload / 1000000) : 0, // Конвертируем в Mbps
-            openTestUuid: item.openTestUuid || 'N/A'
-          }));
+          const formattedResults = data.content.map(item => {
+            console.log('Raw item:', item); // Отладочная информация
+            
+            const formattedItem = {
+              id: item.openTestUuid,
+              timestamp: item.measurementDate,
+              ping: item.ping ? (item.ping / 1000000) : 0, // Конвертируем наносекунды в миллисекунды
+              download: item.download ? (item.download / 1000000) : 0, // Конвертируем в Mbps из bps
+              upload: item.upload ? (item.upload / 1000000) : 0, // Конвертируем в Mbps из bps
+              openTestUuid: item.openTestUuid || 'N/A'
+            };
+            
+            console.log('Formatted item:', formattedItem); // Отладочная информация
+            return formattedItem;
+          });
           
           setResults(formattedResults);
           updateStats(formattedResults);
@@ -72,6 +79,7 @@ const TestResultsPage = () => {
   };
 
   const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
     const date = new Date(dateString);
     return date.toLocaleString();
   };
