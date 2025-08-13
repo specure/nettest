@@ -57,7 +57,7 @@ jobs:
         client_use_websocket = false
         x_nettest_client = "nt"
         control_server = "https://api.nettest.org"
-        client_uuid = "ee7760ec-db94-43df-b8dc-001384f0ed39"
+        client_uuid = "ee7760ec-db94-43df-b8dc-001384f0ed40"
         EOF
         
         echo "Test environment prepared"
@@ -78,7 +78,7 @@ jobs:
         client_use_websocket = false
         x_nettest_client = "nt"
         control_server = "https://api.nettest.org"
-        client_uuid = "ee7760ec-db94-43df-b8dc-001384f0ed39"
+        client_uuid = "ee7760ec-db94-43df-b8dc-001384f0ed40"
         EOF
         
         echo "System config file created at /etc/nettest.conf"
@@ -151,7 +151,7 @@ jobs:
       run: |
         cd test-run
         
-        echo "Running nettest client test with TLS and -save..."
+        echo "Running nettest client test with TCP and -save..."
         echo "Client command: ./nettest -c 127.0.0.1 -save"
         
         GITHUB_SHA="${{ github.sha }}" \
@@ -172,8 +172,8 @@ jobs:
       run: |
         cd test-run
         
-        echo "Running nettest client test with WSS and -save..."
-        echo "Client command: ./nettest -c 127.0.0.1 -save -ws -tls"
+        echo "Running nettest client test with TLS and -save..."
+        echo "Client command: ./nettest -c 127.0.0.1 -save -tls"
         
         GITHUB_SHA="${{ github.sha }}" \
         timeout 60s ./nettest -c 127.0.0.1 -save -tls
@@ -194,7 +194,7 @@ jobs:
         cd test-run
         
         echo "Running nettest client test with WSS and -save..."
-        echo "Client command: ./nettest -c 127.0.0.1 -save -ws -tls"
+        echo "Client command: ./nettest -c 127.0.0.1 -save -ws"
         
         GITHUB_SHA="${{ github.sha }}" \
         timeout 60s ./nettest -c 127.0.0.1 -save -ws 
@@ -221,7 +221,7 @@ jobs:
         echo "Client command: ./nettest -c 127.0.0.1 -save -ws -tls"
         
         GITHUB_SHA="${{ github.sha }}" \
-        timeout 60s ./nettest -c 127.0.0.1 -save -tls
+        timeout 60s ./nettest -c 127.0.0.1 -save -tls -ws
         CLIENT_EXIT_CODE=$?
         
         echo "Client test completed"

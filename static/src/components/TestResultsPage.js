@@ -8,7 +8,7 @@ const TestResultsPage = () => {
   const [loading, setLoading] = useState(false);
 
 
-  const HARDCODED_UUID = 'ee7760ec-db94-43df-b8dc-001384f0ed39';
+  const HARDCODED_UUID = 'ee7760ec-db94-43df-b8dc-001384f0ed40';
 
   useEffect(() => {
     console.log('TestResultsPage useEffect triggered'); // Отладочная информация

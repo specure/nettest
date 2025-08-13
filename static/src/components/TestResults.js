@@ -11,7 +11,7 @@ const TestResults = ({ isOpen, onClose }) => {
     bestPing: 0
   });
 
-  const HARDCODED_UUID = 'ee7760ec-db94-43df-b8dc-001384f0ed39';
+  const HARDCODED_UUID = 'ee7760ec-db94-43df-b8dc-001384f0ed40';
 
   useEffect(() => {
     if (isOpen) {
