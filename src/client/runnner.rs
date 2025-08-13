@@ -16,6 +16,7 @@ pub async fn run_threads(
     config: ClientConfig,
     stats: Arc<Mutex<SharedStats>>,
 ) -> Result<Vec<Measurement>, anyhow::Error> {
+    let config_clone = config.clone();
     let barrier = Arc::new(Barrier::new(config.thread_count));
     let mut thread_handles = vec![];
     let ping_median = Arc::new(Mutex::new(None::<u64>));
@@ -197,7 +198,7 @@ pub async fn run_threads(
     if config.save_results {
         let mut measurement_saver = MeasurementSaver::new(
             config.control_server.clone(),
-            config.client_uuid.clone(),
+            &config_clone,
         );
         
         // Получаем все сохраненные значения

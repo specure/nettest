@@ -177,17 +177,19 @@
                 
                 // Преобразуем данные в нужный формат
                 const formattedResults = results.map(measurement => {
-                    console.log('Processing measurement:', measurement);
                     
-                    // Конвертируем скорости из hundredths of Mbps в Mbps
-                    const download = measurement.download ? (measurement.download / 100) : 0;
-                    const upload = measurement.upload ? (measurement.upload / 100) : 0;
+                    const download = measurement.speedDownload ? (measurement.speedDownload / 100) : 0;
+                    const upload = measurement.speedUpload ? (measurement.speedUpload / 100) : 0;
                     
-                    // Конвертируем ping из наносекунд в миллисекунды
-                    const ping = measurement.ping ? (measurement.ping / 1000000) : 0;
+                    // Конвертируем ping из наносекундах в миллисекунды
+                    const ping = measurement.pingMedian ? (measurement.pingMedian / 1000000) : 0;
+                    
                     
                     return {
                         openTestUuid: measurement.openTestUuid || 'N/A',
+                        commitHash: measurement.commitHash || null,
+                        connectionType: measurement.connectionType || 'N/A',
+                        threadsNumber: measurement.threadsNumber || 0,
                         download: download,
                         upload: upload,
                         ping: ping
@@ -235,22 +237,19 @@
                 
                 // Добавляем commit сообщения и даты к результатам
                 results.forEach(result => {
-                    if (result.openTestUuid && result.openTestUuid !== 'N/A') {
-                        // Ищем commit по openTestUuid (который теперь GITHUB_SHA)
-                        const commitInfo = commitMap.get(result.openTestUuid);
+                    if (result.commitHash && result.commitHash !== 'N/A') {
+                        // Ищем commit по commitHash
+                        const commitInfo = commitMap.get(result.commitHash);
                         if (commitInfo) {
                             result.commitMessage = commitInfo.message;
-                            result.commitHash = result.openTestUuid;
                             result.commitDate = commitInfo.date;
                         } else {
-                            // Если commit не найден, возможно это не SHA коммита
-                            result.commitMessage = 'Not a commit SHA';
-                            result.commitHash = result.openTestUuid;
+                            // Если commit не найден
+                            result.commitMessage = 'Commit not found';
                             result.commitDate = null;
                         }
                     } else {
                         result.commitMessage = 'N/A';
-                        result.commitHash = 'N/A';
                         result.commitDate = null;
                     }
                 });
@@ -283,21 +282,21 @@
                             <th>Date</th>
                             <th>Commit Hash</th>
                             <th>Commit Message</th>
+                            <th>Connection Type</th>
+                            <th>Threads</th>
                             <th>Ping (ms)</th>
-                            <th>Download (Mbps)</th>
-                            <th>Upload (Mbps)</th>
+                            <th>Download (Gbps)</th>
+                            <th>Upload (Gbps)</th>
                         </tr>
                     </thead>
                     <tbody>
             `;
             
             results.forEach(result => {
-                // Используем commit date если есть, иначе measurementDate
+                // Используем commit date если есть, иначе N/A
                 let date;
                 if (result.commitDate) {
                     date = new Date(result.commitDate).toLocaleString();
-                } else if (result.measurementDate) {
-                    date = new Date(result.measurementDate).toLocaleString();
                 } else {
                     date = 'N/A';
                 }
@@ -310,6 +309,8 @@
                         <td>${date}</td>
                         <td><span class="commit-hash">${commitHash}</span></td>
                         <td><span class="commit-message">${commitMessage}</span></td>
+                        <td>${result.connectionType}</td>
+                        <td>${result.threadsNumber}</td>
                         <td>${result.ping.toFixed(2)}</td>
                         <td>${result.download.toFixed(2)}</td>
                         <td>${result.upload.toFixed(2)}</td>
