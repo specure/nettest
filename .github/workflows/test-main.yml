@@ -3,6 +3,7 @@ name: Test on Main Branch
 on:
   push:
     branches: [ main ]
+    
 
 jobs:
   test-nettest-main:
@@ -124,13 +125,42 @@ jobs:
           cat server.log
           exit 1
         fi
+
+        if netstat -tuln 2>/dev/null | grep :443 >/dev/null 2>&1; then
+          echo "✅ Port 443 is listening"
+        else
+          echo "❌ Port 443 is not listening"
+          cat server.log
+          exit 1
+        fi
         
     - name: Run nettest client TCP test
       run: |
         cd test-run
         
         echo "Running nettest client test with TLS and -save..."
-        echo "Client command: ./nettest -c 127.0.0.1 -save -tls"
+        echo "Client command: ./nettest -c 127.0.0.1 -save"
+        
+        GITHUB_SHA="${{ github.sha }}" \
+        timeout 60s ./nettest -c 127.0.0.1 -save 
+        CLIENT_EXIT_CODE=$?
+        
+        echo "Client test completed"
+        echo "Client exit code: $CLIENT_EXIT_CODE"
+        
+        if [ $CLIENT_EXIT_CODE -ne 0 ]; then
+          echo "❌ Client TCP test failed"
+          exit 1
+        fi
+        
+        echo "✅ Client TLS test completed successfully"
+
+    - name: Run nettest client TLS test
+      run: |
+        cd test-run
+        
+        echo "Running nettest client test with WSS and -save..."
+        echo "Client command: ./nettest -c 127.0.0.1 -save -ws -tls"
         
         GITHUB_SHA="${{ github.sha }}" \
         timeout 60s ./nettest -c 127.0.0.1 -save -tls
@@ -168,26 +198,6 @@ jobs:
         echo "✅ Client WSS test completed successfully"
 
         
-    - name: Run nettest client TLS test
-      run: |
-        cd test-run
-        
-        echo "Running nettest client test with WSS and -save..."
-        echo "Client command: ./nettest -c 127.0.0.1 -save -ws -tls"
-        
-        GITHUB_SHA="${{ github.sha }}" \
-        timeout 60s ./nettest -c 127.0.0.1 -save -tls
-        CLIENT_EXIT_CODE=$?
-        
-        echo "Client test completed"
-        echo "Client exit code: $CLIENT_EXIT_CODE"
-        
-        if [ $CLIENT_EXIT_CODE -ne 0 ]; then
-          echo "❌ Client TLS test failed"
-          exit 1
-        fi
-        
-        echo "✅ Client TLS test completed successfully"
 
         
     - name: Run nettest client WSS test
