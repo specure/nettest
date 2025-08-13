@@ -110,7 +110,7 @@ jobs:
           exit 1
         fi
         
-    - name: Run nettest client test
+    - name: Run nettest client TCP test
       run: |
         cd test-run
         
@@ -129,7 +129,28 @@ jobs:
           exit 1
         fi
         
-        echo "✅ Client test completed successfully"
+        echo "✅ Client TCP test completed successfully"
+        
+    - name: Run nettest client WS test
+      run: |
+        cd test-run
+        
+        echo "Running nettest client test with -save..."
+        echo "Client command: ./nettest -c 127.0.0.1 -save"
+        
+        GITHUB_SHA="${{ github.sha }}" \
+        timeout 60s ./nettest -c 127.0.0.1 -save -ws
+        CLIENT_EXIT_CODE=$?
+        
+        echo "Client test completed"
+        echo "Client exit code: $CLIENT_EXIT_CODE"
+        
+        if [ $CLIENT_EXIT_CODE -ne 0 ]; then
+          echo "❌ Client test failed"
+          exit 1
+        fi
+        
+        echo "✅ Client WS test completed successfully"
         
     - name: Test completed
       run: |
