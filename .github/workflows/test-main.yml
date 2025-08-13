@@ -83,21 +83,36 @@ jobs:
         echo "System config file created at /etc/nettest.conf"
         echo "System config content:"
         sudo cat /etc/nettest.conf
+
+    - name: Create TLS certificates
+      run: |
+        cd test-run
+        
+        # Создаем TLS сертификаты из секретов
+        echo "${{ secrets.fullchain }}" > fullchain.pem
+        echo "${{ secrets.privkey }}" > privkey.pem
+        
+        # Проверяем права доступа
+        chmod 600 privkey.pem
+        chmod 644 fullchain.pem
+        
+        echo "TLS certificates created:"
+        ls -la *.pem
         
     - name: Start nettest server
       run: |
         cd test-run
         
-        echo "Starting nettest server..."
-        nohup ./nettest -s > server.log 2>&1 &
-        echo "Server started in background"
+        echo "Starting nettest server with TLS..."
+        nohup ./nettest -s -k privkey.pem -c fullchain.pem > server.log 2>&1 &
+        echo "TLS server started in background"
         
         sleep 3
         
         if pgrep -f "nettest -s" >/dev/null 2>&1; then
-          echo "✅ Server is running"
+          echo "✅ TLS Server is running"
         else
-          echo "❌ Server failed to start"
+          echo "❌ TLS Server failed to start"
           cat server.log
           exit 1
         fi
@@ -114,43 +129,87 @@ jobs:
       run: |
         cd test-run
         
-        echo "Running nettest client test with -save..."
-        echo "Client command: ./nettest -c 127.0.0.1 -save"
+        echo "Running nettest client test with TLS and -save..."
+        echo "Client command: ./nettest -c 127.0.0.1 -save -tls"
         
         GITHUB_SHA="${{ github.sha }}" \
-        timeout 60s ./nettest -c 127.0.0.1 -save
+        timeout 60s ./nettest -c 127.0.0.1 -save -tls
         CLIENT_EXIT_CODE=$?
         
         echo "Client test completed"
         echo "Client exit code: $CLIENT_EXIT_CODE"
         
         if [ $CLIENT_EXIT_CODE -ne 0 ]; then
-          echo "❌ Client test failed"
+          echo "❌ Client TLS test failed"
           exit 1
         fi
         
-        echo "✅ Client TCP test completed successfully"
+        echo "✅ Client TLS test completed successfully"
         
     - name: Run nettest client WS test
       run: |
         cd test-run
         
-        echo "Running nettest client test with -save..."
-        echo "Client command: ./nettest -c 127.0.0.1 -save"
+        echo "Running nettest client test with WSS and -save..."
+        echo "Client command: ./nettest -c 127.0.0.1 -save -ws -tls"
         
         GITHUB_SHA="${{ github.sha }}" \
-        timeout 60s ./nettest -c 127.0.0.1 -save -ws
+        timeout 60s ./nettest -c 127.0.0.1 -save -ws 
         CLIENT_EXIT_CODE=$?
         
         echo "Client test completed"
         echo "Client exit code: $CLIENT_EXIT_CODE"
         
         if [ $CLIENT_EXIT_CODE -ne 0 ]; then
-          echo "❌ Client test failed"
+          echo "❌ Client WSS test failed"
           exit 1
         fi
         
-        echo "✅ Client WS test completed successfully"
+        echo "✅ Client WSS test completed successfully"
+
+        
+    - name: Run nettest client TLS test
+      run: |
+        cd test-run
+        
+        echo "Running nettest client test with WSS and -save..."
+        echo "Client command: ./nettest -c 127.0.0.1 -save -ws -tls"
+        
+        GITHUB_SHA="${{ github.sha }}" \
+        timeout 60s ./nettest -c 127.0.0.1 -save -tls
+        CLIENT_EXIT_CODE=$?
+        
+        echo "Client test completed"
+        echo "Client exit code: $CLIENT_EXIT_CODE"
+        
+        if [ $CLIENT_EXIT_CODE -ne 0 ]; then
+          echo "❌ Client TLS test failed"
+          exit 1
+        fi
+        
+        echo "✅ Client TLS test completed successfully"
+
+        
+    - name: Run nettest client WSS test
+      run: |
+        cd test-run
+        
+        echo "Running nettest client test with WSS and -save..."
+        echo "Client command: ./nettest -c 127.0.0.1 -save -ws -tls"
+        
+        GITHUB_SHA="${{ github.sha }}" \
+        timeout 60s ./nettest -c 127.0.0.1 -save -tls
+        CLIENT_EXIT_CODE=$?
+        
+        echo "Client test completed"
+        echo "Client exit code: $CLIENT_EXIT_CODE"
+        
+        if [ $CLIENT_EXIT_CODE -ne 0 ]; then
+          echo "❌ Client WSS test failed"
+          exit 1
+        fi
+        
+        echo "✅ Client WSS test completed successfully"
         
     - name: Test completed
       run: |
@@ -161,7 +220,8 @@ jobs:
       run: |
         echo "=== TEST SUMMARY ==="
         echo "✅ Build: Completed successfully"
-        echo "✅ Server: Started and listening on port 5005"
-        echo "✅ Client: Test executed with -save"
+        echo "✅ TLS Server: Started and listening on port 5005"
+        echo "✅ Client TLS: Test executed with -save -tls"
+        echo "✅ Client WSS: Test executed with -save -ws -tls"
         echo "✅ Results: Saved to control server"
         echo "=== END TEST SUMMARY ==="
