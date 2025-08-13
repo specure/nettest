@@ -117,9 +117,9 @@ jobs:
       run: |
         cd test-run
         
-        echo "Starting nettest server with TLS..."
-        nohup ./nettest -s -k privkey.pem -c fullchain.pem > server.log 2>&1 &
-        echo "TLS server started in background"
+        echo "Starting nettest server with TLS and sudo for port 443..."
+        sudo nohup ./nettest -s -k privkey.pem -c fullchain.pem > server.log 2>&1 &
+        echo "TLS server started in background with sudo"
         
         sleep 3
         
@@ -138,7 +138,7 @@ jobs:
           cat server.log
           exit 1
         fi
-
+        
         if netstat -tuln 2>/dev/null | grep :443 >/dev/null 2>&1; then
           echo "✅ Port 443 is listening"
         else
