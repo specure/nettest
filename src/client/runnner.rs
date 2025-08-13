@@ -116,7 +116,7 @@ pub async fn run_threads(
                 let speed = calculate_download_speed_from_stats_silent(&stats_guard.download_measurements);
                 
                 // Сохраняем download скорость для последующего использования
-                *download_speed_clone.lock().unwrap() = Some(speed.1); // speed.1 - это Gbps
+                *download_speed_clone.lock().unwrap() = Some(speed.2); // speed.1 - это Gbps
                 
                 if config.raw_output {
                     print!("/{:.2}", speed.1); // speed.1 - это Gbps
@@ -147,7 +147,7 @@ pub async fn run_threads(
                 let speed = calculate_upload_speed_from_stats_silent(&stats_guard.upload_measurements);
                 
                 // Сохраняем upload скорость для последующего использования
-                *upload_speed_clone.lock().unwrap() = Some(speed.1); // speed.1 - это Gbps
+                *upload_speed_clone.lock().unwrap() = Some(speed.2); // speed.1 - это Gbps
                 
                 if config.raw_output {
                     println!("/{:.2}", speed.1); // speed.1 - это Gbps, println! для перевода строки

@@ -141,13 +141,18 @@ impl MeasurementSaver {
             "time": current_time,
             "clientVersion": "2.0.0",
             "connectionType": self.connection_type.as_str(),
-            "threadsNumber": self.threads_number
+            "threadsNumber": self.threads_number,
         });
 
         // Добавляем commitHash только если есть GITHUB_SHA
         if let Ok(commit_hash) = std::env::var("GITHUB_SHA") {
+            println!("GITHUB_SHA found: {}", commit_hash);
             measurement_data["commitHash"] = json!(commit_hash);
+        } else {
+            info!("GITHUB_SHA not found in environment");
         }
+
+        info!("Final measurement data: {:?}", measurement_data);
 
         info!("Saving measurement: {:?}", measurement_data);
 

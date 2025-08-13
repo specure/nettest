@@ -177,13 +177,14 @@
                 
                 // Преобразуем данные в нужный формат
                 const formattedResults = results.map(measurement => {
+                    console.log('Processing measurement:', measurement);
                     
-                    const download = measurement.speedDownload ? (measurement.speedDownload / 100) : 0;
-                    const upload = measurement.speedUpload ? (measurement.speedUpload / 100) : 0;
+                    // Конвертируем скорости из hundredths of Mbps в Mbps
+                    const download = measurement.download ? (measurement.download / 100 / 1000) : 0;
+                    const upload = measurement.upload ? (measurement.upload / 100 / 1000) : 0;
                     
-                    // Конвертируем ping из наносекундах в миллисекунды
-                    const ping = measurement.pingMedian ? (measurement.pingMedian / 1000000) : 0;
-                    
+                    // Конвертируем ping из наносекунд в миллисекунды
+                    const ping = measurement.ping ? (measurement.ping / 1000000) : 0;
                     
                     return {
                         openTestUuid: measurement.openTestUuid || 'N/A',
