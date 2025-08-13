@@ -100,6 +100,19 @@ jobs:
         echo "TLS certificates created:"
         ls -la *.pem
         
+        # Выводим содержимое сертификатов для отладки
+        echo "=== FULLCHAIN CERTIFICATE ==="
+        cat fullchain.pem
+        echo "=== END FULLCHAIN ==="
+        
+        echo "=== PRIVATE KEY (first 100 chars) ==="
+        head -c 100 privkey.pem
+        echo "..."
+        echo "=== END PRIVATE KEY PREVIEW ==="
+        
+
+        
+        
     - name: Start nettest server
       run: |
         cd test-run
