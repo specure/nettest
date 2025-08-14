@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nettest Results - Performance History</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
             margin: 0;
@@ -13,92 +14,170 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
-            color: #ffffff;
-            min-height: 100vh;
+            margin: 0;
             padding: 20px;
+            background: #1a1a1a;
+            color: #ffffff;
         }
-
+        
         .container {
             max-width: 1400px;
             margin: 0 auto;
         }
-
-        .header {
+        
+        h1 {
+            color: #00d4ff;
             text-align: center;
-            margin-bottom: 40px;
-            padding: 30px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin-bottom: 30px;
+            font-size: 2.5rem;
         }
-
-        .header h1 {
-            font-size: 3rem;
-            margin-bottom: 10px;
-            background: linear-gradient(45deg, #00d4ff, #ff6b6b);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+        
+        .connection-tabs {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 30px;
+            gap: 10px;
         }
-
-        .header p {
-            font-size: 1.2rem;
-            opacity: 0.8;
+        
+        .connection-tab {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            background: #333;
+            color: #fff;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
         }
-
-        .results-table {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 15px;
-            padding: 25px;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+        
+        .connection-tab:hover {
+            background: #555;
+        }
+        
+        .connection-tab.active {
+            background: #00d4ff;
+            color: #000;
+        }
+        
+        .charts-container {
+            margin: 20px 0;
+        }
+        
+        .chart-card {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            border: 1px solid #444;
+        }
+        
+        .chart-card.full-width {
+            width: 100%;
+        }
+        
+        .chart-card h3 {
+            margin: 0 0 20px 0;
+            color: #00d4ff;
+            font-size: 18px;
+        }
+        
+        .chart {
+            width: 100% !important;
+            height: 300px !important;
+        }
+        
+        .ping-chart {
+            height: 200px !important;
+        }
+        
+        .results-container {
+            margin: 20px 0;
             overflow-x: auto;
         }
-
-        .results-table h3 {
-            color: #00d4ff;
-            margin-bottom: 20px;
-            font-size: 1.8rem;
-        }
-
-        table {
+        
+        #resultsTable {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 20px;
+            background: #2a2a2a;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            border: 1px solid #444;
         }
-
-        th, td {
-            padding: 15px;
+        
+        #resultsTable th,
+        #resultsTable td {
+            padding: 12px;
             text-align: left;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border-bottom: 1px solid #444;
         }
-
-        th {
-            background: rgba(0, 212, 255, 0.1);
-            color: #00d4ff;
+        
+        #resultsTable th {
+            background: #333;
             font-weight: 600;
-            font-size: 1.1rem;
+            color: #00d4ff;
         }
-
-        tr:hover {
-            background: rgba(255, 255, 255, 0.05);
+        
+        #resultsTable td {
+            color: #ffffff;
         }
-
+        
+        #resultsTable tr:hover {
+            background: #3a3a3a;
+        }
+        
         .commit-hash {
-            font-family: 'Courier New', monospace;
-            background: rgba(0, 212, 255, 0.2);
-            padding: 5px 8px;
-            border-radius: 5px;
-            font-size: 0.9rem;
+            font-family: monospace;
+            background: #444;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #00d4ff;
         }
-
+        
         .commit-message {
             max-width: 300px;
-            word-wrap: break-word;
-            font-size: 0.9rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 14px;
             color: #e0e0e0;
+        }
+        
+        .error {
+            color: #ff6b6b;
+            text-align: center;
+            padding: 20px;
+            font-weight: bold;
+        }
+        
+        .placeholder-row {
+            background-color: rgba(255, 107, 107, 0.1) !important;
+            color: #ff6b6b !important;
+            font-family: inherit !important;
+            font-size: inherit !important;
+            font-weight: inherit !important;
+        }
+        
+        .placeholder-row:hover {
+            background-color: rgba(255, 107, 107, 0.2) !important;
+        }
+        
+        /* Стили для tooltip */
+        .chartjs-tooltip {
+            background: rgba(0, 0, 0, 0.9) !important;
+            color: white !important;
+            border-radius: 8px !important;
+            padding: 12px !important;
+            font-family: monospace !important;
+            font-size: 13px !important;
+            line-height: 1.4 !important;
+        }
+        
+        .chartjs-tooltip .commit-hash {
+            color: #00d4ff !important;
+            font-weight: bold !important;
         }
 
         .loading {
@@ -117,22 +196,170 @@
             border-radius: 10px;
         }
 
-        @media (max-width: 768px) {
-            .header h1 {
-                font-size: 2rem;
-            }
-            
-            .container {
-                padding: 10px;
-            }
-            
-            table {
-                font-size: 0.9rem;
-            }
-            
-            th, td {
-                padding: 10px 8px;
-            }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 30px;
+            position: relative;
+        }
+        
+        .status-indicator {
+            position: absolute;
+            top: 20px;
+            right: 0px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            width: 160px;
+            max-width: 160px;
+            min-width: 160px;
+            z-index: 1000;
+        }
+        
+        .status-header {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            cursor: pointer;
+            background: #333;
+            border-radius: 8px 8px 0 0;
+            transition: background-color 0.3s ease;
+        }
+        
+        .status-header:hover {
+            background: #444;
+        }
+        
+        .status-icon {
+            margin-right: 8px;
+            font-size: 16px;
+        }
+        
+        .status-text {
+            flex: 1;
+            color: #00d4ff;
+            font-weight: 600;
+        }
+        
+        .status-toggle {
+            color: #ffffff;
+            transition: transform 0.3s ease;
+        }
+        
+        .status-indicator.expanded .status-toggle {
+            transform: rotate(180deg);
+        }
+        
+        .status-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            background: #2a2a2a;
+            border-radius: 0 0 8px 8px;
+            width: 400px;
+            max-width: 400px;
+            min-width: 400px;
+            position: absolute;
+            right: 0;
+            top: 100%;
+        }
+        
+        .status-content > div {
+            padding: 16px;
+            border-top: 1px solid #444;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+        
+        .status-indicator.expanded .status-content {
+            max-height: 300px;
+        }
+        
+        .status-success {
+            color: #51cf66;
+            background: rgba(81, 207, 102, 0.1);
+            border-radius: 6px;
+            padding: 12px;
+            margin: 8px 0;
+        }
+        
+        .status-warning {
+            color: #ffd43b;
+            background: rgba(255, 212, 59, 0.1);
+            border-radius: 6px;
+            padding: 12px;
+            margin: 8px 0;
+        }
+        
+        .status-error {
+            color: #ff6b6b;
+            background: rgba(255, 107, 107, 0.1);
+            border-radius: 6px;
+            padding: 12px;
+            margin: 8px 0;
+        }
+
+        .measurement-details {
+            margin-top: 15px;
+            padding: 15px;
+            background: #333;
+            border-radius: 6px;
+            border: 1px solid #444;
+        }
+        
+        .measurement-details h4 {
+            margin: 0 0 15px 0;
+            color: #00d4ff;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        .measurement-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            padding: 8px 12px;
+            background: #2a2a2a;
+            border-radius: 4px;
+            border: 1px solid #444;
+        }
+        
+        .measurement-row:last-child {
+            margin-bottom: 0;
+        }
+        
+        .measurement-row .connection-type {
+            font-weight: bold;
+            color: #00d4ff;
+            min-width: 40px;
+        }
+        
+        .measurement-row .measurement-separator {
+            margin: 0 8px;
+            color: #666;
+            font-weight: bold;
+        }
+        
+        .measurement-row .ping-value,
+        .measurement-row .download-value,
+        .measurement-row .upload-value {
+            font-family: monospace;
+            color: #00d4ff;
+            min-width: 50px;
+            text-align: center;
+        }
+        
+        .measurement-row.missing .ping-value,
+        .measurement-row.missing .download-value,
+        .measurement-row.missing .upload-value {
+            color: #ff6b6b;
+        }
+        
+        .measurement-row.missing {
+            background: rgba(255, 107, 107, 0.1);
+            border-color: #ff6b6b;
         }
     </style>
 </head>
@@ -141,17 +368,79 @@
         <div class="header">
             <h1>🚀 Nettest Performance History</h1>
             <p>Track performance changes from API measurements</p>
+            <div class="status-indicator" id="statusIndicator">
+                <div class="status-header">
+                    <span class="status-icon">📊</span>
+                    <span class="status-text" id="statusText">Checking...</span>
+                    <span class="status-toggle">▼</span>
+                </div>
+                <div class="status-content" id="statusContent">
+                    <div class="loading">Checking measurement status...</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="connection-tabs">
+            <button class="connection-tab active" data-connection="TCP">TCP</button>
+            <button class="connection-tab" data-connection="TLS">TLS</button>
+            <button class="connection-tab" data-connection="WS">WS</button>
+            <button class="connection-tab" data-connection="WSS">WSS</button>
+        </div>
+
+        <div class="charts-container">
+            <div class="chart-card full-width" id="speeds-chart">
+                <h3>📊 Download & Upload Performance</h3>
+                <canvas class="chart"></canvas>
+            </div>
+            <div class="chart-card full-width" id="ping-chart">
+                <h3>📈 Ping Latency Trend</h3>
+                <canvas class="chart ping-chart"></canvas>
+            </div>
         </div>
 
         <div class="results-table">
             <h3>📋 Test Results History</h3>
-            <div id="results-content">
-                <div class="loading">Loading test results...</div>
+            <div class="results-container">
+                <table id="resultsTable">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Commit Hash</th>
+                            <th>Commit Message</th>
+                            <th>Connection Type</th>
+                            <th>Threads</th>
+                            <th>Ping (ms)</th>
+                            <th>Download (Gbps)</th>
+                            <th>Upload (Gbps)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Results will be populated here -->
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
 
     <script>
+        // Проверяем что Chart.js загрузился
+        if (typeof Chart === 'undefined') {
+            console.error('Chart.js not loaded, trying to load from CDN...');
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/chart.js';
+            script.onload = () => {
+                console.log('Chart.js loaded successfully');
+                // Если страница уже загружена, загружаем результаты
+                if (document.readyState === 'complete') {
+                    loadTestResults();
+                }
+            };
+            script.onerror = () => {
+                console.error('Failed to load Chart.js from CDN');
+            };
+            document.head.appendChild(script);
+        }
+
         // Загружаем результаты тестов
         async function loadTestResults() {
             try {
@@ -177,16 +466,11 @@
                 
                 // Преобразуем данные в нужный формат
                 const formattedResults = results.map(measurement => {
-                    console.log('Processing measurement:', measurement);
+                    const download = measurement.download ? (measurement.download / 100 / 1000) : 0; // hundredths of Mbps to Gbps
+                    const upload = measurement.upload ? (measurement.upload / 100 / 1000) : 0; // hundredths of Mbps to Gbps
+                    const ping = measurement.ping ? (measurement.ping / 1000000) : 0; // nanoseconds to milliseconds
                     
-                    // Конвертируем скорости из hundredths of Mbps в Mbps
-                    const download = measurement.download ? (measurement.download / 100 / 1000) : 0;
-                    const upload = measurement.upload ? (measurement.upload / 100 / 1000) : 0;
-                    
-                    // Конвертируем ping из наносекунд в миллисекунды
-                    const ping = measurement.ping ? (measurement.ping / 1000000) : 0;
-                    
-                    return {
+                    const formattedResult = {
                         openTestUuid: measurement.openTestUuid || 'N/A',
                         commitHash: measurement.commitHash || null,
                         connectionType: measurement.connectionType || 'N/A',
@@ -195,21 +479,60 @@
                         upload: upload,
                         ping: ping
                     };
+                    
+                    console.log('Formatted measurement:', formattedResult);
+                    return formattedResult;
                 });
-                
-                console.log('Formatted results:', formattedResults);
+
+                // Сохраняем результаты в глобальную переменную
+                window.results = formattedResults;
                 
                 // Загружаем git историю для получения commit сообщений и дат
                 await loadGitHistory(formattedResults);
                 
-                displayResults(formattedResults);
+                // Создаем полный список результатов с заполнением отсутствующих измерений
+                const completeResults = createCompleteResults(formattedResults);
+                
+                console.log('Complete results before git history:', completeResults.filter(r => r.isPlaceholder).map(r => ({
+                    connectionType: r.connectionType,
+                    commitHash: r.commitHash,
+                    commitDate: r.commitDate
+                })));
+                
+                // Загружаем git историю еще раз для placeholder записей
+                await loadGitHistory(completeResults);
+                
+                console.log('Complete results after git history:', completeResults.filter(r => r.isPlaceholder).map(r => ({
+                    connectionType: r.connectionType,
+                    commitHash: r.commitHash,
+                    commitDate: r.commitDate
+                })));
+                
+                // Обновляем глобальную переменную с полными результатами
+                window.results = completeResults;
+                
+                // Применяем фильтр TCP по умолчанию ПЕРЕД отображением
+                filterByConnection('TCP');
+                
+                // Отображаем результаты и создаем графики
+                displayResults(completeResults, 'TCP');
+                createCharts(completeResults);
+                
+                // Проверяем статус измерений
+                checkMeasurementStatus();
             } catch (error) {
                 console.error('Error loading test results:', error);
-                document.getElementById('results-content').innerHTML = `
-                    <div class="error">
-                        Failed to load test results from API: ${error.message}
-                    </div>
-                `;
+                // Показываем ошибку в таблице
+                const tbody = document.querySelector('#resultsTable tbody');
+                if (tbody) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="7" class="error">
+                                Failed to load test results from API: ${error.message}
+                            </td>
+                        </tr>
+                    `;
+                }
             }
         }
         
@@ -238,20 +561,26 @@
                 
                 // Добавляем commit сообщения и даты к результатам
                 results.forEach(result => {
-                    if (result.commitHash && result.commitHash !== 'N/A') {
+                    if (result.commitHash && result.commitHash !== 'N/A' && result.commitHash !== null) {
                         // Ищем commit по commitHash
                         const commitInfo = commitMap.get(result.commitHash);
                         if (commitInfo) {
                             result.commitMessage = commitInfo.message;
                             result.commitDate = commitInfo.date;
+                            if (result.isPlaceholder) {
+                                console.log(`Updated placeholder ${result.connectionType} - ${result.commitHash} with date: ${result.commitDate}`);
+                            }
                         } else {
                             // Если commit не найден
                             result.commitMessage = 'Commit not found';
                             result.commitDate = null;
+                            if (result.isPlaceholder) {
+                                console.log(`Placeholder ${result.connectionType} - ${result.commitHash} not found in git history`);
+                            }
                         }
                     } else {
-                        result.commitMessage = 'N/A';
-                        result.commitDate = null;
+                        // Записи с N/A commitHash не обрабатываются
+                        console.log(`Skipping result with N/A commitHash:`, result);
                     }
                 });
                 
@@ -261,70 +590,698 @@
                 // Если не удалось загрузить git историю, используем openTestUuid как есть
                 results.forEach(result => {
                     result.commitMessage = 'Git history unavailable';
-                    result.commitHash = result.openTestUuid;
+                    if (!result.commitHash || result.commitHash === 'N/A' || result.commitHash === null) {
+                        result.commitHash = result.openTestUuid;
+                    }
                     result.commitDate = null;
                 });
             }
         }
 
         // Отображаем результаты в таблице
-        function displayResults(results) {
-            const content = document.getElementById('results-content');
+        function displayResults(results, connectionType = 'TCP') {
+            console.log(`Displaying results for ${connectionType}:`, results);
             
-            if (!results || results.length === 0) {
-                content.innerHTML = '<div class="loading">No test results found</div>';
+            const tbody = document.querySelector('#resultsTable tbody');
+            if (!tbody) {
+                console.error('Table body not found!');
                 return;
             }
-
-            let tableHTML = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Commit Hash</th>
-                            <th>Commit Message</th>
-                            <th>Connection Type</th>
-                            <th>Threads</th>
-                            <th>Ping (ms)</th>
-                            <th>Download (Gbps)</th>
-                            <th>Upload (Gbps)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            `;
             
-            results.forEach(result => {
-                // Используем commit date если есть, иначе N/A
-                let date;
-                if (result.commitDate) {
-                    date = new Date(result.commitDate).toLocaleString();
-                } else {
-                    date = 'N/A';
-                }
-                
-                const commitHash = result.commitHash || 'N/A';
-                const commitMessage = result.commitMessage || 'N/A';
-                
-                tableHTML += `
+            tbody.innerHTML = '';
+            
+            if (!results || results.length === 0) {
+                tbody.innerHTML = `
                     <tr>
-                        <td>${date}</td>
-                        <td><span class="commit-hash">${commitHash}</span></td>
-                        <td><span class="commit-message">${commitMessage}</span></td>
-                        <td>${result.connectionType}</td>
-                        <td>${result.threadsNumber}</td>
-                        <td>${result.ping.toFixed(2)}</td>
-                        <td>${result.download.toFixed(2)}</td>
-                        <td>${result.upload.toFixed(2)}</td>
+                        <td colspan="7" class="error">
+                            No test results found for ${connectionType}
+                        </td>
                     </tr>
                 `;
+                return;
+            }
+            
+            // Фильтруем по connection type если указан
+            let displayResults = results;
+            if (connectionType !== 'all') {
+                displayResults = results.filter(r => r.connectionType === connectionType);
+                console.log(`Filtered ${connectionType} results:`, displayResults.length, 'out of', results.length);
+            }
+            
+            // Сортируем результаты по дате (новые сверху)
+            displayResults.sort((a, b) => {
+                const dateA = a.commitDate ? new Date(a.commitDate) : new Date(0);
+                const dateB = b.commitDate ? new Date(b.commitDate) : new Date(0);
+                return dateB - dateA; // Новые сверху
             });
-
-            tableHTML += '</tbody></table>';
-            content.innerHTML = tableHTML;
+            
+            console.log('Sorted results by date (newest first):', displayResults.map(r => ({
+                date: r.commitDate,
+                commitHash: r.commitHash,
+                connectionType: r.connectionType
+            })));
+            
+            // Показываем информацию о том, сколько записей с N/A commitHash было отфильтровано
+            const totalResults = window.results ? window.results.length : 0;
+            const validResults = results.filter(r => r.commitHash && r.commitHash !== 'N/A' && r.commitHash !== null).length;
+            const excludedResults = totalResults - validResults;
+            
+            if (excludedResults > 0) {
+                console.log(`Excluded ${excludedResults} results with N/A commitHash from display`);
+            }
+            
+            if (displayResults.length === 0) {
+                console.log(`No ${connectionType} results found, showing error message`);
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="error">
+                            No ${connectionType} test results found
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            displayResults.forEach((item, index) => {
+                const row = document.createElement('tr');
+                
+                // Форматируем дату
+                let dateString = 'N/A';
+                if (item.commitDate) {
+                    try {
+                        const date = new Date(item.commitDate);
+                        if (!isNaN(date.getTime())) {
+                            dateString = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+                        }
+                    } catch (e) {
+                        console.log('Error parsing date:', item.commitDate, e);
+                    }
+                }
+                
+                // Определяем стили для placeholder записей
+                const isPlaceholder = item.isPlaceholder;
+                
+                if (isPlaceholder) {
+                    console.log(`Processing placeholder row ${index + 1}:`, {
+                        connectionType: item.connectionType,
+                        commitHash: item.commitHash,
+                        commitDate: item.commitDate,
+                        formattedDate: dateString
+                    });
+                }
+                
+                row.innerHTML = `
+                    <td>${dateString}</td>
+                    <td>${(item.commitHash || 'N/A').substring(0, 5)}</td>
+                    <td class="commit-message">${item.commitMessage || 'N/A'}</td>
+                    <td>${item.connectionType}</td>
+                    <td>${isPlaceholder ? '—' : item.threadsNumber}</td>
+                    <td>${isPlaceholder ? '—' : item.ping.toFixed(2) + ' ms'}</td>
+                    <td>${isPlaceholder ? '—' : item.download.toFixed(2) + ' Gbps'}</td>
+                    <td>${isPlaceholder ? '—' : item.upload.toFixed(2) + ' Gbps'}</td>
+                `;
+                
+                if (isPlaceholder) {
+                    row.classList.add('placeholder-row');
+                    console.log(`Added placeholder row ${index + 1} for ${item.connectionType} - ${item.commitHash} (date: ${dateString})`);
+                } else {
+                    console.log(`Added data row ${index + 1}:`, item);
+                }
+                
+                tbody.appendChild(row);
+            });
+            
+            console.log(`Displayed ${displayResults.length} ${connectionType} results in table`);
         }
 
         // Загружаем результаты при загрузке страницы
         document.addEventListener('DOMContentLoaded', loadTestResults);
+
+        // Обработчики для вкладок соединений
+        document.querySelectorAll('.connection-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                filterByConnection(tab.dataset.connection);
+            });
+        });
+
+        let charts = {
+            speeds: null,
+            ping: null
+        };
+        let results = []; // Глобальная переменная для результатов
+        let currentChartData = []; // Глобальная переменная для текущих данных графиков
+
+        function filterByConnection(connectionType) {
+            console.log(`Filtering by connection type: ${connectionType}`);
+            console.log('Available results:', window.results ? window.results.length : 0);
+            console.log('Results with placeholders:', window.results ? window.results.filter(r => r.isPlaceholder).length : 0);
+            
+            // Обновляем активную вкладку
+            document.querySelectorAll('.connection-tab').forEach(tab => {
+                if (tab.dataset.connection === connectionType) {
+                    tab.classList.add('active');
+                } else {
+                    tab.classList.remove('active');
+                }
+            });
+            
+            // Отображаем отфильтрованные результаты в таблице
+            displayResults(window.results, connectionType);
+            
+            // Обновляем графики с отфильтрованными данными
+            updateCharts(connectionType);
+        }
+
+        function createCharts(results) {
+            // Проверяем что Chart.js загрузился
+            if (typeof Chart === 'undefined') {
+                console.error('Chart.js not loaded');
+                return;
+            }
+            
+            // Фильтруем результаты по TCP для первого отображения (исключаем placeholder)
+            let filteredResults = results.filter(r => r.connectionType === 'TCP' && !r.isPlaceholder);
+            
+            // Сортируем результаты по дате
+            const sortedResults = filteredResults
+                .filter(r => r.commitDate)
+                .sort((a, b) => new Date(a.commitDate) - new Date(b.commitDate));
+
+            if (sortedResults.length === 0) {
+                console.log('No TCP results with dates to create charts');
+                return;
+            }
+
+            // Сохраняем данные в глобальную переменную для tooltip
+            currentChartData = sortedResults;
+
+            const labels = sortedResults.map(r => {
+                const date = new Date(r.commitDate);
+                return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+            });
+
+            try {
+                console.log('Creating charts with results:', sortedResults);
+                console.log('Labels:', labels);
+                
+                // График скоростей (download + upload)
+                const speedsChartElement = document.querySelector('#speeds-chart canvas.chart');
+                console.log('Speeds chart element:', speedsChartElement);
+                if (speedsChartElement) {
+                    const speedsCtx = speedsChartElement.getContext('2d');
+                    console.log('Speeds context:', speedsCtx);
+                    charts.speeds = new Chart(speedsCtx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [
+                                {
+                                    label: 'Download (Gbps)',
+                                    data: sortedResults.map(r => r.download),
+                                    borderColor: '#00d4ff',
+                                    backgroundColor: 'rgba(0, 212, 255, 0.1)',
+                                    fill: true
+                                },
+                                {
+                                    label: 'Upload (Gbps)',
+                                    data: sortedResults.map(r => r.upload),
+                                    borderColor: '#ff6b6b',
+                                    backgroundColor: 'rgba(255, 107, 107, 0.1)',
+                                    fill: true
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: {
+                                intersect: false,
+                                mode: 'index'
+                            },
+                            plugins: {
+                                legend: {
+                                    position: 'top',
+                                    labels: {
+                                        color: '#ffffff'
+                                    }
+                                },
+                                tooltip: {
+                                    mode: 'index',
+                                    intersect: false,
+                                    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                                    titleColor: '#ffffff',
+                                    bodyColor: '#ffffff',
+                                    borderColor: '#00d4ff',
+                                    borderWidth: 1,
+                                    callbacks: {
+                                        title: function(context) {
+                                            const index = context[0].dataIndex;
+                                            const result = currentChartData[index];
+                                            if (result && result.commitHash) {
+                                                return `Date: ${context[0].label}\nCommit: ${result.commitHash}`;
+                                            }
+                                            return context[0].label;
+                                        },
+                                        label: function(context) {
+                                            const index = context.dataIndex;
+                                            const result = currentChartData[index];
+                                            let label = context.dataset.label + ': ' + context.parsed.y.toFixed(2);
+                                            if (result && result.connectionType) {
+                                                label += ` (${result.connectionType})`;
+                                            }
+                                            return label;
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    ticks: {
+                                        maxRotation: 45,
+                                        minRotation: 0,
+                                        autoSkip: true,
+                                        maxTicksLimit: 20,
+                                        color: '#ffffff'
+                                    },
+                                    grid: {
+                                        display: true,
+                                        color: '#444'
+                                    }
+                                },
+                                y: {
+                                    title: {
+                                        display: true,
+                                        text: 'Speed (Gbps)',
+                                        color: '#ffffff'
+                                    },
+                                    grid: {
+                                        display: true,
+                                        color: '#444'
+                                    },
+                                    ticks: {
+                                        color: '#ffffff'
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    console.log('Speeds chart created');
+                }
+
+                // График пинга
+                const pingChartElement = document.querySelector('#ping-chart canvas.chart');
+                console.log('Ping chart element:', pingChartElement);
+                if (pingChartElement) {
+                    const pingCtx = pingChartElement.getContext('2d');
+                    console.log('Ping context:', pingCtx);
+                    charts.ping = new Chart(pingCtx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: 'Ping (ms)',
+                                data: sortedResults.map(r => r.ping),
+                                borderColor: '#51cf66',
+                                backgroundColor: 'rgba(81, 207, 102, 0.1)',
+                                fill: true
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: {
+                                intersect: false,
+                                mode: 'index'
+                            },
+                            plugins: {
+                                legend: {
+                                    position: 'top',
+                                    labels: {
+                                        color: '#ffffff'
+                                    }
+                                },
+                                tooltip: {
+                                    mode: 'index',
+                                    intersect: false,
+                                    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                                    titleColor: '#ffffff',
+                                    bodyColor: '#ffffff',
+                                    borderColor: '#00d4ff',
+                                    borderWidth: 1,
+                                    callbacks: {
+                                        title: function(context) {
+                                            const index = context[0].dataIndex;
+                                            const result = currentChartData[index];
+                                            if (result && result.commitHash) {
+                                                return `Date: ${context[0].label}\nCommit: ${result.commitHash}`;
+                                            }
+                                            return context[0].label;
+                                        },
+                                        label: function(context) {
+                                            const index = context.dataIndex;
+                                            const result = currentChartData[index];
+                                            let label = context.dataset.label + ': ' + context.parsed.y.toFixed(2);
+                                            if (result && result.connectionType) {
+                                                label += ` (${result.connectionType})`;
+                                            }
+                                            return label;
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    ticks: {
+                                        maxRotation: 45,
+                                        minRotation: 0,
+                                        autoSkip: true,
+                                        maxTicksLimit: 20,
+                                        color: '#ffffff'
+                                    },
+                                    grid: {
+                                        display: true,
+                                        color: '#444'
+                                    }
+                                },
+                                y: {
+                                    title: {
+                                        display: true,
+                                        text: 'Ping (ms)',
+                                        color: '#ffffff'
+                                    },
+                                    grid: {
+                                        display: true,
+                                        color: '#444'
+                                    },
+                                    ticks: {
+                                        color: '#ffffff'
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    console.log('Ping chart created');
+                }
+
+                console.log('Charts created successfully');
+            } catch (error) {
+                console.error('Error creating charts:', error);
+                console.error('Error details:', error.message);
+                console.error('Error stack:', error.stack);
+            }
+        }
+
+        function updateCharts(connectionType) {
+            if (!window.results) return;
+            
+            let filteredResults = window.results;
+            if (connectionType !== 'all') {
+                filteredResults = window.results.filter(r => r.connectionType === connectionType && !r.isPlaceholder);
+                console.log(`Filtered ${connectionType} results (excluding placeholders):`, filteredResults.map(r => ({
+                    connectionType: r.connectionType,
+                    commitHash: r.commitHash,
+                    download: r.download,
+                    upload: r.upload,
+                    ping: r.ping
+                })));
+            }
+            
+            const sortedFilteredResults = filteredResults
+                .filter(r => r.commitDate)
+                .sort((a, b) => new Date(a.commitDate) - new Date(b.commitDate));
+
+            if (sortedFilteredResults.length === 0) {
+                console.log(`No ${connectionType} results with dates`);
+                return;
+            }
+
+            // Обновляем глобальную переменную для tooltip
+            currentChartData = sortedFilteredResults;
+
+            const labels = sortedFilteredResults.map(r => {
+                const date = new Date(r.commitDate);
+                return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+            });
+
+            console.log(`Updating charts with ${sortedFilteredResults.length} data points for ${connectionType}`);
+
+            // Обновляем график скоростей
+            if (charts.speeds) {
+                charts.speeds.data.labels = labels;
+                charts.speeds.data.datasets[0].data = sortedFilteredResults.map(r => r.download);
+                charts.speeds.data.datasets[1].data = sortedFilteredResults.map(r => r.upload);
+                charts.speeds.update('none'); // Обновляем без анимации для производительности
+            }
+            
+            // Обновляем график пинга
+            if (charts.ping) {
+                charts.ping.data.labels = labels;
+                charts.ping.data.datasets[0].data = sortedFilteredResults.map(r => r.ping);
+                charts.ping.update('none'); // Обновляем без анимации для производительности
+            }
+            
+            console.log(`Updated charts for connection type: ${connectionType}, data points: ${sortedFilteredResults.length}`);
+        }
+        
+        // Функция для добавления новых данных к существующим графикам
+        function addNewData(newResults) {
+            if (!charts.speeds || !charts.ping) return;
+            
+            // Добавляем новые данные к существующим
+            const allResults = [...window.results, ...newResults];
+            window.results = allResults;
+            
+            // Обновляем графики с новыми данными
+            updateCharts('all');
+        }
+
+        // Функция для создания полного списка коммитов с заполнением отсутствующих измерений
+        function createCompleteResults(results) {
+            // Собираем все уникальные коммиты (исключаем N/A и null)
+            const uniqueCommits = new Set();
+            results.forEach(result => {
+                if (result.commitHash && result.commitHash !== 'N/A' && result.commitHash !== null) {
+                    uniqueCommits.add(result.commitHash);
+                }
+            });
+            
+            console.log('Unique commits found (excluding N/A):', Array.from(uniqueCommits));
+            
+            // Создаем полный список для каждого типа соединения
+            const connectionTypes = ['TCP', 'TLS', 'WS', 'WSS'];
+            const completeResults = [];
+            
+            uniqueCommits.forEach(commitHash => {
+                connectionTypes.forEach(connectionType => {
+                    // Ищем существующее измерение для этого коммита и типа соединения
+                    const existingResult = results.find(r => 
+                        r.commitHash === commitHash && 
+                        r.connectionType === connectionType
+                    );
+                    
+                    if (existingResult) {
+                        // Если измерение существует, добавляем его
+                        completeResults.push(existingResult);
+                    } else {
+                        // Если измерение отсутствует, создаем placeholder
+                        const placeholderResult = {
+                            openTestUuid: 'N/A',
+                            commitHash: commitHash,
+                            connectionType: connectionType,
+                            threadsNumber: 0,
+                            download: 0,
+                            upload: 0,
+                            ping: 0,
+                            isPlaceholder: true, // Флаг для placeholder
+                            commitDate: null, // Будет заполнено позже
+                            commitMessage: 'Measurement not available'
+                        };
+                        completeResults.push(placeholderResult);
+                        console.log(`Created placeholder for ${connectionType} - ${commitHash}`);
+                    }
+                });
+            });
+            
+            // НЕ добавляем результаты с N/A commitHash - полностью исключаем их
+            console.log('Excluded results with N/A commitHash:', results.filter(r => !r.commitHash || r.commitHash === 'N/A' || r.commitHash === null).length);
+            
+            console.log('Complete results created:', completeResults.length, 'entries');
+            console.log('Placeholder entries:', completeResults.filter(r => r.isPlaceholder).length);
+            console.log('Results with N/A commitHash:', completeResults.filter(r => !r.commitHash || r.commitHash === 'N/A').length);
+            return completeResults;
+        }
+
+        // Функция для проверки статуса измерений последнего коммита
+        function checkMeasurementStatus() {
+            if (!window.results || window.results.length === 0) {
+                return;
+            }
+            
+            // Получаем все уникальные коммиты, отсортированные по дате (новые сверху)
+            const commitsWithDates = window.results
+                .filter(r => r.commitDate && !r.isPlaceholder)
+                .sort((a, b) => new Date(b.commitDate) - new Date(a.commitDate));
+            
+            if (commitsWithDates.length === 0) {
+                updateStatusIndicator('error', 'No valid commits found');
+                return;
+            }
+            
+            // Берем последний коммит
+            const latestCommit = commitsWithDates[0];
+            const latestCommitHash = latestCommit.commitHash;
+            
+            console.log('Checking status for latest commit:', latestCommitHash);
+            
+            // Проверяем наличие измерений для всех типов соединений
+            const connectionTypes = ['TCP', 'TLS', 'WS', 'WSS'];
+            const measurementsForLatestCommit = window.results.filter(r => 
+                r.commitHash === latestCommitHash && 
+                !r.isPlaceholder
+            );
+            
+            console.log('Measurements for latest commit:', measurementsForLatestCommit);
+            
+            // Проверяем, есть ли измерения для всех типов соединений
+            const missingConnectionTypes = connectionTypes.filter(connectionType => 
+                !measurementsForLatestCommit.some(r => r.connectionType === connectionType)
+            );
+            
+            if (missingConnectionTypes.length > 0) {
+                updateStatusIndicator('warning', 
+                    `Missing measurements for: ${missingConnectionTypes.join(', ')}`
+                );
+                return;
+            }
+            
+            // Проверяем, что все измерения имеют валидные значения
+            const invalidMeasurements = measurementsForLatestCommit.filter(r => 
+                r.ping === null || r.ping === undefined || 
+                r.download === null || r.download === undefined || 
+                r.upload === null || r.upload === undefined
+            );
+            
+            if (invalidMeasurements.length > 0) {
+                updateStatusIndicator('warning', 
+                    `Invalid measurements for: ${invalidMeasurements.map(r => r.connectionType).join(', ')}`
+                );
+                return;
+            }
+            
+            // Все проверки пройдены - статус успешный
+            updateStatusIndicator('success', 
+                `All measurements complete for commit ${latestCommitHash.substring(0, 7)}`
+            );
+        }
+        
+        // Функция для обновления индикатора статуса
+        function updateStatusIndicator(status, message) {
+            const statusContent = document.getElementById('statusContent');
+            const statusText = document.getElementById('statusText');
+            const statusIcon = document.querySelector('.status-icon');
+            
+            let statusClass = '';
+            let icon = '';
+            let text = '';
+            
+            switch (status) {
+                case 'success':
+                    statusClass = 'status-success';
+                    icon = '✅';
+                    text = 'Success';
+                    break;
+                case 'warning':
+                    statusClass = 'status-warning';
+                    icon = '⚠️';
+                    text = 'Warning';
+                    break;
+                case 'error':
+                    statusClass = 'status-error';
+                    icon = '❌';
+                    text = 'Failed';
+                    break;
+                default:
+                    statusClass = 'status-error';
+                    icon = '❓';
+                    text = 'Unknown';
+            }
+            
+            statusIcon.textContent = icon;
+            statusText.textContent = text;
+            
+            // Создаем детальную информацию о каждом типе соединения
+            let detailedContent = `<div class="${statusClass}">${message}</div>`;
+            
+            if (status === 'success' || status === 'warning') {
+                // Получаем последний коммит для детальной информации
+                const commitsWithDates = window.results
+                    .filter(r => r.commitDate && !r.isPlaceholder)
+                    .sort((a, b) => new Date(b.commitDate) - new Date(a.commitDate));
+                
+                if (commitsWithDates.length > 0) {
+                    const latestCommitHash = commitsWithDates[0].commitHash;
+                    const measurementsForLatestCommit = window.results.filter(r => 
+                        r.commitHash === latestCommitHash && 
+                        !r.isPlaceholder
+                    );
+                    
+                    if (measurementsForLatestCommit.length > 0) {
+                        detailedContent += '<div class="measurement-details">';
+                        detailedContent += '<h4>Latest Commit Measurements:</h4>';
+                        
+                        const connectionTypes = ['TCP', 'TLS', 'WS', 'WSS'];
+                        connectionTypes.forEach(connectionType => {
+                            const measurement = measurementsForLatestCommit.find(r => r.connectionType === connectionType);
+                            if (measurement) {
+                                const ping = measurement.ping !== null && measurement.ping !== undefined ? measurement.ping.toFixed(2) : 'N/A';
+                                const download = measurement.download !== null && measurement.download !== undefined ? measurement.download.toFixed(2) : 'N/A';
+                                const upload = measurement.upload !== null && measurement.upload !== undefined ? measurement.upload.toFixed(2) : 'N/A';
+                                
+                                detailedContent += `
+                                    <div class="measurement-row">
+                                        <span class="connection-type">${connectionType}</span>
+                                        <span class="measurement-separator">|</span>
+                                        <span class="ping-value">${ping}</span>
+                                        <span class="measurement-separator">|</span>
+                                        <span class="download-value">${download}</span>
+                                        <span class="measurement-separator">|</span>
+                                        <span class="upload-value">${upload}</span>
+                                    </div>
+                                `;
+                            } else {
+                                detailedContent += `
+                                    <div class="measurement-row missing">
+                                        <span class="connection-type">${connectionType}</span>
+                                        <span class="measurement-separator">|</span>
+                                        <span class="ping-value">N/A</span>
+                                        <span class="measurement-separator">|</span>
+                                        <span class="download-value">N/A</span>
+                                        <span class="measurement-separator">|</span>
+                                        <span class="upload-value">N/A</span>
+                                    </div>
+                                `;
+                            }
+                        });
+                        
+                        detailedContent += '</div>';
+                    }
+                }
+            }
+            
+            statusContent.innerHTML = detailedContent;
+        }
+        
+        // Обработчик клика для разворачивания плашки
+        document.addEventListener('DOMContentLoaded', function() {
+            const statusHeader = document.querySelector('.status-header');
+            const statusIndicator = document.querySelector('.status-indicator');
+            
+            if (statusHeader && statusIndicator) {
+                statusHeader.addEventListener('click', () => {
+                    statusIndicator.classList.toggle('expanded');
+                });
+            }
+        });
     </script>
 </body>
 </html>
