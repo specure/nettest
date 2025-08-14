@@ -32,6 +32,7 @@ pub struct MeasurementSaver {
     client_uuid: Option<String>,
     connection_type: ConnectionType,
     threads_number: u32,
+    git_hash: Option<String>,
 }
 
 impl MeasurementSaver {
@@ -54,6 +55,7 @@ impl MeasurementSaver {
             client_uuid: client_config.client_uuid.clone(),
             connection_type,
             threads_number: client_config.thread_count as u32,
+            git_hash: client_config.git_hash.clone(),
         }
     }
 
@@ -143,12 +145,11 @@ impl MeasurementSaver {
             "threadsNumber": self.threads_number,
         });
 
-        // Добавляем commitHash только если есть GITHUB_SHA
-        if let Ok(commit_hash) = std::env::var("GITHUB_SHA") {
-            println!("GITHUB_SHA found: {}", commit_hash);
+        // Добавляем commitHash только если есть git_hash в конфигурации
+        if let Some(git_hash) = &self.git_hash {
+            measurement_data["commitHash"] = json!(git_hash);
+        } else if let Ok(commit_hash) = std::env::var("GITHUB_SHA") {
             measurement_data["commitHash"] = json!(commit_hash);
-        } else {
-            info!("GITHUB_SHA not found in environment");
         }
 
         info!("Final measurement data: {:?}", measurement_data);

@@ -19,6 +19,7 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
         control_server: default_config.control_server,
         save_results: false,
         client_uuid: default_config.client_uuid,
+        git_hash: None,
     };
 
 
@@ -59,6 +60,12 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
             }
             "-save" => {
                 config.save_results = true;
+            }
+            "-git-hash" => {
+                i += 1;
+                if i < args.len() {
+                    config.git_hash = Some(args[i].clone());
+                }
             }
             "-log" => {
                 i += 1;

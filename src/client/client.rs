@@ -43,6 +43,7 @@ pub struct ClientConfig {
     pub control_server: String,
     pub save_results: bool,
     pub client_uuid: Option<String>,
+    pub git_hash: Option<String>,
 }
 
 pub async fn client_run(args: Vec<String>, dafault_config: FileConfig) -> anyhow::Result<()> {

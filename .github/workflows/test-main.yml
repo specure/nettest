@@ -152,10 +152,9 @@ jobs:
         cd test-run
         
         echo "Running nettest client test with TCP and -save..."
-        echo "Client command: ./nettest -c 127.0.0.1 -save"
+        echo "Client command: ./nettest -c 127.0.0.1 -save -git-hash ${{ github.sha }}"
         
-        GITHUB_SHA="${{ github.sha }}" \
-        timeout 60s ./nettest -c 127.0.0.1 -save 
+        timeout 60s ./nettest -c 127.0.0.1 -save -git-hash "${{ github.sha }}"
         CLIENT_EXIT_CODE=$?
         
         echo "Client test completed"
@@ -166,17 +165,16 @@ jobs:
           exit 1
         fi
         
-        echo "✅ Client TLS test completed successfully"
+        echo "✅ Client TCP test completed successfully"
 
     - name: Run nettest client TLS test
       run: |
         cd test-run
         
         echo "Running nettest client test with TLS and -save..."
-        echo "Client command: ./nettest -c 127.0.0.1 -save -tls"
+        echo "Client command: ./nettest -c 127.0.0.1 -save -tls -git-hash ${{ github.sha }}"
         
-        GITHUB_SHA="${{ github.sha }}" \
-        timeout 60s ./nettest -c 127.0.0.1 -save -tls
+        timeout 60s ./nettest -c 127.0.0.1 -save -tls -git-hash "${{ github.sha }}"
         CLIENT_EXIT_CODE=$?
         
         echo "Client test completed"
@@ -194,10 +192,9 @@ jobs:
         cd test-run
         
         echo "Running nettest client test with WS and -save..."
-        echo "Client command: ./nettest -c 127.0.0.1 -save -ws"
+        echo "Client command: ./nettest -c 127.0.0.1 -save -ws -git-hash ${{ github.sha }}"
         
-        GITHUB_SHA="${{ github.sha }}" \
-        timeout 60s ./nettest -c 127.0.0.1 -save -ws 
+        timeout 60s ./nettest -c 127.0.0.1 -save -ws -git-hash "${{ github.sha }}"
         CLIENT_EXIT_CODE=$?
         
         echo "Client test completed"
@@ -215,11 +212,9 @@ jobs:
         cd test-run
         
         echo "Running nettest client test with WSS and -save..."
-        echo "Client command: sudo ./nettest -c 127.0.0.1 -save -tls -ws"
-        echo "GITHUB_SHA: ${{ github.sha }}"
+        echo "Client command: ./nettest -c 127.0.0.1 -save -tls -ws -git-hash ${{ github.sha }}"
         
-        GITHUB_SHA="${{ github.sha }}" \
-        sudo timeout 60s ./nettest -c 127.0.0.1 -save -tls -ws -log info
+        timeout 60s ./nettest -c 127.0.0.1 -save -tls -ws -git-hash "${{ github.sha }}"
         CLIENT_EXIT_CODE=$?
         
         echo "Client test completed"
