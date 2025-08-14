@@ -110,8 +110,6 @@ jobs:
         echo "..."
         echo "=== END PRIVATE KEY PREVIEW ==="
         
-
-        
         
     - name: Start nettest server
       run: |
@@ -148,27 +146,6 @@ jobs:
         fi
               
 
-        
-    - name: Run nettest client WSS test
-      run: |
-        cd test-run
-        
-        echo "Running nettest client test with WSS and -save..."
-        echo "Client command: ./nettest -c 127.0.0.1 -save -ws -tls"
-        
-        GITHUB_SHA="${{ github.sha }}" \
-        sudo timeout 60s ./nettest -c 127.0.0.1 -save -tls -ws -log debug
-        CLIENT_EXIT_CODE=$?
-        
-        echo "Client test completed"
-        echo "Client exit code: $CLIENT_EXIT_CODE"
-        
-        if [ $CLIENT_EXIT_CODE -ne 0 ]; then
-          echo "❌ Client WSS test failed"
-          exit 1
-        fi
-        
-        echo "✅ Client WSS test completed successfully"
         
     - name: Run nettest client TCP test
       run: |
@@ -227,13 +204,32 @@ jobs:
         echo "Client exit code: $CLIENT_EXIT_CODE"
         
         if [ $CLIENT_EXIT_CODE -ne 0 ]; then
+          echo "❌ Client WS test failed"
+          exit 1
+        fi
+        
+        echo "✅ Client WS test completed successfully"
+
+    - name: Run nettest client WSS test
+      run: |
+        cd test-run
+        
+        echo "Running nettest client test with WSS and -save..."
+        echo "Client command: ./nettest -c 127.0.0.1 -save -ws -tls"
+        
+        GITHUB_SHA="${{ github.sha }}" \
+        sudo timeout 60s ./nettest -c 127.0.0.1 -save -tls -ws
+        CLIENT_EXIT_CODE=$?
+        
+        echo "Client test completed"
+        echo "Client exit code: $CLIENT_EXIT_CODE"
+        
+        if [ $CLIENT_EXIT_CODE -ne 0 ]; then
           echo "❌ Client WSS test failed"
           exit 1
         fi
         
         echo "✅ Client WSS test completed successfully"
-
-  
         
     - name: Test completed
       run: |
