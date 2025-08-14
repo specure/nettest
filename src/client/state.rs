@@ -97,18 +97,25 @@ impl TestState {
         let token = Token(tok);
 
         let mut stream = if use_tls && use_websocket {
-            Stream::new_websocket_tls(addr)?
+            debug!("Creating WebSocket TLS stream");
+            let stream = Stream::new_websocket_tls(addr)?;
+            debug!("WebSocket TLS stream created");
+            stream
         } else if use_tls {
+            debug!("Creating Rustls stream");
             Stream::new_rustls(addr, cert_path, key_path)?
         } else {
             if use_websocket {
+                debug!("Creating WebSocket stream");
                 Stream::new_websocket(addr)?
             } else {
                 Stream::new_tcp(addr)?
             }
         };
 
+        debug!("Registering stream");
         stream.register(&mut poll, token, Interest::READABLE | Interest::WRITABLE)?;
+        debug!("Stream registered");
 
         let measurement_state = MeasurementState {
             phase: TestPhase::GreetingSendConnectionType,

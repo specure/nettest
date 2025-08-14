@@ -19,6 +19,7 @@ pub fn handle_greeting_send_connection_type(
     match &mut state.stream {
         Stream::WebSocketTls(stream) => {
             state.phase = TestPhase::GreetingSendToken;
+            debug!("TO Greeting send token token WS TLS {:?}", state.token);
             stream
                 .reregister(&poll, state.token, Interest::WRITABLE)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
@@ -27,6 +28,7 @@ pub fn handle_greeting_send_connection_type(
         }
         Stream::WebSocket(stream) => {
             state.phase = TestPhase::GreetingSendToken;
+            debug!("TO Greeting send token token WS {:?}", state.token);
             stream
                 .reregister(&poll, state.token, Interest::WRITABLE)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;

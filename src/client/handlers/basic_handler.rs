@@ -30,6 +30,8 @@ pub fn handle_client_readable_data(state: &mut MeasurementState, poll: &Poll) ->
 
         // TestPhase::PerfReceiveOk => handle_perf_receive_ok(poll, state),
         // TestPhase::PerfReceiveTime => handle_perf_receive_time(poll, state),
+        TestPhase::GreetingSendConnectionType => handle_greeting_send_connection_type(poll, state),
+
 
         _ => {
             debug!("Unknown read phase: {:?}", state.phase);

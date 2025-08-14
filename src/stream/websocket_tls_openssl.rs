@@ -150,13 +150,10 @@ impl WebSocketTlsClient {
             addr, key
         );
 
-        // Создаем Poll для ожидания событий
-        let mut poll = Poll::new()?;
-        let mut events = mio::Events::with_capacity(128);
 
         // Регистрируем сокет для чтения и записи
         poll.registry()
-            .register(stream.get_mut(), Token(0), Interest::WRITABLE)?;
+            .reregister(stream.get_mut(), Token(0), Interest::WRITABLE)?;
 
         // Send handshake request
         loop {
@@ -297,8 +294,14 @@ impl WebSocketTlsClient {
         // Create WebSocket with the established connection
         let config = WebSocketConfig::default();
         // config.max_write_buffer_size = MAX_CHUNK_SIZE as usize;
+        debug!("Deregistering stream");
+        poll.registry().deregister(stream.get_mut())?;
+
         let ws =
             WebSocket::from_raw_socket(stream, tungstenite::protocol::Role::Client, Some(config));
+
+        debug!("WebSocket created");
+
 
         Ok(Self {
             ws,

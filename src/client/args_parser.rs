@@ -3,6 +3,8 @@ use log::{debug, LevelFilter};
 use crate::{client::{client::ClientConfig, control_server::get_best_measurement_server}, config::FileConfig, logger};
 
 pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result<ClientConfig, anyhow::Error> {
+    debug!("Default config: {:?}", default_config);
+
     let mut config = ClientConfig {
         use_tls: default_config.client_use_tls,
         use_websocket: default_config.client_use_websocket,
@@ -18,6 +20,7 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
         save_results: false,
         client_uuid: default_config.client_uuid,
     };
+
 
     let mut i = 0;
     while i < args.len() {
@@ -42,6 +45,7 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
                 }
             }
             "-tls" => {
+                debug!("Using TLS");
                 config.use_tls = true;
             }
             "-ws" => {

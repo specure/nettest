@@ -44,7 +44,7 @@ impl WebSocketClient {
     }
 
     pub fn new(addr: SocketAddr) -> Result<Self> {
-        debug!("Connecting to WebSocket server at {}", addr);
+        debug!("Connecting to WebSocket server WS at {}", addr);
         let mut stream = TcpStream::connect(addr)?;
         stream.set_nodelay(true)?;
 

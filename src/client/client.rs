@@ -53,6 +53,8 @@ pub async fn client_run(args: Vec<String>, dafault_config: FileConfig) -> anyhow
         return Ok(());
     }
 
+    info!("Default config: {:?}", dafault_config);
+
     let config = parse_args(args, dafault_config).await?;
 
     if !config.raw_output {
