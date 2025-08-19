@@ -6,19 +6,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
+  generate-matrix:
     runs-on: ubuntu-latest
-    
-    strategy:
-      matrix:
-        include: ${{ fromJson(steps.generate-matrix.outputs.matrix) }}
-    
+    outputs:
+      matrix: ${{ steps.generate.outputs.matrix }}
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-      
     - name: Generate deployment matrix
-      id: generate-matrix
+      id: generate
       run: |
         # Читаем список хостов из переменной
         HOSTS_LIST="${{ secrets.HOSTS_LIST }}"
@@ -59,8 +53,19 @@ jobs:
         
         # Сохраняем в output для использования в matrix
         echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+
+  deploy:
+    needs: generate-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
       
-    - name: Deploy to Production Servers
+    - name: Deploy to Production Server
       uses: appleboy/ssh-action@v0.1.5
       with:
         host: ${{ matrix.host }}
@@ -90,8 +95,7 @@ jobs:
           echo "TLS certificates uploaded and secured"
           
           # Продолжаем с деплоем...
-        script: |
-          # set -e  # Временно убираем для диагностики
+          
           echo "Deploying Nettest Server..."
           
           # Определяем версию Debian и выбираем соответствующий релиз
