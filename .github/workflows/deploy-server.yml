@@ -24,7 +24,7 @@ jobs:
           # set -e  # Временно убираем для диагностики
           echo "Deploying Nettest Server..."
           
-          NETTEST_URL="https://github.com/specure/nettest/releases/download/latest-debian-11/nettest-debian-11-x86_64.tar.gz"
+          NETTEST_URL="https://github.com/specure/nettest/releases/download/latest-debian-12/nettest-debian-12-x86_64.tar.gz"
           NEW_BUILD_DIR="/tmp/nettest-new"
           OLD_BUILD_DIR="/tmp/nettest-old"
           CURRENT_BUILD_DIR="/opt/nettest"
@@ -143,7 +143,7 @@ jobs:
           echo "Build installation completed"
           
           echo "Starting server..."
-          nohup ./nettest -s > nettest.log 2>&1 &
+          nohup ./nettest -s -log info> nettest.log 2>&1 &
           NEW_PID=$!
           
           echo "Waiting for server (PID: $NEW_PID)..."
