@@ -9,17 +9,87 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     
+    strategy:
+      matrix:
+        include: ${{ fromJson(steps.generate-matrix.outputs.matrix) }}
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
       
-    - name: Deploy to Debian Server
+    - name: Generate deployment matrix
+      id: generate-matrix
+      run: |
+        # Читаем список хостов из переменной
+        HOSTS_LIST="${{ secrets.HOSTS_LIST }}"
+        echo "Hosts list: $HOSTS_LIST"
+        
+        # Создаем JSON массив для matrix
+        MATRIX='['
+        FIRST=true
+        
+        # Разбираем список хостов (разделенный точкой с запятой)
+        IFS=';' read -ra HOSTS <<< "$HOSTS_LIST"
+        
+        for HOST_VAR in "${HOSTS[@]}"; do
+          # Убираем пробелы
+          HOST_VAR=$(echo "$HOST_VAR" | xargs)
+          
+          if [ ! -z "$HOST_VAR" ]; then
+            # Извлекаем IP адрес из названия переменной
+            # Формат: PROD_MACHINE_SERVERNAME_IP1_IP2_IP3_IP4
+            IP=$(echo "$HOST_VAR" | sed 's/.*_\([0-9]\{1,3\}_[0-9]\{1,3\}_[0-9]\{1,3\}_[0-9]\{1,3\}\)$/\1/' | tr '_' '.')
+            
+            echo "Processing: $HOST_VAR -> IP: $IP"
+            
+            # Добавляем запятую если не первый элемент
+            if [ "$FIRST" = true ]; then
+              FIRST=false
+            else
+              MATRIX="$MATRIX,"
+            fi
+            
+            # Добавляем элемент в matrix
+            MATRIX="$MATRIX{\"host\":\"$IP\",\"config_var\":\"$HOST_VAR\"}"
+          fi
+        done
+        
+        MATRIX="$MATRIX]"
+        echo "Generated matrix: $MATRIX"
+        
+        # Сохраняем в output для использования в matrix
+        echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+      
+    - name: Deploy to Production Servers
       uses: appleboy/ssh-action@v0.1.5
       with:
-        host: 139.162.150.114
+        host: ${{ matrix.host }}
         username: root
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         debug: false
+        script: |
+          # set -e
+          echo "Deploying to server: ${{ matrix.host }}"
+          echo "Configuration loaded successfully"
+          
+          # Создаем конфигурационный файл
+          echo "Creating /etc/nettest.conf..."
+          cat > /etc/nettest.conf << 'EOF'
+          ${{ secrets[matrix.config_var] }}
+          cert_path = "/root/specure-cd.crt"
+          key_path = "/root/specure-cd.key"
+          EOF
+          
+          echo "Configuration file created successfully"
+          
+          # Загружаем TLS сертификаты
+          echo "Uploading TLS certificates..."
+          echo '${{ secrets.PROD_TLS_CERT }}' > /root/specure-cd.crt
+          echo '${{ secrets.PROD_TLS_KEY }}' > /root/specure-cd.key
+          chmod 600 /root/specure-cd.crt /root/specure-cd.key
+          echo "TLS certificates uploaded and secured"
+          
+          # Продолжаем с деплоем...
         script: |
           # set -e  # Временно убираем для диагностики
           echo "Deploying Nettest Server..."

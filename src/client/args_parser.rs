@@ -96,8 +96,8 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
         i += 1;
     }
 
-    if config.log.is_some() {
-        logger::init_logger(config.log.unwrap()).unwrap();
+    if config.log.is_some() || default_config.logger != LevelFilter::Off {
+        logger::init_logger(config.log.unwrap_or(default_config.logger)).unwrap();
     }
     if config.server.is_none()  {
         debug!("No server address provided, using default");
