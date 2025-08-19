@@ -1,8 +1,6 @@
 name: Deploy Nettest Server
 
 on:
-  push:
-    branches: [ deploy ]
   workflow_dispatch:
 
 jobs:
@@ -60,6 +58,7 @@ jobs:
     strategy:
       matrix:
         include: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+      fail-fast: false
     
     steps:
     - name: Checkout code
