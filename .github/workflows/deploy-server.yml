@@ -16,7 +16,7 @@ jobs:
     - name: Deploy to Debian Server
       uses: appleboy/ssh-action@v0.1.5
       with:
-        host: 10.35.2.151
+        host: 139.162.150.114
         username: root
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         debug: false
