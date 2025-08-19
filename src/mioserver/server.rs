@@ -73,6 +73,7 @@ pub struct ServerConfig {
     pub hostname: Option<String>,
     pub x_nettest_client: String,
     pub registration_token: Option<String>,
+    pub server_name: Option<String>,
 }
 
 impl MioServer {

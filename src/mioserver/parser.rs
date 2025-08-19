@@ -22,6 +22,7 @@ pub fn parse_args(
         hostname: default_config.hostname,
         x_nettest_client: default_config.x_nettest_client,
         registration_token: default_config.registration_token,
+        server_name: default_config.server_name,
     };
 
     let mut i = 1;

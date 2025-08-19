@@ -141,6 +141,8 @@ fn parse_config_content(content: &str) -> FileConfig {
                         config.server_registration = false;
                     }
                 }
+                "server_name" => config.server_name = Some(value.to_string()),
+                "registration_token" => config.registration_token = Some(value.to_string()),
                 "hostname" => config.hostname = Some(value.to_string()),
                 "x_nettest_client" => config.x_nettest_client = value.to_string(),
                 "control_server" => config.control_server = value.to_string(),

@@ -15,6 +15,8 @@ struct AutoMeasurementServerRegistrationRequest {
     tcp_port: i32,
     version: Option<String>,
     hostname: Option<String>,
+    #[serde(rename = "serverName")]
+    server_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -33,11 +35,12 @@ pub async fn register_server(config: &ServerConfig) -> Result<()> {
     };
     
     let request = AutoMeasurementServerRegistrationRequest {
-        token: config.secret_key.clone(),
+        token: config.registration_token.clone(),
         tls_port,
         tcp_port: config.tcp_address.port() as i32,
         version: config.version.clone(),
         hostname: config.hostname.clone(),
+        server_name: config.server_name.clone(),
     };
     info!("Registering server with control server json: {:?}", serde_json::to_string(&request).unwrap());
     
