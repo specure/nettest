@@ -24,7 +24,26 @@ jobs:
           # set -e  # Временно убираем для диагностики
           echo "Deploying Nettest Server..."
           
-          NETTEST_URL="https://github.com/specure/nettest/releases/download/latest-debian-12/nettest-debian-12-x86_64.tar.gz"
+          # Определяем версию Debian и выбираем соответствующий релиз
+          DEBIAN_VERSION=$(cat /etc/debian_version 2>/dev/null | cut -d. -f1 || echo "0")
+          echo "Detected Debian version: $DEBIAN_VERSION"
+          
+          # Проверяем поддержку версии
+          if [ "$DEBIAN_VERSION" -lt 11 ]; then
+            echo "ERROR: Debian version $DEBIAN_VERSION is not supported. Minimum required version is 11."
+            echo "Please upgrade to Debian 11 or higher."
+            exit 1
+          elif [ "$DEBIAN_VERSION" -eq 11 ]; then
+            NETTEST_URL="https://github.com/specure/nettest/releases/download/latest-debian-11/nettest-debian-11-x86_64.tar.gz"
+          elif [ "$DEBIAN_VERSION" -ge 12 ]; then
+            # Для версий 12 и выше используем Debian 12
+            NETTEST_URL="https://github.com/specure/nettest/releases/download/latest-debian-12/nettest-debian-12-x86_64.tar.gz"
+          else
+            echo "ERROR: Unable to determine Debian version or unsupported version: $DEBIAN_VERSION"
+            exit 1
+          fi
+          
+          echo "Using URL: $NETTEST_URL"
           NEW_BUILD_DIR="/tmp/nettest-new"
           OLD_BUILD_DIR="/tmp/nettest-old"
           CURRENT_BUILD_DIR="/opt/nettest"
@@ -33,7 +52,7 @@ jobs:
           mkdir -p $NEW_BUILD_DIR $OLD_BUILD_DIR
           cd $NEW_BUILD_DIR
           
-          echo "Downloading build..."
+          echo "Downloading build for Debian $DEBIAN_VERSION..."
           wget -q --timeout=30 --tries=3 "$NETTEST_URL" -O nettest.tar.gz
           
           if [ $? -eq 0 ] && [ -f nettest.tar.gz ]; then
@@ -66,37 +85,37 @@ jobs:
           chmod +x nettest
           echo "Build prepared successfully"
           
-          echo "Stopping existing process..."
-          # Простая остановка процесса
-          NETTEST_PID=$(pgrep -f "nettest -s" 2>/dev/null || echo "")
+          echo "Stopping existing process on port 443..."
+          # Используем lsof для определения процесса на порту 443
+          NETTEST_PID=$(lsof -ti :443 2>/dev/null || echo "")
           
           echo "DEBUG: NETTEST_PID = '$NETTEST_PID'"
           
           if [ ! -z "$NETTEST_PID" ]; then
-            echo "Found existing nettest process (PID: $NETTEST_PID), stopping..."
-            echo "DEBUG: About to run pkill -TERM"
-            pkill -TERM -f "nettest -s" >/dev/null 2>&1 || echo "pkill TERM completed"
-            echo "DEBUG: pkill -TERM completed"
+            echo "Found existing process on port 443 (PID: $NETTEST_PID), stopping..."
+            echo "DEBUG: About to run kill -TERM"
+            kill -TERM $NETTEST_PID >/dev/null 2>&1 || echo "kill TERM completed"
+            echo "DEBUG: kill -TERM completed"
             sleep 3
             
-            echo "DEBUG: Checking if process still exists"
-            if pgrep -f "nettest -s" >/dev/null 2>&1; then
-              echo "Process still running, force killing..."
-              echo "DEBUG: About to run pkill -KILL"
-              pkill -KILL -f "nettest -s" >/dev/null 2>&1 || echo "pkill KILL completed"
-              echo "DEBUG: pkill -KILL completed"
+            echo "DEBUG: Checking if process still exists on port 443"
+            if lsof -ti :443 >/dev/null 2>&1; then
+              echo "Process still running on port 443, force killing..."
+              echo "DEBUG: About to run kill -KILL"
+              kill -KILL $NETTEST_PID >/dev/null 2>&1 || echo "kill KILL completed"
+              echo "DEBUG: kill -KILL completed"
               sleep 2
             fi
             
-            echo "DEBUG: Final check if process exists"
-            if pgrep -f "nettest -s" >/dev/null 2>&1; then
-              echo "Failed to stop process"
+            echo "DEBUG: Final check if process exists on port 443"
+            if lsof -ti :443 >/dev/null 2>&1; then
+              echo "Failed to stop process on port 443"
               exit 1
             else
               echo "Process stopped successfully"
             fi
           else
-            echo "No existing process found"
+            echo "No existing process found on port 443"
           fi
           
           echo "=== IMMEDIATE DEBUGGING ==="
@@ -117,13 +136,13 @@ jobs:
           echo "Nettest binary found, proceeding..."
           echo "=== END IMMEDIATE DEBUGGING ==="
           
-          # Проверяем, что порт 5005 свободен
-          echo "Checking if port 5005 is free..."
-          if netstat -tuln 2>/dev/null | grep :5005 >/dev/null 2>&1; then
-            echo "Warning: Port 5005 is still in use"
+          # Проверяем, что порт 443 свободен
+          echo "Checking if port 443 is free..."
+          if netstat -tuln 2>/dev/null | grep :443 >/dev/null 2>&1; then
+            echo "Warning: Port 443 is still in use"
             sleep 2
           else
-            echo "Port 5005 is free"
+            echo "Port 443 is free"
           fi
           
           echo "Port check completed, proceeding with backup..."
@@ -162,10 +181,10 @@ jobs:
             
             sleep 3
             
-            if netstat -tuln 2>/dev/null | grep :5005 >/dev/null 2>&1; then
-              echo "Port 5005 listening"
+            if netstat -tuln 2>/dev/null | grep :443 >/dev/null 2>&1; then
+              echo "Port 443 listening"
             else
-              echo "Port 5005 not listening"
+              echo "Port 443 not listening"
             fi
             
             if [ -d "$OLD_BUILD_DIR" ]; then
@@ -208,4 +227,4 @@ jobs:
           
           echo "Final status:"
           ps aux | grep "nettest -s" | grep -v grep 2>/dev/null || echo "No nettest processes"
-          netstat -tuln | grep :5005 2>/dev/null || echo "Port 5005 not listening" 
+          netstat -tuln | grep :443 2>/dev/null || echo "Port 443 not listening" 
