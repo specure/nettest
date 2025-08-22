@@ -7,6 +7,7 @@ use std::io::{self};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+use std::net::SocketAddr;
 
 use crate::config::constants::MIN_CHUNK_SIZE;
 use crate::mioserver::handlers::basic_handler::{
@@ -105,10 +106,16 @@ impl Worker {
                 None
             };
 
+            let mut ip: Option<SocketAddr> = None;
+
             if let Some(connection) = maybe_connection {
                 let mut stream = match connection {
-                    ConnectionType::Tcp(stream) => Stream::Tcp(stream),
-                    ConnectionType::Tls(stream) => {
+                    ConnectionType::Tcp(stream, client_addr) => {
+                        ip = Some(client_addr);
+                        Stream::Tcp(stream)
+                    },
+                    ConnectionType::Tls(stream, client_addr) => {
+                        ip = Some(client_addr);
                         let stream = Stream::new_rustls_server(
                             stream,
                             self.server_config.cert_path.clone().unwrap(),
@@ -127,7 +134,6 @@ impl Worker {
                     info!("Worker {}: Failed to register connection: {}", self.id, e);
                     continue;
                 }
-
 
                 match self.handle_greeting_receive_connection_type(stream, token) {
                     Ok(stream) => {
@@ -148,14 +154,18 @@ impl Worker {
                                 chunk_size: 0,
                                 processed_chunks: 0,
                                 clock: None,
-                                time_ns: None,
+                                sent_time_ns: None,
+                                received_time_ns: None,
                                 duration: 0,
                                 chunk_buffer: vec![0; MIN_CHUNK_SIZE as usize],
-                                total_bytes: 0,
+                                total_bytes_received: 0,
+                                total_bytes_sent: 0,
                                 chunk: None,
                                 terminal_chunk: None,
                                 put_duration: None,
                                 bytes_received: VecDeque::new(),
+                                client_addr: ip,
+                                sig_key: None,
                             },
                         );
                     },

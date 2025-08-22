@@ -6,7 +6,7 @@ use crate::client::handlers::get_chunks::{handle_get_chunks_receive_chunk, handl
 use crate::client::handlers::greeting::{handle_greeting_receive_greeting, handle_greeting_receive_response, handle_greeting_send_connection_type, handle_greeting_send_token,};
 use crate::client::handlers::get_time::{handle_get_time_receive_chunk, handle_get_time_receive_time, handle_get_time_send_command, handle_get_time_send_ok};
 use crate::client::handlers::ping::{handle_ping_receive_pong, handle_ping_receive_time, handle_ping_send_ok, handle_ping_send_ping};
-use crate::client::handlers::puttimeresult::{handle_put_time_result_send_command, handle_put_time_result_send_chunks, handle_put_time_result_send_last_chunk, handle_put_time_result_receive_ok, handle_put_time_result_receive_time};
+use crate::client::handlers::puttimeresult::{handle_put_time_result_receive_ok, handle_put_time_result_receive_time, handle_put_time_result_send_chunks, handle_put_time_result_send_command, handle_put_time_result_send_last_chunk};
 use crate::client::handlers::signed_result::{handle_signed_result_command, handle_signed_result_receive, handle_signed_result_send_ok};
 use crate::client::state::{MeasurementState, TestPhase};
 

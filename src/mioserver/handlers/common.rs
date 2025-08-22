@@ -1,4 +1,4 @@
-use log::{debug, trace};
+use log::{debug, info, trace};
 use mio::{Interest, Poll};
 use std::io;
 
@@ -8,10 +8,9 @@ use crate::{
 };
 
 pub fn handle_main_command_send(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
-    debug!("handle_get_put_ping_quit_send");
+    info!("handle_get_put_ping_quit_send");
     let command = b"ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n";
     if state.write_pos == 0 {
-        trace!("Wrote handle_get_put_ping_quit_send {}", command.len());
         state.write_buffer[0..command.len()].copy_from_slice(command);
     }
     let command_len = command.len();
@@ -19,7 +18,6 @@ pub fn handle_main_command_send(poll: &Poll, state: &mut TestState) -> io::Resul
         let n = state
             .stream
             .write(&state.write_buffer[state.write_pos..command_len])?;
-        trace!("Wrote handle_get_put_ping_quit_send {} ", n);
         state.write_pos += n;
         if state.write_pos == command_len {
             state.write_pos = 0;
@@ -34,7 +32,7 @@ pub fn handle_main_command_send(poll: &Poll, state: &mut TestState) -> io::Resul
 }
 
 pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
-    debug!("handle_receive_command");
+    info!("handle_receive_command");
     loop {
         trace!("handle_receive_command read_pos: {}", state.read_pos);
         let n = state
@@ -48,7 +46,7 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
         if state.read_buffer[state.read_pos - 1..state.read_pos] == [b'\n'] {
             let command_str = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
 
-            debug!("command_str: {}", command_str);
+            info!("command_str: {}", command_str);
 
             if command_str.contains("GETCHUNKS") {
                 let commands: Vec<&str> = command_str.split_terminator('\n').collect();
@@ -217,7 +215,9 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
             }
 
             if command_str.starts_with("SIGNEDRESULT") {
+                println!("SIGNEDRESULT");
                 state.read_pos = 0;
+                state.write_pos = 0;
                 state.measurement_state = ServerTestPhase::SignedResultSend;
                 state
                     .stream

@@ -44,7 +44,9 @@ pub fn handle_put_time_result_receive_time(
         let time_line = String::from_utf8_lossy(&measurement_state.time_result_buffer);
         debug!("Time result buffer: {}", time_line.len());
         
-        if time_line.ends_with("\n") {
+        let end = "ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n";
+
+        if time_line.ends_with(end) {
             // Проверяем, является ли это TIMERESULT сообщением
             if time_line.starts_with("TIMERESULT ") {
                 let data_part = &time_line[11..]; // Убираем "TIMERESULT "
@@ -84,9 +86,10 @@ pub fn handle_put_time_result_receive_time(
             measurement_state.stream.reregister(
                 &poll,
                 measurement_state.token,
-                Interest::WRITABLE,
+                Interest::READABLE,
             )?;
             measurement_state.read_pos = 0;
+            measurement_state.write_pos = 0;
             measurement_state.time_result_buffer.clear();
             return Ok(n);
         }
@@ -218,3 +221,5 @@ pub fn calculate_upload_speed(bytes: u64, time_ns: u64) -> f64 {
     );
     speed_bps
 }
+
+

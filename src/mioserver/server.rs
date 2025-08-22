@@ -12,8 +12,8 @@ use crate::mioserver::control_server::auto_registration::{deregister_server, reg
 
 #[derive(Debug)]
 pub enum ConnectionType {
-    Tcp(TcpStream),
-    Tls(TcpStream), // Пока что тот же TcpStream, но с флагом TLS
+    Tcp(TcpStream, SocketAddr),
+    Tls(TcpStream, SocketAddr), // Пока что тот же TcpStream, но с флагом TLS
 }
 
 use crate::config::FileConfig;
@@ -172,7 +172,7 @@ impl MioServer {
                     if let Err(e) = stream.set_nodelay(true) {
                         debug!("Failed to set TCP_NODELAY: {}", e);
                     }
-                    self.handle_connection(stream, false)?;
+                    self.handle_connection(stream, false, _addr)?;
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                     // Продолжаем
@@ -190,7 +190,7 @@ impl MioServer {
                         if let Err(e) = stream.set_nodelay(true) {
                             debug!("Failed to set TCP_NODELAY: {}", e);
                         }
-                        self.handle_connection(stream, true)?;
+                        self.handle_connection(stream, true, _addr)?;
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                         // Продолжаем
@@ -238,11 +238,11 @@ impl MioServer {
         Ok(())
     }
 
-    fn handle_connection(&mut self, stream: TcpStream, is_tls: bool) -> io::Result<()> {
+    fn handle_connection(&mut self, stream: TcpStream, is_tls: bool, client_addr: SocketAddr) -> io::Result<()> {
         let connection = if is_tls {
-            ConnectionType::Tls(stream)
+            ConnectionType::Tls(stream, client_addr)
         } else {
-            ConnectionType::Tcp(stream)
+            ConnectionType::Tcp(stream, client_addr)
         };
 
         // Добавляем соединение в глобальную очередь
