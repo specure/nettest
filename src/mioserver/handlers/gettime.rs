@@ -29,6 +29,7 @@ pub fn handle_get_time_send_chunk(poll: &Poll, state: &mut TestState) -> io::Res
     loop {
         let n = state.stream.write(&chunk[state.write_pos..])?;
         state.write_pos += n;
+        state.total_bytes_sent += n as u64;
         if state.write_pos == chunk.len() {
             debug!("handle_get_time_send_chunk token {:?}", state.token);
             state.write_pos = 0;
@@ -90,7 +91,7 @@ pub fn handle_get_time_receive_ok(poll: &Poll, state: &mut TestState) -> io::Res
         state.read_pos += n;
         if state.read_buffer[0..state.read_pos] == b"OK\n"[..] {
             state.measurement_state = ServerTestPhase::GetTimeSendTime;
-            state.time_ns = Some(state.clock.unwrap().elapsed().as_nanos());
+            state.sent_time_ns = Some(state.clock.unwrap().elapsed().as_nanos());
             state.read_pos = 0;
             state
                 .stream
@@ -102,7 +103,7 @@ pub fn handle_get_time_receive_ok(poll: &Poll, state: &mut TestState) -> io::Res
 
 pub fn handle_get_time_send_time(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
     trace!("handle_get_time_send_time");
-    let time_ns = state.time_ns.unwrap();
+    let time_ns = state.sent_time_ns.unwrap();
     state.clock = None;
     let time_response = format!("TIME {}\n", time_ns);
 

@@ -7,3 +7,4 @@ pub mod gettime;
 pub mod putnoresult;
 pub mod put;
 pub mod puttimeresult;
+pub mod signed_result;

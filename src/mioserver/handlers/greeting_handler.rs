@@ -37,7 +37,8 @@ pub fn handle_greeting_send_version(
     poll: &Poll,
     state: &mut TestState,
 ) -> Result<usize, std::io::Error> {
-    debug!("handle_greeting_send_version");
+    let client_ip = state.client_addr.map(|addr| addr.to_string()).unwrap_or_else(|| "unknown".to_string());
+    debug!("handle_greeting_send_version for client {}", client_ip);
 
     let version = "RMBTv1.5.0\n";
 

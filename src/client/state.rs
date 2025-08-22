@@ -46,6 +46,11 @@ pub enum TestPhase {
     PerfSendLastChunk,
     PerfReceiveTime,
     PerfCompleted,
+
+    SignedResultSend,
+    SignedResultReceive,
+    SignedResultSendOk,
+    SignedResultCompleted,
 }
 
 pub struct TestState {
@@ -81,6 +86,7 @@ pub struct MeasurementState {
     pub bytes_received: u64,
     pub bytes_sent: u64,
     pub time_result_buffer: Vec<u8>,
+    pub envelope: Option<String>,
 }
 
 impl TestState {
@@ -143,6 +149,7 @@ impl TestState {
             bytes_received: 0,
             bytes_sent: 0,
             time_result_buffer: Vec::new(),
+            envelope: None,
         };
 
 
@@ -166,6 +173,17 @@ impl TestState {
         debug!("Greeting completed");
 
         Ok(self)
+    }
+
+    pub fn run_signed_result(&mut self) -> Result<()> {
+        self.measurement_state.phase = TestPhase::SignedResultSend;
+        self.measurement_state.stream.reregister(
+            &mut self.poll,
+            self.measurement_state.token,
+            Interest::WRITABLE,
+        )?;
+        self.process_phase(TestPhase::SignedResultCompleted, ONE_SECOND_NS * 12)?;
+        Ok(())
     }
 
     pub fn run_perf_test(&mut self) -> Result<()> {

@@ -38,7 +38,7 @@ pub fn handle_put_send_ok(poll: &Poll, state: &mut TestState) -> io::Result<usiz
 
 pub fn handle_put_send_bytes(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
     debug!("handle_put_send_bytes");
-    let command = format!("TIME {} BYTES {}\n", state.time_ns.unwrap(), state.total_bytes);
+    let command = format!("TIME {} BYTES {}\n", state.sent_time_ns.unwrap(), state.total_bytes_received);
     if state.write_pos == 0 {
         state.write_buffer[0..command.len()].copy_from_slice(command.as_bytes());
         state.write_pos = 0;
@@ -84,10 +84,10 @@ pub fn handle_put_receive_chunk(
             return Err(io::Error::new(io::ErrorKind::Other, "EOF"));
         }
         state.read_pos += n;
-        state.total_bytes += n as u64;
+        state.total_bytes_received += n as u64;
         if state.read_pos == state.chunk_size {
             state.measurement_state = ServerTestPhase::PutSendBytes;
-            state.time_ns = Some(state.clock.unwrap().elapsed().as_nanos());
+            state.sent_time_ns = Some(state.clock.unwrap().elapsed().as_nanos());
             state
                 .stream
                 .reregister(poll, state.token, Interest::WRITABLE)?;
@@ -98,7 +98,7 @@ pub fn handle_put_receive_chunk(
 
 pub fn handle_put_send_time(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
     debug!("handle_put_send_time");
-    let command = format!("TIME {}\n", state.time_ns.unwrap());
+    let command = format!("TIME {}\n", state.sent_time_ns.unwrap());
     if state.write_pos == 0 {
         state.write_buffer[0..command.len()].copy_from_slice(command.as_bytes());
         state.write_pos = 0;

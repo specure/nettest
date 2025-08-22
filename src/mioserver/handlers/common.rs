@@ -216,6 +216,20 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
                 return Ok(n);
             }
 
+            if command_str.starts_with("SIGNEDRESULT") {
+                state.read_pos = 0;
+                state.measurement_state = ServerTestPhase::SignedResultSend;
+                state
+                    .stream
+                    .reregister(poll, state.token, Interest::WRITABLE)?;
+                return Ok(n);
+            }
+
+            if command_str.starts_with("QUIT") {
+                state.stream.write(b"BYE\n")?;
+                return Ok(0);
+            }
+
             state.measurement_state = ServerTestPhase::AcceptCommandReceive;
             return Ok(n);
         }

@@ -55,7 +55,7 @@ pub fn handle_put_no_result_receive_chunk(
             trace!("Chunk size reached");
             if state.chunk_buffer[state.read_pos - 1] == 0xFF {
                 trace!("Last byte is 0xFF");
-                state.time_ns = Some(state.clock.unwrap().elapsed().as_nanos());
+                state.sent_time_ns = Some(state.clock.unwrap().elapsed().as_nanos());
                 state.measurement_state = ServerTestPhase::PutNoResultSendTime;
                 state.read_pos = 0;
                 state
@@ -75,7 +75,7 @@ pub fn handle_put_no_result_receive_chunk(
 
 pub fn handle_put_no_result_send_time(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
     debug!("handle_put_no_result_send_time");
-    let command = format!("TIME {}\n", state.time_ns.unwrap());
+    let command = format!("TIME {}\n", state.sent_time_ns.unwrap());
     if state.write_pos == 0 {
         state.write_buffer[0..command.len()].copy_from_slice(command.as_bytes());
         state.write_pos = 0;

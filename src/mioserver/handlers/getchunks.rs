@@ -104,7 +104,7 @@ pub fn handle_get_chunks_receive_ok(poll: &Poll, state: &mut TestState) -> io::R
         state.read_pos += n;
         if state.read_buffer[..state.read_pos] == b"OK\n"[..] {
             state.measurement_state = ServerTestPhase::GetChunksSendTime;
-            state.time_ns = Some(state.clock.unwrap().elapsed().as_nanos());
+            state.sent_time_ns = Some(state.clock.unwrap().elapsed().as_nanos());
             state.read_pos = 0;
             state
                 .stream
@@ -117,7 +117,7 @@ pub fn handle_get_chunks_receive_ok(poll: &Poll, state: &mut TestState) -> io::R
 pub fn handle_get_chunks_send_time(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
     debug!("handle_get_chunks_send_time");
 
-    let time_ns = state.time_ns.unwrap();
+    let time_ns = state.sent_time_ns.unwrap();
     state.clock = None;
     let time_response = format!("TIME {}\n", time_ns);
 

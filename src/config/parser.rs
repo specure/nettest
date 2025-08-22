@@ -124,6 +124,12 @@ fn parse_config_content(content: &str) -> FileConfig {
                         config.client_use_websocket = false;
                     }
                 }
+                "secret_key" => {
+                    config.secret_key = Some(value.to_string());
+                    //lets read the key from the file
+                    let key = std::fs::read_to_string(value.to_string()).unwrap();
+                    config.secret_key = Some(key);
+                }
                 // Logging settings
                 "logger" => {
                     if value == "info" {

@@ -40,20 +40,23 @@ pub struct TestState {
     pub write_buffer: [u8; 1024 * 8],
     pub read_bytes: BytesMut,
     pub read_pos: usize,
-    pub total_bytes: u64,
+    pub total_bytes_received: u64,
+    pub total_bytes_sent: u64,
     pub write_pos: usize,
     pub num_chunks: usize,
     pub chunk_size: usize,
     pub processed_chunks: usize,
     pub clock: Option<Instant>,
-    pub time_ns: Option<u128>,
+    pub sent_time_ns: Option<u128>,
+    pub received_time_ns: Option<u128>,
     pub duration: u64,
     pub put_duration: Option<u128>,
     pub chunk_buffer: Vec<u8>,
     pub chunk: Option<BytesMut>,
     pub terminal_chunk: Option<BytesMut>,
-    pub bytes_received: VecDeque<(u64, u64)>
-
+    pub bytes_received: VecDeque<(u64, u64)>,
+    pub client_addr: Option<SocketAddr>,
+    pub sig_key: Option<String>,
 }
 
 #[derive(Clone)]
@@ -155,7 +158,7 @@ impl MioServer {
                 }
             });
         }
-      
+
         loop {
             // Проверяем сигнал завершения
             if self.shutdown_signal.load(Ordering::Relaxed) {
@@ -205,18 +208,18 @@ impl MioServer {
             thread::sleep(std::time::Duration::from_millis(10));
         }
 
-       
+
         Ok(())
     }
 
    pub  async fn shutdown(&mut self) -> io::Result<()> {
         info!("Starting graceful shutdown...");
-        
+
         if self.server_config.server_registration {
             info!("Deregistering server from control server...");
             let _ = deregister_server(&self.server_config).await;
         }
-        
+
         info!("Server shutdown complete");
         Ok(())
     }

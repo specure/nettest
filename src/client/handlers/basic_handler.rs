@@ -7,6 +7,7 @@ use crate::client::handlers::greeting::{handle_greeting_receive_greeting, handle
 use crate::client::handlers::get_time::{handle_get_time_receive_chunk, handle_get_time_receive_time, handle_get_time_send_command, handle_get_time_send_ok};
 use crate::client::handlers::ping::{handle_ping_receive_pong, handle_ping_receive_time, handle_ping_send_ok, handle_ping_send_ping};
 use crate::client::handlers::puttimeresult::{handle_put_time_result_send_command, handle_put_time_result_send_chunks, handle_put_time_result_send_last_chunk, handle_put_time_result_receive_ok, handle_put_time_result_receive_time};
+use crate::client::handlers::signed_result::{handle_signed_result_command, handle_signed_result_receive, handle_signed_result_send_ok};
 use crate::client::state::{MeasurementState, TestPhase};
 
 
@@ -27,6 +28,8 @@ pub fn handle_client_readable_data(state: &mut MeasurementState, poll: &Poll) ->
 
         TestPhase::PerfReceiveOk => handle_put_time_result_receive_ok(poll, state),
         TestPhase::PerfReceiveTime => handle_put_time_result_receive_time(poll, state),
+
+        TestPhase::SignedResultReceive => handle_signed_result_receive(poll, state),
 
         // TestPhase::PerfReceiveOk => handle_perf_receive_ok(poll, state),
         // TestPhase::PerfReceiveTime => handle_perf_receive_time(poll, state),
@@ -58,6 +61,9 @@ pub fn handle_client_writable_data(state: &mut MeasurementState, poll: &Poll) ->
         TestPhase::PerfSendCommand => handle_put_time_result_send_command(poll, state),
         TestPhase::PerfSendChunks => handle_put_time_result_send_chunks(poll, state),
         TestPhase::PerfSendLastChunk => handle_put_time_result_send_last_chunk(poll, state),
+
+        TestPhase::SignedResultSend => handle_signed_result_command(poll, state),
+        TestPhase::SignedResultSendOk => handle_signed_result_send_ok(poll, state),
 
         // TestPhase::PerfSendCommand => handle_perf_send_command(poll, state),
         // TestPhase::PerfSendChunks => handle_perf_send_chunks(poll, state),

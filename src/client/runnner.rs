@@ -156,6 +156,10 @@ pub async fn run_threads(
                 }
             }
 
+            barrier.wait();
+
+            state.run_signed_result().unwrap();
+
             let result: Measurement = Measurement {
                 thread_id: i,
                 failed: state.measurement_state().failed,

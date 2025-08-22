@@ -39,7 +39,7 @@ pub fn handle_ping_receive_ok(poll: &Poll, state: &mut TestState) -> io::Result<
         if state.read_buffer[0..ok.len()] == ok[..] {
             let time = state.clock.unwrap().elapsed().as_nanos();
             state.clock = None;
-            state.time_ns = Some(time);
+            state.sent_time_ns = Some(time);
             state.measurement_state = ServerTestPhase::PingSendTime;
             state.read_pos = 0;
             state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
@@ -50,7 +50,7 @@ pub fn handle_ping_receive_ok(poll: &Poll, state: &mut TestState) -> io::Result<
 
 pub fn handle_ping_send_time(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
     trace!("handle_ping_send_time");
-    let time = format!("TIME {}\n", state.time_ns.unwrap());
+    let time = format!("TIME {}\n", state.sent_time_ns.unwrap());
     if state.write_pos == 0 {
         state.write_buffer[..time.len()].copy_from_slice(time.as_bytes());
     }
