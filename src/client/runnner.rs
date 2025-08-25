@@ -9,7 +9,13 @@ use std::sync::Mutex;
 use log::debug;
 
 use crate::client::{
-    calculator::{ calculate_download_speed_from_stats_silent, calculate_upload_speed_from_stats_silent}, client::{ClientConfig, Measurement, SharedStats}, print::printer::{print_float_result, print_test_result}, state::TestState, control_server::MeasurementSaver
+    calculator::{
+        calculate_download_speed_from_stats_silent, calculate_upload_speed_from_stats_silent,
+    },
+    client::{ClientConfig, Measurement, SharedStats},
+    control_server::MeasurementSaver,
+    print::printer::{print_float_result, print_test_result},
+    state::TestState,
 };
 
 pub async fn run_threads(
@@ -25,7 +31,7 @@ pub async fn run_threads(
 
     // Get server address (IP or hostname)
     let server_addr = config.server.unwrap();
-    
+
     // Resolve IP if it's a hostname
     let ip = if crate::client::control_server::servers::is_ip_address(&server_addr) {
         server_addr.clone()
@@ -35,15 +41,14 @@ pub async fn run_threads(
             Err(_) => server_addr.clone(), // Fallback to original if resolution fails
         }
     };
-    
+
     debug!("Resolved IP: {}", ip);
-    
+
     let addr = if !config.use_tls {
         format!("{}:{}", ip, config.port).parse::<SocketAddr>()?
     } else {
         format!("{}:{}", ip, config.tls_port).parse::<SocketAddr>()?
     };
-
 
     for i in 0..config.thread_count {
         let barrier = Arc::clone(&barrier);
@@ -52,14 +57,14 @@ pub async fn run_threads(
         let download_speed_clone = Arc::clone(&download_speed);
         let upload_speed_clone = Arc::clone(&upload_speed);
         thread_handles.push(thread::spawn(move || {
-
-            let mut state = match TestState::new(addr, config.use_tls, config.use_websocket, i, None, None) {
-                Ok(state) => state,
-                Err(e) => {
-                    debug!("TestState error: {:?} token: {}", e, i);
-                    return Err(e);
-                }
-            };
+            let mut state =
+                match TestState::new(addr, config.use_tls, config.use_websocket, i, None, None) {
+                    Ok(state) => state,
+                    Err(e) => {
+                        debug!("TestState error: {:?} token: {}", e, i);
+                        return Err(e);
+                    }
+                };
 
             let greeting = state.process_greeting();
             match greeting {
@@ -77,10 +82,9 @@ pub async fn run_threads(
                 state.run_ping().unwrap();
                 let median = state.measurement_state().ping_median.unwrap();
                 let ping_ms = median as f64 / 1000000.0;
-                
-                // Сохраняем ping_median для последующего использования
+
                 *ping_median_clone.lock().unwrap() = Some(median);
-                
+
                 if config.raw_output {
                     print!("{:.2}", ping_ms);
                 } else {
@@ -100,17 +104,18 @@ pub async fn run_threads(
                         .cloned()
                         .collect(),
                 );
-            } 
+            }
 
             barrier.wait();
 
             if i == 0 {
                 let stats_guard = stats.lock().unwrap();
-                let speed = calculate_download_speed_from_stats_silent(&stats_guard.download_measurements);
-                
+                let speed =
+                    calculate_download_speed_from_stats_silent(&stats_guard.download_measurements);
+
                 // Сохраняем download скорость для последующего использования
                 *download_speed_clone.lock().unwrap() = Some(speed.2); // speed.1 - это Gbps
-                
+
                 if config.raw_output {
                     print!("/{:.2}", speed.1); // speed.1 - это Gbps
                 } else {
@@ -137,11 +142,12 @@ pub async fn run_threads(
 
             if i == 0 {
                 let stats_guard = stats.lock().unwrap();
-                let speed = calculate_upload_speed_from_stats_silent(&stats_guard.upload_measurements);
-                
+                let speed =
+                    calculate_upload_speed_from_stats_silent(&stats_guard.upload_measurements);
+
                 // Сохраняем upload скорость для последующего использования
                 *upload_speed_clone.lock().unwrap() = Some(speed.2); // speed.1 - это Gbps
-                
+
                 if config.raw_output {
                     println!("/{:.2}", speed.1); // speed.1 - это Gbps, println! для перевода строки
                 } else {
@@ -151,10 +157,10 @@ pub async fn run_threads(
 
             barrier.wait();
 
-            state.run_signed_result().unwrap();
-
-            barrier.wait();
-
+            if config.save_results {
+                state.run_signed_result().unwrap();
+                barrier.wait();
+            }
 
             let result: Measurement = Measurement {
                 thread_id: i,
@@ -191,7 +197,10 @@ pub async fn run_threads(
         .cloned()
         .collect();
 
-    let envelopes: Vec<String> = state_refs.iter().map(|s| s.envelope.clone().unwrap()).collect();
+    let envelopes: Vec<String> = state_refs
+        .iter()
+        .map(|s| s.envelope.clone().unwrap())
+        .collect();
 
     if state_refs.len() != config.thread_count {
         println!("Failed threads: {}", config.thread_count - state_refs.len());
@@ -199,21 +208,22 @@ pub async fn run_threads(
 
     // Сохраняем результаты если включена опция -save
     if config.save_results {
-        let mut measurement_saver = MeasurementSaver::new(
-            &config_clone,
-        );
-        
+        let mut measurement_saver = MeasurementSaver::new(&config_clone);
+
         // Получаем все сохраненные значения
         let ping_median_value = *ping_median.lock().unwrap();
         let download_speed_value = *download_speed.lock().unwrap();
         let upload_speed_value = *upload_speed.lock().unwrap();
-        
-        if let Err(e) = measurement_saver.save_measurement_with_speeds(
-            ping_median_value, 
-            download_speed_value, 
-            upload_speed_value,
-            envelopes
-        ).await {
+
+        if let Err(e) = measurement_saver
+            .save_measurement_with_speeds(
+                ping_median_value,
+                download_speed_value,
+                upload_speed_value,
+                envelopes,
+            )
+            .await
+        {
             eprintln!("Failed to save measurement: {}", e);
         }
     }
