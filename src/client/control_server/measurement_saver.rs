@@ -35,7 +35,7 @@ pub struct MeasurementSaver {
 }
 
 impl MeasurementSaver {
-    pub fn new(cclient_config: &ClientConfig) -> Self {
+    pub fn new(client_config: &ClientConfig) -> Self {
         // Определяем тип соединения на основе конфигурации
         let connection_type = if client_config.use_websocket {
             if client_config.use_tls {
