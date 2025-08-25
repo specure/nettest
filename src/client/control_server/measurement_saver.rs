@@ -1,7 +1,6 @@
-use crate::client::client::{SharedStats, ClientConfig};
+use crate::client::client::{ClientConfig};
 use log::{warn, info};
 use serde_json::json;
-use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 use std::fs;
@@ -28,15 +27,15 @@ impl ConnectionType {
 }
 
 pub struct MeasurementSaver {
-    control_server_url: String,
     client_uuid: Option<String>,
     connection_type: ConnectionType,
     threads_number: u32,
     git_hash: Option<String>,
+    client_config: ClientConfig,  // Добавляем конфигурацию клиента
 }
 
 impl MeasurementSaver {
-    pub fn new(control_server_url: String, client_config: &ClientConfig) -> Self {
+    pub fn new(cclient_config: &ClientConfig) -> Self {
         // Определяем тип соединения на основе конфигурации
         let connection_type = if client_config.use_websocket {
             if client_config.use_tls {
@@ -51,11 +50,27 @@ impl MeasurementSaver {
         };
 
         Self {
-            control_server_url,
             client_uuid: client_config.client_uuid.clone(),
             connection_type,
             threads_number: client_config.thread_count as u32,
             git_hash: client_config.git_hash.clone(),
+            client_config: client_config.clone(),
+        }
+    }
+
+    fn resolve_server_ip(&self) -> Option<String> {
+        if let Some(server_addr) = &self.client_config.server {
+            // Resolve IP if it's a hostname
+            if crate::client::control_server::servers::is_ip_address(server_addr) {
+                Some(server_addr.clone())
+            } else {
+                match crate::client::control_server::servers::resolve_ip_from_web_address(server_addr) {
+                    Ok(ip) => Some(ip),
+                    Err(_) => Some(server_addr.clone()), // Fallback to original if resolution fails
+                }
+            }
+        } else {
+            None // Return null instead of fallback IP
         }
     }
 
@@ -112,6 +127,7 @@ impl MeasurementSaver {
         ping_median: Option<u64>,
         download_speed_gbps: Option<f64>,
         upload_speed_gbps: Option<f64>,
+        signed_data: Vec<String>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Обеспечиваем наличие client_uuid
         let client_uuid = self.ensure_client_uuid()?;
@@ -143,6 +159,8 @@ impl MeasurementSaver {
             "clientVersion": "2.0.0",
             "connectionType": self.connection_type.as_str(),
             "threadsNumber": self.threads_number,
+            "signedData": signed_data,
+            "measurementServerIp": self.resolve_server_ip(),
         });
 
         // Добавляем commitHash только если есть git_hash в конфигурации
@@ -159,7 +177,7 @@ impl MeasurementSaver {
         // Отправляем POST запрос
         let client = reqwest::Client::new();
         let response = client
-            .post(&format!("{}/measurement/save", self.control_server_url))
+            .post(&format!("{}/measurement/save", "http://127.0.0.1:8080"))
             .header("Content-Type", "application/json")
             .header("x-nettest-client", "nt")
             .json(&measurement_data)

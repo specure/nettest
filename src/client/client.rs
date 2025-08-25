@@ -20,6 +20,7 @@ pub struct Measurement {
     pub failed: bool,
     pub thread_id: usize,
     pub upload_measurements: Vec<(u64, u64)>,
+    pub envelope: Option<String>,
 }
 
 #[derive(Default)]

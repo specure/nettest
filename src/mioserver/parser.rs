@@ -1,5 +1,5 @@
 use crate::{
-    config::FileConfig, logger, mioserver::server::ServerConfig, tokio_server::{server_config::parse_listen_address, utils::user}
+    config::FileConfig, logger, mioserver::{handlers::signed_result::generate_secret_key, server::ServerConfig}, tokio_server::{server_config::parse_listen_address, utils::user}
 };
 
 pub fn parse_args(
@@ -15,7 +15,7 @@ pub fn parse_args(
         user: default_config.user,
         daemon: default_config.daemonize,
         version: Some("2.0.0".to_string()),
-        secret_key: default_config.secret_key,
+        secret_key: generate_secret_key(),
         log_level: None,
         server_registration: default_config.server_registration,
         control_server: default_config.control_server,
@@ -72,12 +72,6 @@ pub fn parse_args(
                 i += 1;
                 if i < args.len() {
                     config.log_level = Some(args[i].parse().unwrap());
-                }
-            }
-            "-e" => {
-                i += 1;
-                if i < args.len() {
-                    config.secret_key = Some(args[i].clone());
                 }
             }
             "-register" => {

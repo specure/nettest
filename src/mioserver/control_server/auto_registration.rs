@@ -17,6 +17,8 @@ struct AutoMeasurementServerRegistrationRequest {
     hostname: Option<String>,
     #[serde(rename = "serverName")]
     server_name: Option<String>,
+    #[serde(rename = "secretKey")]
+    sig_key: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -41,6 +43,7 @@ pub async fn register_server(config: &ServerConfig) -> Result<()> {
         version: config.version.clone(),
         hostname: config.hostname.clone(),
         server_name: config.server_name.clone(),
+        sig_key: Some(config.secret_key.clone()),
     };
     info!("Registering server with control server json: {:?}", serde_json::to_string(&request).unwrap());
     

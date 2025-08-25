@@ -69,7 +69,7 @@ pub struct ServerConfig {
     pub user: Option<String>,
     pub daemon: bool,
     pub version: Option<String>,
-    pub secret_key: Option<String>,
+    pub secret_key: String,  
     pub log_level: Option<LevelFilter>,
     pub server_registration: bool,
     pub control_server: String,

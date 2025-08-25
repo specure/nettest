@@ -70,13 +70,6 @@ pub async fn run_threads(
             }
             barrier.wait();
             state.run_get_chunks().unwrap();
-            // if i == 0 {
-            //     print_result(
-            //         "Get Chunks",
-            //         "Completed",
-            //         Some(state.measurement_state().chunk_size as usize),
-            //     );
-            // }
 
             barrier.wait();
 
@@ -160,6 +153,9 @@ pub async fn run_threads(
 
             state.run_signed_result().unwrap();
 
+            barrier.wait();
+
+
             let result: Measurement = Measurement {
                 thread_id: i,
                 failed: state.measurement_state().failed,
@@ -175,6 +171,7 @@ pub async fn run_threads(
                     .iter()
                     .cloned()
                     .collect(),
+                envelope: state.measurement_state().envelope.clone(),
             };
             Ok(result)
         }));
@@ -194,6 +191,8 @@ pub async fn run_threads(
         .cloned()
         .collect();
 
+    let envelopes: Vec<String> = state_refs.iter().map(|s| s.envelope.clone().unwrap()).collect();
+
     if state_refs.len() != config.thread_count {
         println!("Failed threads: {}", config.thread_count - state_refs.len());
     }
@@ -201,7 +200,6 @@ pub async fn run_threads(
     // Сохраняем результаты если включена опция -save
     if config.save_results {
         let mut measurement_saver = MeasurementSaver::new(
-            config.control_server.clone(),
             &config_clone,
         );
         
@@ -213,7 +211,8 @@ pub async fn run_threads(
         if let Err(e) = measurement_saver.save_measurement_with_speeds(
             ping_median_value, 
             download_speed_value, 
-            upload_speed_value
+            upload_speed_value,
+            envelopes
         ).await {
             eprintln!("Failed to save measurement: {}", e);
         }
