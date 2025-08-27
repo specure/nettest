@@ -1,0 +1,193 @@
+name: Build Windows Package
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows-x86_64:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: x86_64-pc-windows-msvc
+        override: true
+        
+    - name: Add Windows target
+      run: |
+        rustup target add x86_64-pc-windows-msvc
+        
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-x86_64-pc-windows-msvc-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Build for Windows x86_64
+      run: |
+        cargo build --release --target x86_64-pc-windows-msvc
+        
+    - name: Create package directory
+      run: |
+        mkdir -p package/nettest-windows-x86_64
+        
+    - name: Copy binary
+      run: |
+        copy target\x86_64-pc-windows-msvc\release\nettest.exe package\nettest-windows-x86_64\
+        
+    - name: Create README for package
+      run: |
+        echo Nettest - Network Speed Measurement Tool > package\nettest-windows-x86_64\README.txt
+        echo. >> package\nettest-windows-x86_64\README.txt
+        echo Architecture: x86_64 >> package\nettest-windows-x86_64\README.txt
+        echo Platform: Windows >> package\nettest-windows-x86_64\README.txt
+        echo Build Date: %date% >> package\nettest-windows-x86_64\README.txt
+        echo. >> package\nettest-windows-x86_64\README.txt
+        echo Installation: >> package\nettest-windows-x86_64\README.txt
+        echo 1. Run from command prompt: nettest.exe -s ^(server^) or nettest.exe -c ^<address^> ^(client^) >> package\nettest-windows-x86_64\README.txt
+        echo. >> package\nettest-windows-x86_64\README.txt
+        echo For more information, visit: https://github.com/your-repo/nettest >> package\nettest-windows-x86_64\README.txt
+        
+    - name: Create archive
+      run: |
+        cd package
+        7z a -tzip nettest-windows-x86_64.zip nettest-windows-x86_64\
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nettest-windows-x86_64-latest
+        path: package/nettest-windows-x86_64.zip
+        
+    - name: Upload binary for release
+      uses: actions/upload-artifact@v4
+      with:
+        name: nettest-windows-x86_64-binary
+        path: target/x86_64-pc-windows-msvc/release/nettest.exe
+
+  build-windows-aarch64:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: aarch64-pc-windows-msvc
+        override: true
+        
+    - name: Add Windows ARM64 target
+      run: |
+        rustup target add aarch64-pc-windows-msvc
+        
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-aarch64-pc-windows-msvc-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Build for Windows ARM64
+      run: |
+        cargo build --release --target aarch64-pc-windows-msvc
+        
+    - name: Create package directory
+      run: |
+        mkdir -p package/nettest-windows-aarch64
+        
+    - name: Copy binary
+      run: |
+        copy target\aarch64-pc-windows-msvc\release\nettest.exe package\nettest-windows-aarch64\
+        
+    - name: Create README for package
+      run: |
+        echo Nettest - Network Speed Measurement Tool > package\nettest-windows-aarch64\README.txt
+        echo. >> package\nettest-windows-aarch64\README.txt
+        echo Architecture: aarch64 >> package\nettest-windows-aarch64\README.txt
+        echo Platform: Windows >> package\nettest-windows-aarch64\README.txt
+        echo Build Date: %date% >> package\nettest-windows-aarch64\README.txt
+        echo. >> package\nettest-windows-aarch64\README.txt
+        echo Installation: >> package\nettest-windows-aarch64\README.txt
+        echo 1. Run from command prompt: nettest.exe -s ^(server^) or nettest.exe -c ^<address^> ^(client^) >> package\nettest-windows-aarch64\README.txt
+        echo. >> package\nettest-windows-aarch64\README.txt
+        echo For more information, visit: https://github.com/your-repo/nettest >> package\nettest-windows-aarch64\README.txt
+        
+    - name: Create archive
+      run: |
+        cd package
+        7z a -tzip nettest-windows-aarch64.zip nettest-windows-aarch64\
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nettest-windows-aarch64-latest
+        path: package/nettest-windows-aarch64.zip
+        
+    - name: Upload binary for release
+      uses: actions/upload-artifact@v4
+      with:
+        name: nettest-windows-aarch64-binary
+        path: target/aarch64-pc-windows-msvc/release/nettest.exe
+
+  create-windows-release:
+    needs: [build-windows-x86_64, build-windows-aarch64]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Download binaries
+      uses: actions/download-artifact@v4
+      
+    - name: List downloaded files
+      run: |
+        echo "Listing downloaded files:"
+        dir /s nettest.exe
+        dir nettest-windows-x86_64-binary\ || echo "Windows x86_64 binary not found"
+        dir nettest-windows-aarch64-binary\ || echo "Windows aarch64 binary not found"
+        
+    - name: Create archives with binaries
+      run: |
+        # Create Windows x86_64 archive
+        copy nettest-windows-x86_64-binary\nettest.exe nettest.exe
+        7z a -tzip nettest-windows-x86_64.zip nettest.exe
+        del nettest.exe
+        
+        # Create Windows ARM64 archive
+        copy nettest-windows-aarch64-binary\nettest.exe nettest.exe
+        7z a -tzip nettest-windows-aarch64.zip nettest.exe
+        del nettest.exe
+        
+    - name: Create latest release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: latest-windows
+        name: Windows Latest Release
+        files: |
+          nettest-windows-x86_64.zip
+          nettest-windows-aarch64.zip
+        token: ${{ secrets.GITHUB_TOKEN }}
+        overwrite: true
+        draft: false
+        prerelease: false
+        fail_on_unmatched_files: false

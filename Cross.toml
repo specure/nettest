@@ -6,6 +6,14 @@ xargo = false
 image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:main"
 xargo = false
 
+[target.x86_64-pc-windows-msvc]
+image = "ghcr.io/cross-rs/x86_64-pc-windows-msvc:main"
+xargo = false
+
+[target.aarch64-pc-windows-msvc]
+image = "ghcr.io/cross-rs/aarch64-pc-windows-msvc:main"
+xargo = false
+
 [build.env]
 passthrough = [
     "OPENSSL_STATIC",
