@@ -310,9 +310,11 @@ pub fn parse_listen_address(addr: &str) -> Result<SocketAddr, Box<dyn Error + Se
     }
 
     // Try port only: 8080
-    if let Ok(port) = addr.parse::<u16>() {
-        return Ok(SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port));
-    }
+if let Ok(port) = addr.parse::<u16>() {
+    println!("Parsed port only: {}", port);
+    // return Ok(SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port));
+    return Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port));
+}
 
     Err(format!("Invalid listen address format: {}", addr).into())
 }
