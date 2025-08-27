@@ -65,10 +65,6 @@ pub async fn run_threads(
             debug!("Starting thread: {}", i);
             debug!("Args: {:?} ", addr);
             debug!("Config: {:?}", config);
-            debug!("Ping median: {:?}", ping_median);
-            debug!("Download speed: {:?}", download_speed);
-            debug!("Upload speed: {:?}", upload_speed);
-            debug!("Thread handles: {:?}", thread_handles);
             let mut state =
                 match TestState::new(addr, config.use_tls, config.use_websocket, i, None, None) {
                     Ok(state) => state,
