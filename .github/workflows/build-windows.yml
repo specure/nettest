@@ -136,9 +136,9 @@ jobs:
     - name: List downloaded files
       run: |
         echo "Listing downloaded files:"
-        dir /s nettest.exe
-        dir nettest-windows-x86_64-binary\ || echo "Windows x86_64 binary not found"
-        dir nettest-windows-aarch64-binary\ || echo "Windows aarch64 binary not found"
+        Get-ChildItem -Recurse -Name "nettest.exe"
+        Get-ChildItem "nettest-windows-x86_64-binary" -ErrorAction SilentlyContinue | Select-Object Name, Length
+        Get-ChildItem "nettest-windows-aarch64-binary" -ErrorAction SilentlyContinue | Select-Object Name, Length
         
     - name: Create archives with binaries
       run: |
