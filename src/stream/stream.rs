@@ -35,8 +35,11 @@ impl Stream {
         let stream = TcpStream::connect(addr)?;
         debug!("TCP stream created");
         if let Err(e) = stream.set_nodelay(true) {
-            debug!("Failed to set TCP_NODELAY: {}", e);
-            // Продолжить выполнение без set_nodelay
+            debug!("Failed to set 1 TCP_NODELAY: {}", e);
+            std::thread::sleep(std::time::Duration::from_millis(1000));
+            if let Err(e) = stream.set_nodelay(true) {
+                debug!("Failed to set 2 TCP_NODELAY: {}", e);
+            }
         }
         let std = Self::Tcp(stream);
         debug!("TCP stream created");
