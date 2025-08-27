@@ -1,6 +1,7 @@
 use anyhow::{Ok, Result};
 use log::debug;
 use mio::{net::TcpStream, Interest, Poll, Token};
+use openssl::envelope::Seal;
 use std::io::{self, Read, Write};
 use std::net::SocketAddr;
 use std::path::Path;
@@ -34,7 +35,10 @@ impl Stream {
         let stream = TcpStream::connect(addr)?;
         debug!("TCP stream created");
         stream.set_nodelay(true)?;
-        Ok(Self::Tcp(stream))
+        debug!("Setting nodelay");
+        let std = Self::Tcp(stream);
+        debug!("TCP stream created");
+        Ok(std)
     }
 
     pub fn return_type(&self) -> &str {
