@@ -48,19 +48,6 @@ jobs:
       run: |
         copy target\x86_64-pc-windows-msvc\release\nettest.exe package\nettest-windows-x86_64\
         
-    - name: Create README for package
-      run: |
-        echo Nettest - Network Speed Measurement Tool > package\nettest-windows-x86_64\README.txt
-        echo. >> package\nettest-windows-x86_64\README.txt
-        echo Architecture: x86_64 >> package\nettest-windows-x86_64\README.txt
-        echo Platform: Windows >> package\nettest-windows-x86_64\README.txt
-        echo Build Date: %date% >> package\nettest-windows-x86_64\README.txt
-        echo. >> package\nettest-windows-x86_64\README.txt
-        echo Installation: >> package\nettest-windows-x86_64\README.txt
-        echo 1. Run from command prompt: nettest.exe -s ^(server^) or nettest.exe -c ^<address^> ^(client^) >> package\nettest-windows-x86_64\README.txt
-        echo. >> package\nettest-windows-x86_64\README.txt
-        echo For more information, visit: https://github.com/your-repo/nettest >> package\nettest-windows-x86_64\README.txt
-        
     - name: Create archive
       run: |
         cd package
@@ -118,19 +105,6 @@ jobs:
     - name: Copy binary
       run: |
         copy target\aarch64-pc-windows-msvc\release\nettest.exe package\nettest-windows-aarch64\
-        
-    - name: Create README for package
-      run: |
-        echo Nettest - Network Speed Measurement Tool > package\nettest-windows-aarch64\README.txt
-        echo. >> package\nettest-windows-aarch64\README.txt
-        echo Architecture: aarch64 >> package\nettest-windows-aarch64\README.txt
-        echo Platform: Windows >> package\nettest-windows-aarch64\README.txt
-        echo Build Date: %date% >> package\nettest-windows-aarch64\README.txt
-        echo. >> package\nettest-windows-aarch64\README.txt
-        echo Installation: >> package\nettest-windows-aarch64\README.txt
-        echo 1. Run from command prompt: nettest.exe -s ^(server^) or nettest.exe -c ^<address^> ^(client^) >> package\nettest-windows-aarch64\README.txt
-        echo. >> package\nettest-windows-aarch64\README.txt
-        echo For more information, visit: https://github.com/your-repo/nettest >> package\nettest-windows-aarch64\README.txt
         
     - name: Create archive
       run: |
