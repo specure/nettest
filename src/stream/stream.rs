@@ -30,7 +30,7 @@ pub enum Stream {
 
 impl Stream {
     pub fn new_tcp(addr: SocketAddr) -> Result<Self> {
-        debug!("Creating TCP stream");
+        debug!("Creating TCP stream {}", addr);
         let stream = TcpStream::connect(addr)?;
         debug!("TCP stream created");
         stream.set_nodelay(true)?;
