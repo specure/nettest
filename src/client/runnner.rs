@@ -64,7 +64,7 @@ pub async fn run_threads(
         thread_handles.push(thread::spawn(move || {
             debug!("Starting thread: {}", i);
             debug!("Args: {:?} ", addr);
-            debug!("Config: {:?}", config);
+            debug!("Config: {:?}", config.clone());
             let mut state =
                 match TestState::new(addr, config.use_tls, config.use_websocket, i, None, None) {
                     Ok(state) => state,
