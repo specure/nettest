@@ -51,20 +51,12 @@ pub async fn run_threads(
     };
 
     for i in 0..config.thread_count {
-        debug!("Starting thread: {}", i);
         let barrier = Arc::clone(&barrier);
-        debug!("Cloned barrier: {}", i);
         let stats = Arc::clone(&stats);
         let ping_median_clone = Arc::clone(&ping_median);
-        debug!("Cloned ping_median: {}", i);
         let download_speed_clone = Arc::clone(&download_speed);
-        debug!("Cloned download_speed: {}", i);
         let upload_speed_clone = Arc::clone(&upload_speed);
-        debug!("Cloned upload_speed: {}", i);
         thread_handles.push(thread::spawn(move || {
-            debug!("Starting thread: {}", i);
-            debug!("Args: {:?} ", addr);
-            // debug!("Config: {:?}", config.clone());
             let mut state =
                 match TestState::new(addr, config.use_tls, config.use_websocket, i, None, None) {
                     Ok(state) => state,

@@ -1,7 +1,6 @@
 use anyhow::{Ok, Result};
-use log::debug;
+use log::{debug, info};
 use mio::{net::TcpStream, Interest, Poll, Token};
-use openssl::envelope::Seal;
 use std::io::{self, Read, Write};
 use std::net::SocketAddr;
 use std::path::Path;
@@ -31,18 +30,14 @@ pub enum Stream {
 
 impl Stream {
     pub fn new_tcp(addr: SocketAddr) -> Result<Self> {
-        debug!("Creating TCP stream {}", addr);
         let stream = TcpStream::connect(addr)?;
-        debug!("TCP stream created");
         if let Err(e) = stream.set_nodelay(true) {
-            debug!("Failed to set 1 TCP_NODELAY: {}", e);
             std::thread::sleep(std::time::Duration::from_millis(1000));
             if let Err(e) = stream.set_nodelay(true) {
-                debug!("Failed to set 2 TCP_NODELAY: {}", e);
+                info!("Failed to set TCP_NODELAY: {}", e);
             }
         }
         let std = Self::Tcp(stream);
-        debug!("TCP stream created");
         Ok(std)
     }
 
