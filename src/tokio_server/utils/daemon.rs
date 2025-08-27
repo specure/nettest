@@ -1,10 +1,14 @@
-use std::fs::File;
+#[cfg(unix)]
 use std::os::unix::io::AsRawFd;
-use std::process;
+#[cfg(unix)]
 use nix::unistd::{fork, ForkResult, setsid, dup2};
+
+use std::fs::File;
+use std::process;
 use std::env;
 use log::info;
 
+#[cfg(unix)]
 pub fn daemonize() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Сохраняем текущую директорию
     let current_dir = env::current_dir()?;
@@ -51,4 +55,11 @@ pub fn daemonize() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
         Err(e) => Err(format!("Failed to fork: {}", e).into()),
     }
+}
+
+#[cfg(windows)]
+pub fn daemonize() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // На Windows daemonize не поддерживается, просто возвращаем Ok
+    info!("Daemonize not supported on Windows, continuing as foreground process");
+    Ok(())
 } 

@@ -1,10 +1,12 @@
 use chrono::Local;
+#[cfg(unix)]
 use libc::{c_int, signal, SIGHUP};
 use log::{LevelFilter, Log, Metadata, Record};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use lazy_static::lazy_static;
 
 pub struct FileLogger {
     level: LevelFilter,
@@ -75,6 +77,7 @@ impl Log for FileLogger {
     }
 }
 
+#[cfg(unix)]
 extern "C" fn handle_sighup(_: c_int) {
     // This will be called when logrotate sends SIGHUP
     if let Some(logger) = LOGGER.lock().ok().and_then(|l| l.as_ref().cloned()) {
@@ -88,7 +91,12 @@ extern "C" fn handle_sighup(_: c_int) {
     }
 }
 
-lazy_static::lazy_static! {
+#[cfg(windows)]
+extern "C" fn handle_sighup(_: i32) {
+    // Windows doesn't support SIGHUP, this is a no-op
+}
+
+lazy_static! {
     static ref LOGGER: Mutex<Option<Arc<FileLogger>>> = Mutex::new(None);
 }
 
@@ -98,16 +106,23 @@ pub fn init_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Error +
         // On macOS, use ~/Library/Logs/rmbt
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/root".to_string());
         Path::new(&home).join("Library/Logs/nettest")
+    } else if cfg!(target_os = "windows") {
+        // On Windows, use %APPDATA%/nettest/logs
+        let appdata = std::env::var("APPDATA").unwrap_or_else(|_| "C:\\Users\\Public\\AppData\\Roaming".to_string());
+        Path::new(&appdata).join("nettest\\logs")
     } else {
-        // Create PID file
-        let pid = std::process::id();
-        let pid_dir = Path::new("/run");
-        if !pid_dir.exists() {
-            std::fs::create_dir_all(pid_dir)?;
+        // On Linux, create PID file and use /var/log
+        #[cfg(unix)]
+        {
+            let pid = std::process::id();
+            let pid_dir = Path::new("/run");
+            if !pid_dir.exists() {
+                std::fs::create_dir_all(pid_dir)?;
+            }
+            let pid_path = pid_dir.join("nettest.pid");
+            std::fs::write(&pid_path, pid.to_string())?;
+            log::info!("PID file location: {}", pid_path.display());
         }
-        let pid_path = pid_dir.join("nettest.pid");
-        std::fs::write(&pid_path, pid.to_string())?;
-        log::info!("PID file location: {}", pid_path.display());
         Path::new("/var/log/nettest").to_path_buf()
     };
 
@@ -136,7 +151,10 @@ pub fn init_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Error +
 
     // Set up SIGHUP handler for log rotation
     unsafe {
+        #[cfg(unix)]
         signal(SIGHUP, handle_sighup as usize);
+        #[cfg(windows)]
+        handle_sighup(0); // No-op for Windows
     }
 
     log::set_boxed_logger(Box::new(logger))?;

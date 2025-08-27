@@ -2,7 +2,7 @@ name: Build Windows Package
 
 on:
   push:
-    branches: [ main, windows ]
+    branches: [ main, develop ]
     tags:
       - 'v*'
 

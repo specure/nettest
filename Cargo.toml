@@ -15,7 +15,6 @@ base64 = "0.21.7"
 hmac = "0.12.1"
 regex = "1.10.3"
 libc = "0.2.153"
-nix = "0.26"
 fastrand = "2.0.1"
 uuid = { version = "1.7.0", features = ["v4"] }
 futures = "0.3"
@@ -42,6 +41,9 @@ rgb = "0.8.50"
 prettytable = "0.10.0"
 num_cpus = "1.13"
 rayon = "1.8"
+
+[target.'cfg(unix)'.dependencies]
+nix = "0.26"
 
 [dev-dependencies]
 tokio-native-tls = "0.3"

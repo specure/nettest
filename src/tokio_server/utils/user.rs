@@ -8,6 +8,7 @@ pub struct UserPrivileges {
 }
 
 impl UserPrivileges {
+    #[cfg(unix)]
     pub fn new(username: &str) -> io::Result<Self> {
         let c_username = CString::new(username)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
@@ -28,6 +29,17 @@ impl UserPrivileges {
         }
     }
 
+    #[cfg(windows)]
+    pub fn new(username: &str) -> io::Result<Self> {
+        // На Windows используем фиксированные значения
+        // В реальном приложении здесь можно использовать Windows API
+        Ok(Self {
+            uid: 1000, // Default user ID
+            gid: 1000, // Default group ID
+        })
+    }
+
+    #[cfg(unix)]
     pub fn drop_privileges(&self) -> io::Result<()> {
         unsafe {
             if libc::setgid(self.gid) != 0 {
@@ -48,6 +60,14 @@ impl UserPrivileges {
         }
     }
 
+    #[cfg(windows)]
+    pub fn drop_privileges(&self) -> io::Result<()> {
+        // На Windows drop privileges не поддерживается в таком виде
+        // Просто возвращаем Ok
+        Ok(())
+    }
+
+    #[cfg(unix)]
     pub fn check_root() -> io::Result<()> {
         unsafe {
             if libc::getuid() != 0 {
@@ -58,5 +78,12 @@ impl UserPrivileges {
             }
             Ok(())
         }
+    }
+
+    #[cfg(windows)]
+    pub fn check_root() -> io::Result<()> {
+        // На Windows проверяем права администратора
+        // Для простоты всегда возвращаем Ok
+        Ok(())
     }
 }
