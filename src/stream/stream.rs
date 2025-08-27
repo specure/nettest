@@ -32,6 +32,7 @@ impl Stream {
     pub fn new_tcp(addr: SocketAddr) -> Result<Self> {
         debug!("Creating TCP stream");
         let stream = TcpStream::connect(addr)?;
+        debug!("TCP stream created");
         stream.set_nodelay(true)?;
         Ok(Self::Tcp(stream))
     }
