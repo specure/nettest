@@ -98,9 +98,12 @@ impl TestState {
         cert_path: Option<&Path>,
         key_path: Option<&Path>,
     ) -> Result<Self> {
+        debug!("Creating poll");
         let mut poll = Poll::new()?;
         let events = Events::with_capacity(2048);
         let token = Token(tok);
+
+        debug!("Creating stream");
 
         let mut stream = if use_tls && use_websocket {
             debug!("Creating WebSocket TLS stream");
