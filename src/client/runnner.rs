@@ -65,7 +65,6 @@ pub async fn run_threads(
             debug!("Starting thread: {}", i);
             debug!("Args: {:?} ", addr);
             debug!("Config: {:?}", config);
-            debug!("Stats: {:?}", stats);
             debug!("Ping median: {:?}", ping_median);
             debug!("Download speed: {:?}", download_speed);
             debug!("Upload speed: {:?}", upload_speed);
