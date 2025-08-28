@@ -4,10 +4,10 @@ use mio::{Events, Interest, Poll, Token};
 use regex::Regex;
 use std::collections::{HashMap, VecDeque};
 use std::io::{self};
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::net::SocketAddr;
 
 use crate::config::constants::MIN_CHUNK_SIZE;
 use crate::mioserver::handlers::basic_handler::{
@@ -32,7 +32,6 @@ struct Worker {
     global_queue: Arc<Mutex<VecDeque<(ConnectionType, Instant)>>>, // Общая очередь
     server_config: ServerConfig,
     next_token: usize,
-    
 }
 
 impl WorkerThread {
@@ -42,7 +41,6 @@ impl WorkerThread {
         global_queue: Arc<Mutex<VecDeque<(ConnectionType, Instant)>>>,
         server_config: ServerConfig,
     ) -> io::Result<Self> {
-
         let thread = thread::Builder::new()
             .stack_size(8 * 1024 * 1024) // 8MB stack
             .spawn(move || {
@@ -87,8 +85,11 @@ impl Worker {
             let maybe_connection = if self.connections.is_empty() {
                 let mut global_queue = self.global_queue.lock().unwrap();
                 if let Some((connection, _)) = global_queue.pop_front() {
-                    trace!("Worker {}: taking connection from global queue (queue size after: {})", 
-                        self.id, global_queue.len());
+                    trace!(
+                        "Worker {}: taking connection from global queue (queue size after: {})",
+                        self.id,
+                        global_queue.len()
+                    );
                     {
                         let mut counts = self.worker_connection_counts.lock().unwrap();
                         counts[self.id] += 1;
@@ -113,7 +114,7 @@ impl Worker {
                     ConnectionType::Tcp(stream, client_addr) => {
                         ip = Some(client_addr);
                         Stream::Tcp(stream)
-                    },
+                    }
                     ConnectionType::Tls(stream, client_addr) => {
                         ip = Some(client_addr);
                         let stream = Stream::new_rustls_server(
@@ -130,7 +131,9 @@ impl Worker {
                 self.next_token += 1;
 
                 // Регистрируем новое соединение
-                if let Err(e) = stream.register(&self.poll, token, Interest::READABLE | Interest::WRITABLE) {
+                if let Err(e) =
+                    stream.register(&self.poll, token, Interest::READABLE | Interest::WRITABLE)
+                {
                     info!("Worker {}: Failed to register connection: {}", self.id, e);
                     continue;
                 }
@@ -168,7 +171,7 @@ impl Worker {
                                 sig_key: Some(self.server_config.secret_key.clone()),
                             },
                         );
-                    },
+                    }
                     Err(e) => {
                         info!("Worker {}: Error handling greeting: {}", self.id, e);
                         continue;
@@ -203,7 +206,12 @@ impl Worker {
         let mut connections_to_remove = Vec::new();
 
         for event in self.events.iter() {
-            debug!("Worker {}: event {:?} token {:?}", self.id, event, event.token());
+            debug!(
+                "Worker {}: event {:?} token {:?}",
+                self.id,
+                event,
+                event.token()
+            );
             let event_token = event.token();
             if let Some(state) = self.connections.get_mut(&event_token) {
                 let mut should_remove: Result<usize, io::Error> = Ok(0);
@@ -227,14 +235,20 @@ impl Worker {
                 match should_remove {
                     Ok(n) => {
                         if n == 0 {
-                            debug!("Worker {}: should_remove: {} token {:?}", self.id, n, event_token);
+                            debug!(
+                                "Worker {}: should_remove: {} token {:?}",
+                                self.id, n, event_token
+                            );
                             connections_to_remove.push(event_token);
                         }
                         continue;
                         // If n > 0, continue processing
                     }
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        debug!("Worker {}: would block for token {:?}", self.id, event_token);
+                        debug!(
+                            "Worker {}: would block for token {:?}",
+                            self.id, event_token
+                        );
                         continue;
                     }
                     Err(e) => {
@@ -255,14 +269,16 @@ impl Worker {
             }
         }
 
-
         for token in connections_to_remove {
             self.connections.remove(&token);
             {
                 println!("Worker {}: removing connection {:?}", self.id, token);
                 let mut counts = self.worker_connection_counts.lock().unwrap();
                 counts[self.id] -= 1;
-                println!("Worker {}: connection count decreased to {}", self.id, counts[self.id]);
+                println!(
+                    "Worker {}: connection count decreased to {}",
+                    self.id, counts[self.id]
+                );
             }
 
             println!(
@@ -283,7 +299,10 @@ impl Worker {
         mut stream: Stream,
         token: Token,
     ) -> io::Result<Stream> {
-        debug!("Worker {}: handle_greeting_receive_connection_type", self.id);
+        debug!(
+            "Worker {}: handle_greeting_receive_connection_type",
+            self.id
+        );
         let mut buffer = vec![0; 1024];
         let mut result = BytesMut::new();
         let mut loop_flag = false;
@@ -292,7 +311,10 @@ impl Worker {
 
         while !loop_flag {
             // Проверяем таймаут
-            debug!("Worker {}: handshake timeout after 1 {:?}", self.id, timeout);
+            debug!(
+                "Worker {}: handshake timeout after 1 {:?}",
+                self.id, timeout
+            );
             if start_time.elapsed() > timeout {
                 debug!("Worker {}: handshake timeout after {:?}", self.id, timeout);
                 stream.close().unwrap();
@@ -300,55 +322,75 @@ impl Worker {
                 return Err(io::Error::new(io::ErrorKind::TimedOut, "Handshake timeout"));
             }
 
-            debug!("Worker {}: handshake timeout after  2  {:?}", self.id, timeout);
+            debug!(
+                "Worker {}: handshake timeout after  2  {:?}",
+                self.id, timeout
+            );
 
             // Используем таймаут для poll
             let poll_timeout = timeout - start_time.elapsed();
-            self.poll.poll(&mut self.events, Some(Duration::from_millis(100)))?;
+            self.poll
+                .poll(&mut self.events, Some(Duration::from_millis(100)))?;
+            debug!("Worker {}: events {:?}", self.id, self.events);
             for event in self.events.iter() {
                 if event.is_readable() {
                     debug!("Worker {}: event is readable", self.id);
-                    match stream.read(&mut buffer) {
-                        Ok(n) => {
-                            result.extend_from_slice(&buffer[..n]);
-                            debug!("Worker {}: read {} bytes {}", self.id, n, String::from_utf8_lossy(&buffer[..n]));
-                            if result.len() >= 4
-                                && result[result.len() - 4..result.len()]
-                                    == [b'\r', b'\n', b'\r', b'\n'] || String::from_utf8_lossy(&result).contains("\r\n\r\n")
-                            {
-                                let request = String::from_utf8_lossy(&result);
-                                let ws_regex = Regex::new(r"(?i)upgrade:\s*websocket").unwrap();
+                    loop {
+                        debug!("Worker {}: read 1", self.id);
+                        match stream.read(&mut buffer) {
+                            Ok(n) => {
+                                result.extend_from_slice(&buffer[..n]);
+                                debug!(
+                                    "Worker {}: read {} bytes {}",
+                                    self.id,
+                                    n,
+                                    String::from_utf8_lossy(&buffer[..n])
+                                );
+                                if result.len() >= 4
+                                    && result[result.len() - 4..result.len()]
+                                        == [b'\r', b'\n', b'\r', b'\n']
+                                    || String::from_utf8_lossy(&result).contains("\r\n\r\n")
+                                {
+                                    let request = String::from_utf8_lossy(&result);
+                                    let ws_regex = Regex::new(r"(?i)upgrade:\s*websocket").unwrap();
 
-                                let is_websocket = ws_regex.is_match(&request);
-                                debug!("Worker {}: is_websocket: {}", self.id, is_websocket);
-                                if is_websocket {
-                                    stream = stream.upgrade_to_websocket().unwrap();
-                                    let handshake = Handshake::parse(&request).unwrap();
-                                    stream.finish_server_handshake(handshake).unwrap();
-                                } else {
-                                    //TODO maybe loop
-                                    debug!("Worker {}: writing upgrade response", self.id);
-                                    match stream.write(RMBT_UPGRADE.as_bytes()) {
-                                        Ok(n) => {
-                                            debug!("Worker {}: wrote {} bytes {}", self.id, n, RMBT_UPGRADE);
-                                        }
-                                        Err(e) => {
-                                            debug!("Worker {}: error writing upgrade response: {}", self.id, e);
+                                    let is_websocket = ws_regex.is_match(&request);
+                                    debug!("Worker {}: is_websocket: {}", self.id, is_websocket);
+                                    if is_websocket {
+                                        stream = stream.upgrade_to_websocket().unwrap();
+                                        let handshake = Handshake::parse(&request).unwrap();
+                                        stream.finish_server_handshake(handshake).unwrap();
+                                    } else {
+                                        //TODO maybe loop
+                                        debug!("Worker {}: writing upgrade response", self.id);
+                                        match stream.write(RMBT_UPGRADE.as_bytes()) {
+                                            Ok(n) => {
+                                                debug!(
+                                                    "Worker {}: wrote {} bytes {}",
+                                                    self.id, n, RMBT_UPGRADE
+                                                );
+                                            }
+                                            Err(e) => {
+                                                debug!(
+                                                    "Worker {}: error writing upgrade response: {}",
+                                                    self.id, e
+                                                );
+                                            }
                                         }
                                     }
+
+                                    debug!("Worker {}: reregistering stream", self.id);
+                                    stream.reregister(&self.poll, token, Interest::WRITABLE)?;
+
+                                    loop_flag = true;
                                 }
-
-                                debug!("Worker {}: reregistering stream", self.id);
-                                stream.reregister(&self.poll, token, Interest::WRITABLE)?;
-
-                                loop_flag = true;
                             }
-                        }
-                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                            continue;
-                        }
-                        Err(e) => {
-                            return Err(e);
+                            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                                continue;
+                            }
+                            Err(e) => {
+                                return Err(e);
+                            }
                         }
                     }
                 }
