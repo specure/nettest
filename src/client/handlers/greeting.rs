@@ -94,6 +94,7 @@ pub fn handle_greeting_receive_greeting(
 ) -> Result<usize, std::io::Error> {
     debug!("handle_greeting_receive_greeting token {:?}", state.token);
     loop {
+        debug!("handle_greeting_receive_greeting read 1");
         let n = state
             .stream
             .read(&mut state.read_buffer[state.read_pos..])?;
