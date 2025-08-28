@@ -112,10 +112,10 @@ impl WebSocketClient {
         let mut response = Vec::new();
         let mut buffer = [0u8; 1024];
 
+        let mut connection_ready = false;
 
         loop {
             poll.poll(&mut events, Some(Duration::from_millis(100)))?;
-            let mut connection_ready = false;
 
             debug!("WebSocket handshake response loop 1");
 
