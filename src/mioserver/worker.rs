@@ -302,6 +302,8 @@ impl Worker {
 
             debug!("Worker {}: handshake timeout after  2  {:?}", self.id, timeout);
 
+            stream.reregister(&self.poll, token, Interest::WRITABLE | Interest::READABLE)?;
+
             // Используем таймаут для poll
             let poll_timeout = timeout - start_time.elapsed();
             self.poll.poll(&mut self.events, Some(Duration::from_millis(100)))?;
