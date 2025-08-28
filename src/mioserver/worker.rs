@@ -307,6 +307,7 @@ impl Worker {
             self.poll.poll(&mut self.events, Some(Duration::from_millis(100)))?;
             for event in self.events.iter() {
                 if event.is_readable() {
+                    debug!("Worker {}: event is readable", self.id);
                     match stream.read(&mut buffer) {
                         Ok(n) => {
                             result.extend_from_slice(&buffer[..n]);
