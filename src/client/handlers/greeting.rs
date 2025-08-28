@@ -39,8 +39,10 @@ pub fn handle_greeting_send_connection_type(
             let n = state
                 .stream
                 .write(&state.write_buffer[state.write_pos..state.write_pos + greeting.len()])?;
+            debug!("handle_greeting_send_connection_type write {} bytes 1", n);
             state.write_pos += n;
             if state.write_pos == state.stream.get_greeting().len() {
+                debug!("handle_greeting_send_connection_type write {} bytes 2", n);
                 state
                     .stream
                     .reregister(&poll, state.token, Interest::READABLE)?;

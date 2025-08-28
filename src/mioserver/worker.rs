@@ -292,6 +292,7 @@ impl Worker {
 
         while !loop_flag {
             // Проверяем таймаут
+            debug!("Worker {}: handshake timeout after 1 {:?}", self.id, timeout);
             if start_time.elapsed() > timeout {
                 debug!("Worker {}: handshake timeout after {:?}", self.id, timeout);
                 stream.close().unwrap();
@@ -299,9 +300,11 @@ impl Worker {
                 return Err(io::Error::new(io::ErrorKind::TimedOut, "Handshake timeout"));
             }
 
+            debug!("Worker {}: handshake timeout after  2  {:?}", self.id, timeout);
+
             // Используем таймаут для poll
             let poll_timeout = timeout - start_time.elapsed();
-            self.poll.poll(&mut self.events, Some(poll_timeout))?;
+            self.poll.poll(&mut self.events, Some(Duration::from_millis(100)))?;
             for event in self.events.iter() {
                 if event.is_readable() {
                     match stream.read(&mut buffer) {
