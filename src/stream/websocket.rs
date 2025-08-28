@@ -5,6 +5,7 @@ use mio::{net::TcpStream, Interest, Poll, Token};
 use sha1::{Digest, Sha1};
 use std::io::{self, Read, Write};
 use std::net::SocketAddr;
+use std::time::Duration;
 use tungstenite::protocol::WebSocketConfig;
 use tungstenite::{protocol::WebSocket, Message};
 
@@ -113,7 +114,7 @@ impl WebSocketClient {
 
 
         loop {
-            poll.poll(&mut events, None)?;
+            poll.poll(&mut events, Some(Duration::from_millis(100)))?;
             let mut connection_ready = false;
 
 
