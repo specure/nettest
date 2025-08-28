@@ -125,7 +125,7 @@ impl WebSocketClient {
                 }
             }
 
-            debug!("WebSocket handshake response loop 2");
+            debug!("WebSocket handshake response loop 2 {}", connection_ready);
 
             if connection_ready {
                 match stream.read(&mut buffer) {
