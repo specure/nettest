@@ -154,9 +154,9 @@ jobs:
         Set-Location test-run
         
         echo "Running nettest client test with TCP and -save..."
-        echo "Client command: .\nettest.exe -c 127.0.0.1 -save -git-hash ${{ github.sha }}"
+        echo "Client command: .\nettest.exe -c 127.0.0.1 -save -git-hash ${{ github.sha }} -log trace"
         
-        $process = Start-Process -FilePath ".\nettest.exe" -ArgumentList "-c", "127.0.0.1", "-save", "-git-hash", "${{ github.sha }}" -Wait -PassThru
+        $process = Start-Process -FilePath ".\nettest.exe" -ArgumentList "-c", "127.0.0.1", "-save", "-git-hash", "${{ github.sha }}", "-log", "trace" -Wait -PassThru -NoNewWindow
         
         echo "Client test completed"
         echo "Client exit code: $($process.ExitCode)"
@@ -173,9 +173,9 @@ jobs:
         Set-Location test-run
         
         echo "Running nettest client test with TLS and -save..."
-        echo "Client command: .\nettest.exe -c 127.0.0.1 -save -tls -git-hash ${{ github.sha }}"
+        echo "Client command: .\nettest.exe -c 127.0.0.1 -save -tls -git-hash ${{ github.sha }} -log trace"
         
-        $process = Start-Process -FilePath ".\nettest.exe" -ArgumentList "-c", "127.0.0.1", "-save", "-tls", "-git-hash", "${{ github.sha }}" -Wait -PassThru
+        $process = Start-Process -FilePath ".\nettest.exe" -ArgumentList "-c", "127.0.0.1", "-save", "-tls", "-git-hash", "${{ github.sha }}", "-log", "trace" -Wait -PassThru -NoNewWindow
         
         echo "Client test completed"
         echo "Client exit code: $($process.ExitCode)"
@@ -192,9 +192,9 @@ jobs:
         Set-Location test-run
         
         echo "Running nettest client test with WS and -save..."
-        echo "Client command: .\nettest.exe -c 127.0.0.1 -save -ws -git-hash ${{ github.sha }}"
+        echo "Client command: .\nettest.exe -c 127.0.0.1 -save -ws -git-hash ${{ github.sha }} -log trace"
         
-        $process = Start-Process -FilePath ".\nettest.exe" -ArgumentList "-c", "127.0.0.1", "-save", "-ws", "-git-hash", "${{ github.sha }}" -Wait -PassThru
+        $process = Start-Process -FilePath ".\nettest.exe" -ArgumentList "-c", "127.0.0.1", "-save", "-ws", "-git-hash", "${{ github.sha }}", "-log", "trace" -Wait -PassThru -NoNewWindow
         
         echo "Client test completed"
         echo "Client exit code: $($process.ExitCode)"
@@ -211,9 +211,9 @@ jobs:
         Set-Location test-run
         
         echo "Running nettest client test with WSS and -save..."
-        echo "Client command: .\nettest.exe -c 127.0.0.1 -save -tls -ws -git-hash ${{ github.sha }}"
+        echo "Client command: .\nettest.exe -c 127.0.0.1 -save -tls -ws -git-hash ${{ github.sha }} -log trace"
         
-        $process = Start-Process -FilePath ".\nettest.exe" -ArgumentList "-c", "127.0.0.1", "-save", "-tls", "-ws", "-git-hash", "${{ github.sha }}" -Wait -PassThru
+        $process = Start-Process -FilePath ".\nettest.exe" -ArgumentList "-c", "127.0.0.1", "-save", "-tls", "-ws", "-git-hash", "${{ github.sha }}", "-log", "trace" -Wait -PassThru -NoNewWindow
         
         echo "Client test completed"
         echo "Client exit code: $($process.ExitCode)"
