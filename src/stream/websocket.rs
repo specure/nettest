@@ -117,15 +117,11 @@ impl WebSocketClient {
         loop {
             poll.poll(&mut events, Some(Duration::from_millis(100)))?;
 
-            debug!("WebSocket handshake response loop 1");
-
             for event in events.iter() {
                 if event.is_readable() {
                     connection_ready = true;
                 }
             }
-
-            debug!("WebSocket handshake response loop 2 {}", connection_ready);
 
             if connection_ready {
                 match stream.read(&mut buffer) {

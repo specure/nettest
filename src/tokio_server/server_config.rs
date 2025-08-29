@@ -294,7 +294,6 @@ pub fn parse_listen_address(addr: &str) -> Result<SocketAddr, Box<dyn Error + Se
             if let Some(port_str) = addr[end_bracket + 1..].strip_prefix(':') {
                 let ip: Ipv6Addr = ip_str.parse()?;
                 let port: u16 = port_str.parse()?;
-                println!("Parsed IPv6 address: {}", ip);
                 return Ok(SocketAddr::new(IpAddr::V6(ip), port));
             }
         }
@@ -305,14 +304,11 @@ pub fn parse_listen_address(addr: &str) -> Result<SocketAddr, Box<dyn Error + Se
     if let Some((ip, port)) = addr.split_once(':') {
         let ip: std::net::Ipv4Addr = ip.parse()?;
         let port: u16 = port.parse()?;
-        println!("Parsed IPv4 address: {}", ip);
         return Ok(SocketAddr::new(IpAddr::V4(ip), port));
     }
 
     // Try port only: 8080
 if let Ok(port) = addr.parse::<u16>() {
-    println!("Parsed port only: {}", port);
-    // return Ok(SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port));
     return Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port));
 }
 
