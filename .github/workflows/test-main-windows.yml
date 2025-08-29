@@ -1,0 +1,241 @@
+name: Test on Main Branch (Windows)
+
+on:
+  push:
+    branches: [ main, windows ]
+
+jobs:
+  test-nettest-main-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: x86_64-pc-windows-msvc
+        override: true
+        
+    - name: Add Windows target
+      run: |
+        rustup target add x86_64-pc-windows-msvc
+        
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-x86_64-pc-windows-msvc-${{ hashFiles('**/Cargo.lock') }}
+        
+    - name: Build nettest
+      run: |
+        cargo build --release --target x86_64-pc-windows-msvc
+        echo "Build completed successfully"
+        
+    - name: Prepare test environment
+      run: |
+        New-Item -ItemType Directory -Path "test-run" -Force
+        Copy-Item "target\x86_64-pc-windows-msvc\release\nettest.exe" "test-run\"
+        Set-Location test-run
+        
+        # Создаем локальный конфиг для тестов
+        @"
+        # Nettest Configuration File for CI/CD
+        default_mode = "client"
+        server_tcp_port = 5005
+        client_use_tls = false
+        client_use_websocket = false
+        x_nettest_client = "nt"
+        control_server = "https://api.nettest.org"
+        client_uuid = "ee7760ec-db94-43df-b8dc-001384f0ed41"
+        "@ | Out-File -FilePath "nettest.conf" -Encoding UTF8
+        
+        echo "Test environment prepared"
+        echo "Current directory: $(Get-Location)"
+        echo "Binary exists: $(Get-ChildItem nettest.exe)"
+        echo "Local config created:"
+        Get-Content nettest.conf
+        
+    - name: Create system config file
+      run: |
+        # Создаем системный конфиг файл
+        $configContent = @"
+        # Nettest Configuration File for CI/CD
+        default_mode = "client"
+        server_tcp_port = 5005
+        client_use_tls = false
+        client_use_websocket = false
+        x_nettest_client = "nt"
+        control_server = "https://api.nettest.org"
+        client_uuid = "ee7760ec-db94-43df-b8dc-001384f0ed41"
+        "@
+        
+        # Создаем папку если не существует
+        New-Item -ItemType Directory -Path "C:\nettest" -Force -ErrorAction SilentlyContinue
+        
+        # Записываем конфиг
+        $configContent | Out-File -FilePath "C:\nettest\nettest.conf" -Encoding UTF8
+        
+        echo "System config file created at C:\nettest\nettest.conf"
+        echo "System config content:"
+        Get-Content "C:\nettest\nettest.conf"
+
+    - name: Create TLS certificates
+      run: |
+        Set-Location test-run
+        
+        # Создаем TLS сертификаты из секретов
+        "${{ secrets.fullchain }}" | Out-File -FilePath "fullchain.pem" -Encoding UTF8
+        "${{ secrets.privkey }}" | Out-File -FilePath "privkey.pem" -Encoding UTF8
+        
+        echo "TLS certificates created:"
+        Get-ChildItem *.pem
+        
+        # Выводим содержимое сертификатов для отладки
+        echo "=== FULLCHAIN CERTIFICATE ==="
+        Get-Content fullchain.pem
+        echo "=== END FULLCHAIN ==="
+        
+        echo "=== PRIVATE KEY (first 100 chars) ==="
+        $key = Get-Content privkey.pem -Raw
+        $key.Substring(0, [Math]::Min(100, $key.Length))
+        echo "..."
+        echo "=== END PRIVATE KEY PREVIEW ==="
+        
+    - name: Start nettest server
+      run: |
+        Set-Location test-run
+        
+        echo "Starting nettest server with TLS..."
+        Start-Process -FilePath ".\nettest.exe" -ArgumentList "-s", "-k", "privkey.pem", "-c", "fullchain.pem" -RedirectStandardOutput "server.log" -RedirectStandardError "server.log" -WindowStyle Hidden
+        
+        echo "TLS server started in background"
+        
+        Start-Sleep -Seconds 3
+        
+        # Проверяем что сервер запущен
+        $process = Get-Process -Name "nettest" -ErrorAction SilentlyContinue
+        if ($process) {
+          echo "✅ TLS Server is running (PID: $($process.Id))"
+        } else {
+          echo "❌ TLS Server failed to start"
+          Get-Content server.log
+          exit 1
+        }
+        
+        # Проверяем порты
+        $port5005 = Get-NetTCPConnection -LocalPort 5005 -ErrorAction SilentlyContinue
+        if ($port5005) {
+          echo "✅ Port 5005 is listening"
+        } else {
+          echo "❌ Port 5005 is not listening"
+          Get-Content server.log
+          exit 1
+        }
+        
+        $port443 = Get-NetTCPConnection -LocalPort 443 -ErrorAction SilentlyContinue
+        if ($port443) {
+          echo "✅ Port 443 is listening"
+        } else {
+          echo "❌ Port 443 is not listening"
+          Get-Content server.log
+          exit 1
+        }
+        
+    - name: Run nettest client TCP test
+      run: |
+        Set-Location test-run
+        
+        echo "Running nettest client test with TCP and -save..."
+        echo "Client command: .\nettest.exe -c 127.0.0.1 -save -git-hash ${{ github.sha }}"
+        
+        $process = Start-Process -FilePath ".\nettest.exe" -ArgumentList "-c", "127.0.0.1", "-save", "-git-hash", "${{ github.sha }}" -Wait -PassThru
+        
+        echo "Client test completed"
+        echo "Client exit code: $($process.ExitCode)"
+        
+        if ($process.ExitCode -ne 0) {
+          echo "❌ Client TCP test failed"
+          exit 1
+        }
+        
+        echo "✅ Client TCP test completed successfully"
+
+    - name: Run nettest client TLS test
+      run: |
+        Set-Location test-run
+        
+        echo "Running nettest client test with TLS and -save..."
+        echo "Client command: .\nettest.exe -c 127.0.0.1 -save -tls -git-hash ${{ github.sha }}"
+        
+        $process = Start-Process -FilePath ".\nettest.exe" -ArgumentList "-c", "127.0.0.1", "-save", "-tls", "-git-hash", "${{ github.sha }}" -Wait -PassThru
+        
+        echo "Client test completed"
+        echo "Client exit code: $($process.ExitCode)"
+        
+        if ($process.ExitCode -ne 0) {
+          echo "❌ Client TLS test failed"
+          exit 1
+        }
+        
+        echo "✅ Client TLS test completed successfully"
+        
+    - name: Run nettest client WS test
+      run: |
+        Set-Location test-run
+        
+        echo "Running nettest client test with WS and -save..."
+        echo "Client command: .\nettest.exe -c 127.0.0.1 -save -ws -git-hash ${{ github.sha }}"
+        
+        $process = Start-Process -FilePath ".\nettest.exe" -ArgumentList "-c", "127.0.0.1", "-save", "-ws", "-git-hash", "${{ github.sha }}" -Wait -PassThru
+        
+        echo "Client test completed"
+        echo "Client exit code: $($process.ExitCode)"
+        
+        if ($process.ExitCode -ne 0) {
+          echo "❌ Client WS test failed"
+          exit 1
+        }
+        
+        echo "✅ Client WS test completed successfully"
+
+    - name: Run nettest client WSS test
+      run: |
+        Set-Location test-run
+        
+        echo "Running nettest client test with WSS and -save..."
+        echo "Client command: .\nettest.exe -c 127.0.0.1 -save -tls -ws -git-hash ${{ github.sha }}"
+        
+        $process = Start-Process -FilePath ".\nettest.exe" -ArgumentList "-c", "127.0.0.1", "-save", "-tls", "-ws", "-git-hash", "${{ github.sha }}" -Wait -PassThru
+        
+        echo "Client test completed"
+        echo "Client exit code: $($process.ExitCode)"
+        
+        if ($process.ExitCode -ne 0) {
+          echo "❌ Client WSS test failed"
+          exit 1
+        }
+        
+        echo "✅ Client WSS test completed successfully"
+        
+    - name: Test completed
+      run: |
+        echo "✅ All tests completed successfully"
+        echo "Results have been saved to the control server"
+        
+    - name: Test summary
+      run: |
+        echo "=== TEST SUMMARY ==="
+        echo "✅ Build: Completed successfully"
+        echo "✅ TLS Server: Started and listening on port 5005"
+        echo "✅ Client TLS: Test executed with -save -tls"
+        echo "✅ Client WSS: Test executed with -save -ws -tls"
+        echo "✅ Results: Saved to control server"
+        echo "=== END TEST SUMMARY ==="
