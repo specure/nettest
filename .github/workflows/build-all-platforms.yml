@@ -537,6 +537,11 @@ jobs:
       contents: write
     
     steps:
+    - name: Configure CentOS 7 repositories for EOL
+      run: |
+        sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*.repo
+        sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo
+        
     - name: Install system dependencies
       run: |
         yum update -y
@@ -592,7 +597,7 @@ jobs:
     - name: Install system dependencies
       run: |
         dnf update -y
-        dnf install -y curl gcc make pkgconfig openssl-devel fontconfig-devel perl
+        dnf install -y curl gcc gcc-c++ make pkgconfig openssl-devel fontconfig-devel perl
         
     - name: Install Rust
       run: |
@@ -639,7 +644,7 @@ jobs:
     - name: Install system dependencies
       run: |
         dnf update -y
-        dnf install -y curl gcc make pkgconfig openssl-devel fontconfig-devel perl
+        dnf install -y curl gcc gcc-c++ make pkgconfig openssl-devel fontconfig-devel perl
         
     - name: Install Rust
       run: |
