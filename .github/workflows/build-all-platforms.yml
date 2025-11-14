@@ -528,40 +528,33 @@ jobs:
         name: nettest-ubuntu-22-aarch64-binary
         path: target/release/nettest
 
-  # CentOS 7 x86_64
-  build-centos-7-x86_64:
+  # CentOS Stream 9 x86_64
+  build-centos-stream-9-x86_64:
     runs-on: ubuntu-latest
     container:
-      image: centos:7
+      image: quay.io/centos/centos:stream9
     permissions:
       contents: write
     
     steps:
-    - name: Configure CentOS 7 repositories for EOL
-      run: |
-        sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*.repo
-        sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo
-        
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
     - name: Install system dependencies
       run: |
-        yum update -y
-        yum install -y curl gcc make pkgconfig openssl-devel fontconfig-devel git
-        
-    - name: Checkout code
-      run: |
-        git clone https://github.com/${{ github.repository }}.git .
-        git checkout ${{ github.sha }}
-        
+        dnf update -y
+        dnf install -y --allowerasing curl gcc make pkgconfig openssl-devel fontconfig-devel perl
+      
     - name: Install Rust
       run: |
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-        
+      
     - name: Add Rust target
       run: |
         . $HOME/.cargo/env
         rustup target add x86_64-unknown-linux-gnu
-        
+      
     - name: Cache dependencies
       uses: actions/cache@v4
       with:
@@ -569,18 +562,65 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-centos-7-cargo-x86_64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
-        
-    - name: Build for CentOS 7 x86_64
+        key: ${{ runner.os }}-centos-stream-9-cargo-x86_64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
+      
+    - name: Build for CentOS Stream 9 x86_64
       run: |
         . $HOME/.cargo/env
         cargo build --release --target x86_64-unknown-linux-gnu
-        
+      
     - name: Upload binary for release
       uses: actions/upload-artifact@v4
       with:
-        name: nettest-centos-7-x86_64-binary
+        name: nettest-centos-stream-9-x86_64-binary
         path: target/x86_64-unknown-linux-gnu/release/nettest
+
+  # CentOS Stream 9 aarch64
+  build-centos-stream-9-aarch64:
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: quay.io/centos/centos:stream9
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install system dependencies
+      run: |
+        dnf update -y
+        dnf install -y --allowerasing curl gcc make pkgconfig openssl-devel fontconfig-devel perl
+      
+    - name: Install Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      
+    - name: Add Rust target
+      run: |
+        . $HOME/.cargo/env
+        rustup target add aarch64-unknown-linux-gnu
+      
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-centos-stream-9-cargo-aarch64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
+      
+    - name: Build for CentOS Stream 9 ARM64
+      run: |
+        . $HOME/.cargo/env
+        cargo build --release --target aarch64-unknown-linux-gnu
+      
+    - name: Upload binary for release
+      uses: actions/upload-artifact@v4
+      with:
+        name: nettest-centos-stream-9-aarch64-binary
+        path: target/aarch64-unknown-linux-gnu/release/nettest
 
   # RHEL 8 x86_64
   build-rhel-8-x86_64:
@@ -785,7 +825,8 @@ jobs:
       build-debian-12-aarch64,
       build-ubuntu-22-x86_64,
       build-ubuntu-22-aarch64,
-      build-centos-7-x86_64,
+      build-centos-stream-9-x86_64,
+      build-centos-stream-9-aarch64,
       build-rhel-8-x86_64,
       build-rhel-8-aarch64,
       build-rhel-9-x86_64,
@@ -900,11 +941,19 @@ jobs:
           rm nettest
         fi
         
-        # Create CentOS 7 x86_64 archive
-        if [ -f "nettest-centos-7-x86_64-binary/nettest" ]; then
-          cp nettest-centos-7-x86_64-binary/nettest nettest
+        # Create CentOS Stream 9 x86_64 archive
+        if [ -f "nettest-centos-stream-9-x86_64-binary/nettest" ]; then
+          cp nettest-centos-stream-9-x86_64-binary/nettest nettest
           chmod +x nettest
-          tar -czf nettest-centos-7-x86_64.tar.gz nettest
+          tar -czf nettest-centos-stream-9-x86_64.tar.gz nettest
+          rm nettest
+        fi
+        
+        # Create CentOS Stream 9 aarch64 archive
+        if [ -f "nettest-centos-stream-9-aarch64-binary/nettest" ]; then
+          cp nettest-centos-stream-9-aarch64-binary/nettest nettest
+          chmod +x nettest
+          tar -czf nettest-centos-stream-9-aarch64.tar.gz nettest
           rm nettest
         fi
         
@@ -967,7 +1016,8 @@ jobs:
           - **RHEL 9 ARM64**: [nettest-rhel-9-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-rhel-9-aarch64.tar.gz)
           - **RHEL 8 x86_64**: [nettest-rhel-8-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-rhel-8-x86_64.tar.gz)
           - **RHEL 8 ARM64**: [nettest-rhel-8-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-rhel-8-aarch64.tar.gz)
-          - **CentOS 7 x86_64**: [nettest-centos-7-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-centos-7-x86_64.tar.gz)
+          - **CentOS Stream 9 x86_64**: [nettest-centos-stream-9-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-centos-stream-9-x86_64.tar.gz)
+          - **CentOS Stream 9 ARM64**: [nettest-centos-stream-9-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-centos-stream-9-aarch64.tar.gz)
           
           #### macOS
           - **macOS Apple Silicon**: [nettest-macos-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-macos-aarch64.tar.gz)
@@ -1013,7 +1063,8 @@ jobs:
           nettest-debian-12-aarch64.tar.gz
           nettest-ubuntu-22-x86_64.tar.gz
           nettest-ubuntu-22-aarch64.tar.gz
-          nettest-centos-7-x86_64.tar.gz
+          nettest-centos-stream-9-x86_64.tar.gz
+          nettest-centos-stream-9-aarch64.tar.gz
           nettest-rhel-8-x86_64.tar.gz
           nettest-rhel-8-aarch64.tar.gz
           nettest-rhel-9-x86_64.tar.gz
