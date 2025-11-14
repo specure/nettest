@@ -537,13 +537,15 @@ jobs:
       contents: write
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
     - name: Install system dependencies
       run: |
         yum update -y
-        yum install -y curl gcc make pkgconfig openssl-devel fontconfig-devel
+        yum install -y curl gcc make pkgconfig openssl-devel fontconfig-devel git
+        
+    - name: Checkout code
+      run: |
+        git clone https://github.com/${{ github.repository }}.git .
+        git checkout ${{ github.sha }}
         
     - name: Install Rust
       run: |
@@ -590,7 +592,7 @@ jobs:
     - name: Install system dependencies
       run: |
         dnf update -y
-        dnf install -y curl gcc make pkgconfig openssl-devel fontconfig-devel
+        dnf install -y curl gcc make pkgconfig openssl-devel fontconfig-devel perl
         
     - name: Install Rust
       run: |
@@ -637,7 +639,7 @@ jobs:
     - name: Install system dependencies
       run: |
         dnf update -y
-        dnf install -y curl gcc make pkgconfig openssl-devel fontconfig-devel
+        dnf install -y curl gcc make pkgconfig openssl-devel fontconfig-devel perl
         
     - name: Install Rust
       run: |
@@ -684,7 +686,7 @@ jobs:
     - name: Install system dependencies
       run: |
         dnf update -y
-        dnf install -y curl gcc make pkgconfig openssl-devel fontconfig-devel
+        dnf install -y --allowerasing curl gcc make pkgconfig openssl-devel fontconfig-devel perl
         
     - name: Install Rust
       run: |
@@ -731,7 +733,7 @@ jobs:
     - name: Install system dependencies
       run: |
         dnf update -y
-        dnf install -y curl gcc make pkgconfig openssl-devel fontconfig-devel
+        dnf install -y --allowerasing curl gcc make pkgconfig openssl-devel fontconfig-devel perl
         
     - name: Install Rust
       run: |
