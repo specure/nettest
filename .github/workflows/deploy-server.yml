@@ -29,8 +29,8 @@ jobs:
         MATRIX='['
         FIRST=true
         
-        # Извлекаем IP адреса из текстовой конфигурации
-        echo "Extracting IP addresses from config..."
+        # Извлекаем хосты (IP адреса или доменные имена) из текстовой конфигурации
+        echo "Extracting hosts from config..."
         
         # Проверяем что переменная не пустая
         if [ -z "$HOSTS_CONF_ENV" ]; then
@@ -38,24 +38,23 @@ jobs:
           exit 1
         fi
         
-        # Извлекаем IP адреса (строки начинающиеся с IP)
-        IP_ADDRESSES=$(echo "$HOSTS_CONF_ENV" | grep -E "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" | tr '\n' ' ' | sed 's/ $//')
+        HOSTS=$(echo "$HOSTS_CONF_ENV" | grep -E "^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*)" | tr '\n' ' ' | sed 's/ $//')
         
-        if [ -z "$IP_ADDRESSES" ]; then
-          echo "ERROR: No IP addresses found in HOSTS_LIST"
+        if [ -z "$HOSTS" ]; then
+          echo "ERROR: No hosts (IP addresses or domain names) found in HOSTS_LIST"
           echo "HOSTS_LIST length: ${#HOSTS_CONF_ENV}"
           echo "First 100 chars: ${HOSTS_CONF_ENV:0:100}"
           exit 1
         fi
         
-        for IP in $IP_ADDRESSES; do
+        for HOST in $HOSTS; do
           if [ "$FIRST" = true ]; then
             FIRST=false
           else
             MATRIX="$MATRIX,"
           fi
           
-          MATRIX="$MATRIX{\"host\":\"$IP\"}"
+          MATRIX="$MATRIX{\"host\":\"$HOST\"}"
         done
         
         MATRIX="$MATRIX]"
@@ -113,10 +112,10 @@ jobs:
           # Создаем конфиг файл с конфигурацией из текстового формата
           echo "Creating /etc/nettest.conf for server ${{ matrix.host }}..."
           
-          # Извлекаем конфигурацию для конкретного IP
+          # Извлекаем конфигурацию для конкретного хоста (IP или доменное имя)
           echo "${{ vars.HOSTS_LIST }}" | awk -v ip="${{ matrix.host }}" '
           BEGIN { in_config = 0; }
-          /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/ {
+          /^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*)/ {
               if ($0 ~ "^" ip) {
                   in_config = 1;
                   next;

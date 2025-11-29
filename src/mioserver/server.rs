@@ -107,15 +107,6 @@ impl MioServer {
         };
 
         let logical = server_config.num_workers.unwrap_or(30);
-        let mut worker_queues = Vec::new();
-        for i in 0..logical {
-            let poll = Poll::new()?;
-            let queue = Arc::new((
-                Mutex::new(VecDeque::<ConnectionType>::new()),
-                Waker::new(poll.registry(), Token(i + 1))?,
-            ));
-            worker_queues.push(queue);
-        }
 
         let worker_connection_counts = Arc::new(Mutex::new(vec![0; logical]));
         let global_queue = Arc::new(Mutex::new(VecDeque::new()));
