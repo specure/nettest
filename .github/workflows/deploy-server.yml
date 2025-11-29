@@ -182,12 +182,23 @@ jobs:
           
           # Проверяем доступность релиза
           echo "Checking if release $DEPLOY_VERSION is available..."
-          if ! curl -s --head "$NETTEST_URL" | head -n 1 | grep -q "200 OK"; then
+          # Используем curl с -L для следования редиректам и получаем HTTP код
+          HTTP_CODE=$(curl -s -L -o /dev/null -w "%{http_code}" -I "$NETTEST_URL" 2>/dev/null)
+          if [ -z "$HTTP_CODE" ] || [ "$HTTP_CODE" = "000" ]; then
+            echo "ERROR: Failed to connect to $NETTEST_URL"
+            echo "Please check network connectivity and try again"
+            exit 1
+          elif [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 400 ]; then
+            echo "Release $DEPLOY_VERSION is available (HTTP $HTTP_CODE)"
+          else
             echo "ERROR: Release $DEPLOY_VERSION is not available at $NETTEST_URL"
+            echo "HTTP response code: $HTTP_CODE"
             echo "Please check if the release exists and try again"
+            # Попробуем получить больше информации
+            echo "Attempting to get more details..."
+            curl -s -L -I "$NETTEST_URL" 2>&1 | head -n 10
             exit 1
           fi
-          echo "Release $DEPLOY_VERSION is available"
           
           NEW_BUILD_DIR="/tmp/nettest-new"
           OLD_BUILD_DIR="/tmp/nettest-old"
