@@ -21,18 +21,18 @@ jobs:
     - name: Generate deployment matrix
       id: generate
       run: |
-        # Читаем конфигурацию хостов из переменной окружения
+        # Read hosts configuration from environment variable
         echo "Loading hosts config..."
         HOSTS_CONF_ENV="${{ vars.HOSTS_LIST }}"
         
-        # Создаем JSON массив для matrix
+        # Create JSON array for matrix
         MATRIX='['
         FIRST=true
         
-        # Извлекаем хосты (IP адреса или доменные имена) из текстовой конфигурации
+        # Extract hosts (IP addresses or domain names) from text configuration
         echo "Extracting hosts from config..."
         
-        # Проверяем что переменная не пустая
+        # Check that variable is not empty
         if [ -z "$HOSTS_CONF_ENV" ]; then
           echo "ERROR: HOSTS_LIST variable is empty"
           exit 1
@@ -79,7 +79,7 @@ jobs:
         echo "matrix context: ${{ toJSON(matrix) }}"
         echo "needs.generate-matrix.outputs.matrix: '${{ needs.generate-matrix.outputs.matrix }}'"
         
-        # Дополнительная отладка
+        # Additional debugging
         echo "=== Additional Debug Info ==="
         echo "Matrix content: ${{ needs.generate-matrix.outputs.matrix }}"
         
@@ -97,22 +97,22 @@ jobs:
           # set -e
           echo "Deploying to server: ${{ matrix.host }}"
           
-          # Используем введенную версию
+          # Use the entered version
           DEPLOY_VERSION="${{ github.event.inputs.version }}"
           echo "Deploying version: $DEPLOY_VERSION"
           
           echo "Configuration loaded successfully"
           
-          # Создаем конфигурационный файл
+          # Create configuration file
           echo "Creating /etc/nettest.conf..."
           
-          # Извлекаем конфигурацию для конкретного сервера из JSON
+          # Extract configuration for specific server from JSON
           echo "Creating /etc/nettest.conf for server ${{ matrix.host }}..."
           
-          # Создаем конфиг файл с конфигурацией из текстового формата
+          # Create config file with configuration from text format
           echo "Creating /etc/nettest.conf for server ${{ matrix.host }}..."
           
-          # Извлекаем конфигурацию для конкретного хоста (IP или доменное имя)
+          # Extract configuration for specific host (IP or domain name)
           echo "${{ vars.HOSTS_LIST }}" | awk -v ip="${{ matrix.host }}" '
           BEGIN { in_config = 0; }
           /^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*)/ {
@@ -133,10 +133,10 @@ jobs:
           }
           ' > /etc/nettest.conf
           
-          # Заменяем $SECRET_TOKEN на реальное значение
+          # Replace $SECRET_TOKEN with actual value
           sed -i 's/\$SECRET_TOKEN/'"${{ secrets.SECRET_TOKEN }}"'/g' /etc/nettest.conf
           
-          # Проверяем что конфиг создался
+          # Check that config was created
           if [ ! -s /etc/nettest.conf ]; then
             echo "ERROR: Failed to create config file from JSON"
             exit 1
@@ -148,22 +148,22 @@ jobs:
           echo "Content of /etc/nettest.conf:"
           cat /etc/nettest.conf
           
-          # Загружаем TLS сертификаты
+          # Upload TLS certificates
           echo "Uploading TLS certificates..."
           echo '${{ secrets.PROD_TLS_CERT }}' > /root/specure-cd.crt
           echo '${{ secrets.PROD_TLS_KEY }}' > /root/specure-cd.key
           chmod 600 /root/specure-cd.crt /root/specure-cd.key
           echo "TLS certificates uploaded and secured"
           
-          # Продолжаем с деплоем...
+          # Continue with deployment...
           
           echo "Deploying Nettest Server..."
           
-          # Определяем версию Debian и выбираем соответствующий релиз
+          # Determine Debian version and select corresponding release
           DEBIAN_VERSION=$(cat /etc/debian_version 2>/dev/null | cut -d. -f1 || echo "0")
           echo "Detected Debian version: $DEBIAN_VERSION"
           
-          # Проверяем поддержку версии
+          # Check version support
           if [ "$DEBIAN_VERSION" -lt 11 ]; then
             echo "ERROR: Debian version $DEBIAN_VERSION is not supported. Minimum required version is 11."
             echo "Please upgrade to Debian 11 or higher."
@@ -171,7 +171,7 @@ jobs:
           elif [ "$DEBIAN_VERSION" -eq 11 ]; then
             NETTEST_URL="https://github.com/specure/nettest/releases/download/$DEPLOY_VERSION/nettest-debian-11-x86_64.tar.gz"
           elif [ "$DEBIAN_VERSION" -ge 12 ]; then
-            # Для версий 12 и выше используем Debian 12
+            # For versions 12 and above use Debian 12
             NETTEST_URL="https://github.com/specure/nettest/releases/download/$DEPLOY_VERSION/nettest-debian-12-x86_64.tar.gz"
           else
             echo "ERROR: Unable to determine Debian version or unsupported version: $DEBIAN_VERSION"
@@ -180,9 +180,9 @@ jobs:
           
           echo "Using URL: $NETTEST_URL"
           
-          # Проверяем доступность релиза
+          # Check release availability
           echo "Checking if release $DEPLOY_VERSION is available..."
-          # Используем curl с -L для следования редиректам и получаем HTTP код
+          # Use curl with -L to follow redirects and get HTTP code
           HTTP_CODE=$(curl -s -L -o /dev/null -w "%{http_code}" -I "$NETTEST_URL" 2>/dev/null)
           if [ -z "$HTTP_CODE" ] || [ "$HTTP_CODE" = "000" ]; then
             echo "ERROR: Failed to connect to $NETTEST_URL"
@@ -194,7 +194,7 @@ jobs:
             echo "ERROR: Release $DEPLOY_VERSION is not available at $NETTEST_URL"
             echo "HTTP response code: $HTTP_CODE"
             echo "Please check if the release exists and try again"
-            # Попробуем получить больше информации
+            # Try to get more information
             echo "Attempting to get more details..."
             curl -s -L -I "$NETTEST_URL" 2>&1 | head -n 10
             exit 1
@@ -242,7 +242,7 @@ jobs:
           echo "Build prepared successfully"
           
           echo "Stopping existing process on port 443..."
-          # Используем lsof для определения процесса на порту 443
+          # Use lsof to identify process on port 443
           NETTEST_PID=$(lsof -ti :443 2>/dev/null || echo "")
           
           echo "DEBUG: NETTEST_PID = '$NETTEST_PID'"
@@ -282,7 +282,7 @@ jobs:
           ls -la 2>/dev/null || echo "Failed to list directory"
           echo "Checking if nettest binary exists: $(ls -la nettest 2>/dev/null || echo 'not found')"
           
-          # Убеждаемся что мы в правильной директории
+          # Make sure we are in the correct directory
           if [ ! -f nettest ]; then
             echo "Error: nettest binary not found in current directory"
             echo "Directory contents: $(ls -la 2>/dev/null || echo 'failed to list')"
@@ -292,7 +292,7 @@ jobs:
           echo "Nettest binary found, proceeding..."
           echo "=== END IMMEDIATE DEBUGGING ==="
           
-          # Проверяем, что порт 443 свободен
+          # Check that port 443 is free
           echo "Checking if port 443 is free..."
           if netstat -tuln 2>/dev/null | grep :443 >/dev/null 2>&1; then
             echo "Warning: Port 443 is still in use"
@@ -323,7 +323,7 @@ jobs:
           
           echo "Waiting for server (PID: $NEW_PID)..."
           
-          # Ждем для запуска
+          # Wait for startup
           for i in {1..10}; do
             if ps -p $NEW_PID >/dev/null 2>&1; then
               echo "Server started successfully"
