@@ -5,7 +5,7 @@ use crate::tokio_server::server_config::parse_listen_addressv6;
 use bytes::BytesMut;
 use log::{debug, info, LevelFilter};
 use mio::net::{TcpListener, TcpStream};
-use mio::{Poll, Token, Waker};
+use mio::Token;
 use std::collections::VecDeque;
 use std::io::{self};
 use std::net::SocketAddr;
@@ -29,8 +29,10 @@ use crate::stream::stream::Stream;
 use crate::tokio_server::server_config::parse_listen_address;
 
 pub struct MioServer {
-    tcp_listener: TcpListener,
+    tcp_listener: Option<TcpListener>,
+    tcp_listener_v6: Option<TcpListener>,
     tls_listener: Option<TcpListener>,
+    tls_listener_v6: Option<TcpListener>,
     _worker_threads: Vec<WorkerThread>,
     global_queue: Arc<Mutex<VecDeque<(ConnectionType, Instant)>>>, // Global queue with timestamps
     server_config: ServerConfig,
@@ -91,22 +93,62 @@ impl MioServer {
         let server_config = crate::mioserver::parser::parse_args(args, config.clone())
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
-        let tcp_listener = TcpListener::bind(server_config.tcp_address)?;
+        let v6_addr =
+            parse_listen_addressv6(server_config.tcp_address.port().to_string().as_str()).unwrap();
 
-        println!("TCP Server will listen on {}", server_config.tcp_address);
+        let tcp_listener_v6 = match TcpListener::bind(v6_addr) {
+            Ok(listener) => {
+                info!("TCP Server will listen on V6 {}", v6_addr);
+                Some(listener)
+            }
+            Err(e) => {
+                info!("Failed to bind TCP V6 listener: {}", e);
+                None
+            }
+        };
+
+
+        let tcp_listener = match TcpListener::bind(server_config.tcp_address) {
+            Ok(listener) => {
+                info!("TCP Server will listen on V4 {}", server_config.tcp_address);
+                Some(listener)
+            }
+            Err(e) => {
+                info!("Failed to bind TCP V4 listener: {}. On linux it can be because of IPv4-mapped addresses", e);
+                None
+            }
+        };
+
+        let tls_listener_v6: Option<TcpListener> =
+            if server_config.cert_path.is_some() && server_config.key_path.is_some() {
+                let v6_addr =
+                    parse_listen_addressv6(server_config.tls_address.port().to_string().as_str())
+                        .unwrap();
+                info!("TLS Server will listen on V6 {}", v6_addr);
+                match TcpListener::bind(v6_addr) {
+                    Ok(listener) => Some(listener),
+                    Err(e) => {
+                        info!("Failed to bind TLS listener: {}", e);
+                        None
+                    }
+                }
+            } else {
+                info!("TLS Server will not listen on V6");
+                None
+            };
 
         let tls_listener = if server_config.cert_path.is_some() && server_config.key_path.is_some()
         {
-            println!("TLS Server will listen on {}", server_config.tls_address);
+            info!("TLS Server will listen on {}", server_config.tls_address);
             let tls_addr: SocketAddr =
                 parse_listen_address(&server_config.tls_address.to_string()).unwrap();
             match TcpListener::bind(tls_addr) {
                 Ok(listener) => {
-                    debug!("MIO TLS Server will listen on {}", tls_addr);
+                    info!("MIO TLS Server will listen on {}", tls_addr);
                     Some(listener)
                 }
                 Err(e) => {
-                    debug!("Failed to bind TLS listener: {}", e);
+                    info!("Failed to bind TLS listener: {}", e);
                     None
                 }
             }
@@ -133,7 +175,9 @@ impl MioServer {
 
         Ok(Self {
             tcp_listener,
+            tcp_listener_v6,
             tls_listener,
+            tls_listener_v6,
             _worker_threads: worker_threads,
             global_queue,
             server_config,
@@ -164,33 +208,6 @@ impl MioServer {
             });
         }
 
-        let tcp_listener_v6: Option<TcpListener> = match TcpListener::bind(
-            parse_listen_addressv6(self.server_config.tcp_address.port().to_string().as_str())
-                .unwrap(),
-        ) {
-            Ok(listener) => Some(listener),
-            Err(e) => {
-                debug!("Failed to bind TCP listener: {}", e);
-                None
-            }
-        };
-
-        let tls_listener_v6: Option<TcpListener> = if self.server_config.cert_path.is_some()
-            && self.server_config.key_path.is_some()
-        {
-            match TcpListener::bind(
-                parse_listen_addressv6(self.server_config.tls_address.port().to_string().as_str())
-                    .unwrap(),
-            ) {
-                Ok(listener) => Some(listener),
-                Err(e) => {
-                    debug!("Failed to bind TLS listener: {}", e);
-                    None
-                }
-            }
-        } else {
-            None
-        };
         loop {
             // Check shutdown signal
             if self.shutdown_signal.load(Ordering::Relaxed) {
@@ -199,23 +216,25 @@ impl MioServer {
             }
 
             // Accept TCP connections
-            match self.tcp_listener.accept() {
-                Ok((stream, _addr)) => {
-                    if let Err(e) = stream.set_nodelay(true) {
-                        debug!("Failed to set TCP_NODELAY: {}", e);
+            if let Some(listener) = self.tcp_listener.as_ref() {
+                match listener.accept() {
+                    Ok((stream, _addr)) => {
+                        if let Err(e) = stream.set_nodelay(true) {
+                            debug!("Failed to set TCP_NODELAY: {}", e);
+                        }
+                        self.handle_connection(stream, false, _addr)?;
                     }
-                    self.handle_connection(stream, false, _addr)?;
-                }
-                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    // Continue
-                }
-                Err(e) => {
-                    debug!("Error accepting TCP connection: {}", e);
-                    return Err(e);
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        // Continue
+                    }
+                    Err(e) => {
+                        debug!("Error accepting TCP connection: {}", e);
+                        return Err(e);
+                    }
                 }
             }
 
-            if let Some(listener) = tcp_listener_v6.as_ref() {
+            if let Some(listener) = self.tcp_listener_v6.as_ref() {
                 match listener.accept() {
                     Ok((stream, _addr)) => {
                         if let Err(e) = stream.set_nodelay(true) {
@@ -233,9 +252,9 @@ impl MioServer {
                     }
                 }
             }
-            // Accept TLS connections if listener exists
-            if let Some(ref mut tls_listener) = self.tls_listener {
-                match tls_listener.accept() {
+
+            if let Some(listener) = self.tls_listener_v6.as_ref() {
+                match listener.accept() {
                     Ok((stream, _addr)) => {
                         if let Err(e) = stream.set_nodelay(true) {
                             debug!("Failed to set TCP_NODELAY: {}", e);
@@ -252,8 +271,9 @@ impl MioServer {
                 }
             }
 
-            if let Some(listener) = tls_listener_v6.as_ref() {
-                match listener.accept() {
+            // Accept TLS connections if listener exists
+            if let Some(ref mut tls_listener) = self.tls_listener {
+                match tls_listener.accept() {
                     Ok((stream, _addr)) => {
                         if let Err(e) = stream.set_nodelay(true) {
                             debug!("Failed to set TCP_NODELAY: {}", e);
