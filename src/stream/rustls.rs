@@ -312,7 +312,7 @@ fn load_certs(cert_path: &Path) -> Result<Vec<CertificateDer<'static>>, Error> {
     let cert_path = cert_path.to_str().unwrap();
     debug!("Loading certificates from {}", cert_path);
     let certfile = fs::read(cert_path)?;
-    debug!("Read {} bytes from certificate file", certfile.len());
+    trace!("Read {} bytes from certificate file", certfile.len());
     let mut reader = BufReader::new(certfile.as_slice());
     let certs = rustls_pemfile::certs(&mut reader).collect::<Result<Vec<_>, _>>()?;
     debug!("Successfully parsed {} certificates", certs.len());
@@ -323,7 +323,7 @@ fn load_private_key(key_path: &Path) -> Result<PrivateKeyDer<'static>, Error> {
     let key_path = key_path.to_str().unwrap();
     debug!("Loading private key from {}", key_path);
     let keyfile = fs::read(key_path)?;
-    debug!("Read {} bytes from key file", keyfile.len());
+    trace!("Read {} bytes from key file", keyfile.len());
     let mut reader = BufReader::new(keyfile.as_slice());
 
     // Try to read any private key format

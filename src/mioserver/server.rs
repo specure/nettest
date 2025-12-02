@@ -133,7 +133,6 @@ impl MioServer {
                     }
                 }
             } else {
-                info!("TLS Server will not listen on V6");
                 None
             };
 

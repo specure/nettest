@@ -14,7 +14,7 @@ use crate::mioserver::handlers::basic_handler::{
 };
 
 // Connection processing timeout constant
-const CONNECTION_PROCESSING_TIMEOUT: u64 = 60; 
+const CONNECTION_PROCESSING_TIMEOUT: u64 = 60;
 use crate::mioserver::server::{ConnectionType, ServerConfig, TestState};
 use crate::mioserver::ServerTestPhase;
 use crate::stream::stream::Stream;
@@ -34,7 +34,6 @@ struct Worker {
     global_queue: Arc<Mutex<VecDeque<(ConnectionType, Instant)>>>, // Global queue
     server_config: ServerConfig,
     next_token: usize,
-    
 }
 
 impl WorkerThread {
@@ -44,7 +43,6 @@ impl WorkerThread {
         global_queue: Arc<Mutex<VecDeque<(ConnectionType, Instant)>>>,
         server_config: ServerConfig,
     ) -> io::Result<Self> {
-
         let thread = thread::Builder::new()
             .stack_size(8 * 1024 * 1024) // 8MB stack
             .spawn(move || {
@@ -86,12 +84,14 @@ impl Worker {
 
     fn run(&mut self) -> io::Result<()> {
         loop {
-        
             let maybe_connection = if self.connections.is_empty() {
                 let mut global_queue = self.global_queue.lock().unwrap();
                 if let Some((connection, _)) = global_queue.pop_front() {
-                    info!("Worker {}: taking connection from global queue (queue size after: {})", 
-                        self.id, global_queue.len());
+                    info!(
+                        "Worker {}: taking connection from global queue (queue size after: {})",
+                        self.id,
+                        global_queue.len()
+                    );
                     {
                         let mut counts = self.worker_connection_counts.lock().unwrap();
                         counts[self.id] += 1;
@@ -115,7 +115,7 @@ impl Worker {
                 let (mut stream, ip) = match connection {
                     ConnectionType::Tcp(stream, client_addr) => {
                         (Stream::Tcp(stream), Some(client_addr))
-                    },
+                    }
                     ConnectionType::Tls(stream, client_addr) => {
                         let stream = Stream::new_rustls_server(
                             stream,
@@ -133,7 +133,9 @@ impl Worker {
                 info!("Worker {}: registering connection", self.id);
 
                 // Register new connection
-                if let Err(e) = stream.register(&self.poll, token, Interest::READABLE | Interest::WRITABLE) {
+                if let Err(e) =
+                    stream.register(&self.poll, token, Interest::READABLE | Interest::WRITABLE)
+                {
                     info!("Worker {}: Failed to register connection: {}", self.id, e);
                     continue;
                 }
@@ -172,7 +174,7 @@ impl Worker {
                                 loop_iteration_count: 0,
                             },
                         );
-                    },
+                    }
                     Err(e) => {
                         info!("Worker {}: Error handling greeting: {}", self.id, e);
                         {
@@ -207,10 +209,10 @@ impl Worker {
                 self.process_all_connections()?;
             } else {
                 thread_local! {
-                    static LAST_QUEUE_CHECK: std::cell::RefCell<std::time::Instant> = 
+                    static LAST_QUEUE_CHECK: std::cell::RefCell<std::time::Instant> =
                         std::cell::RefCell::new(std::time::Instant::now());
                 }
-                
+
                 LAST_QUEUE_CHECK.with(|last_check| {
                     let mut last_check = last_check.borrow_mut();
                     if last_check.elapsed() > Duration::from_secs(10) {
@@ -218,7 +220,7 @@ impl Worker {
                         *last_check = std::time::Instant::now();
                     }
                 });
-                
+
                 thread::sleep(Duration::from_millis(100));
             }
         }
@@ -236,7 +238,12 @@ impl Worker {
         let mut connections_to_remove = Vec::new();
 
         for event in self.events.iter() {
-            trace!("Worker {}: event {:?} token {:?}", self.id, event, event.token());
+            trace!(
+                "Worker {}: event {:?} token {:?}",
+                self.id,
+                event,
+                event.token()
+            );
             let event_token = event.token();
             if let Some(state) = self.connections.get_mut(&event_token) {
                 let mut should_remove: Result<usize, io::Error> = Ok(0);
@@ -259,14 +266,20 @@ impl Worker {
                 match should_remove {
                     Ok(n) => {
                         if n == 0 {
-                            debug!("Worker {}: should_remove: {} token {:?}", self.id, n, event_token);
+                            debug!(
+                                "Worker {}: should_remove: {} token {:?}",
+                                self.id, n, event_token
+                            );
                             connections_to_remove.push(event_token);
                         }
                         continue;
                         // If n > 0, continue processing
                     }
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        debug!("Worker {}: would block for token {:?}", self.id, event_token);
+                        debug!(
+                            "Worker {}: would block for token {:?}",
+                            self.id, event_token
+                        );
                         continue;
                     }
                     Err(e) => {
@@ -285,13 +298,15 @@ impl Worker {
         }
 
         for (token, state) in self.connections.iter_mut() {
-            if state.connection_start.elapsed() > Duration::from_secs(CONNECTION_PROCESSING_TIMEOUT) {
-                debug!("Worker {}: connection {:?} processing timeout after {} seconds", 
-                       self.id, token, CONNECTION_PROCESSING_TIMEOUT);
+            if state.connection_start.elapsed() > Duration::from_secs(CONNECTION_PROCESSING_TIMEOUT)
+            {
+                debug!(
+                    "Worker {}: connection {:?} processing timeout after {} seconds",
+                    self.id, token, CONNECTION_PROCESSING_TIMEOUT
+                );
                 connections_to_remove.push(token.clone());
             }
         }
-
 
         for token in connections_to_remove {
             // Explicitly close the connection before removing
@@ -305,7 +320,10 @@ impl Worker {
                 debug!("Worker {}: removing connection {:?}", self.id, token);
                 let mut counts = self.worker_connection_counts.lock().unwrap();
                 counts[self.id] -= 1;
-                info!("Worker {}: connection count decreased to {}", self.id, counts[self.id]);
+                info!(
+                    "Worker {}: connection count decreased to {}",
+                    self.id, counts[self.id]
+                );
             }
 
             info!(
@@ -326,16 +344,20 @@ impl Worker {
         mut stream: Stream,
         token: Token,
     ) -> io::Result<Stream> {
-        info!("Worker {}: handle_greeting_receive_connection_type", self.id);
+        info!(
+            "Worker {}: handle_greeting_receive_connection_type",
+            self.id
+        );
         let mut buffer = vec![0; 1024];
         let mut result = BytesMut::new();
         let mut loop_flag = false;
-        let timeout = std::time::Duration::from_secs(3);
+        let timeout = std::time::Duration::from_millis(500);
         let start_time = std::time::Instant::now();
 
         while !loop_flag {
             // Check timeout
-            if start_time.elapsed() > timeout {
+            let elapsed = start_time.elapsed();
+            if elapsed > timeout {
                 debug!("Worker {}: handshake timeout after {:?}", self.id, timeout);
                 stream.close().unwrap();
                 drop(stream);
@@ -346,17 +368,23 @@ impl Worker {
             stream.reregister(&self.poll, token, Interest::WRITABLE | Interest::READABLE)?;
 
             // Use timeout for poll
-            let poll_timeout = timeout - start_time.elapsed();
+            let poll_timeout = timeout - elapsed;
             self.poll.poll(&mut self.events, Some(poll_timeout))?;
             for event in self.events.iter() {
                 if event.is_readable() {
                     match stream.read(&mut buffer) {
                         Ok(n) => {
                             result.extend_from_slice(&buffer[..n]);
-                            debug!("Worker {}: read {} bytes {}", self.id, n, String::from_utf8_lossy(&buffer[..n]));
+                            trace!(
+                                "Worker {}: read {} bytes {}",
+                                self.id,
+                                n,
+                                String::from_utf8_lossy(&buffer[..n])
+                            );
                             if result.len() >= 4
                                 && result[result.len() - 4..result.len()]
-                                    == [b'\r', b'\n', b'\r', b'\n'] || String::from_utf8_lossy(&result).contains("\r\n\r\n")
+                                    == [b'\r', b'\n', b'\r', b'\n']
+                                || String::from_utf8_lossy(&result).contains("\r\n\r\n")
                             {
                                 let request = String::from_utf8_lossy(&result);
                                 let ws_regex = Regex::new(r"(?i)upgrade:\s*websocket").unwrap();
@@ -372,10 +400,16 @@ impl Worker {
                                     debug!("Worker {}: writing upgrade response", self.id);
                                     match stream.write(RMBT_UPGRADE.as_bytes()) {
                                         Ok(n) => {
-                                            debug!("Worker {}: wrote {} bytes {}", self.id, n, RMBT_UPGRADE);
+                                            debug!(
+                                                "Worker {}: wrote {} bytes {}",
+                                                self.id, n, RMBT_UPGRADE
+                                            );
                                         }
                                         Err(e) => {
-                                            debug!("Worker {}: error writing upgrade response: {}", self.id, e);
+                                            debug!(
+                                                "Worker {}: error writing upgrade response: {}",
+                                                self.id, e
+                                            );
                                         }
                                     }
                                 }
@@ -404,16 +438,22 @@ impl Worker {
         let mut global_queue = self.global_queue.lock().unwrap();
         let now = Instant::now();
         let timeout_duration = Duration::from_secs(60); // 60 seconds timeout for worker
-        
+
         let initial_size = global_queue.len();
         global_queue.retain(|(_, timestamp)| {
-            now.duration_since(*timestamp) <= timeout_duration
+            now.checked_duration_since(*timestamp)
+                .unwrap_or(Duration::from_secs(0))
+                <= timeout_duration
         });
-        
+
         let removed_count = initial_size - global_queue.len();
         if removed_count > 0 {
-            debug!("Worker {}: removed {} timed out connections from global queue (remaining: {})", 
-                   self.id, removed_count, global_queue.len());
+            debug!(
+                "Worker {}: removed {} timed out connections from global queue (remaining: {})",
+                self.id,
+                removed_count,
+                global_queue.len()
+            );
         }
     }
 }

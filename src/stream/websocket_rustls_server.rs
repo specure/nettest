@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::debug;
+use log::{debug, trace};
 use mio::{Interest, Poll, Token};
 use std::io::{self, Read, Write};
 use tungstenite::{Message, WebSocket};
@@ -78,7 +78,7 @@ impl Read for WebSocketRustlsServerStream {
                     let bytes = text.as_bytes();
                     let len = bytes.len().min(buf.len());
                     buf[..len].copy_from_slice(&bytes[..len]);
-                    debug!("Read {} bytes from WebSocket", len);
+                    trace!("Read {} bytes from WebSocket", len);
                     return Ok(len);
                 }
                 Ok(Message::Close(_)) => return Ok(0),
