@@ -215,20 +215,22 @@ impl MioServer {
                 }
             }
 
-            match tcp_listener_v6.as_ref().unwrap().accept() {
-                Ok((stream, _addr)) => {
-                    if let Err(e) = stream.set_nodelay(true) {
-                        debug!("Failed to set TCP_NODELAY: {}", e);
+            if let Some(listener) = tcp_listener_v6.as_ref() {
+                match listener.accept() {
+                    Ok((stream, _addr)) => {
+                        if let Err(e) = stream.set_nodelay(true) {
+                            debug!("Failed to set TCP_NODELAY: {}", e);
+                        }
+                        self.handle_connection(stream, false, _addr)?;
                     }
-                    self.handle_connection(stream, false, _addr)?;
-                }
 
-                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    // Continue
-                }
-                Err(e) => {
-                    debug!("Error accepting TCP connection: {}", e);
-                    return Err(e);
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        // Continue
+                    }
+                    Err(e) => {
+                        debug!("Error accepting TCP connection: {}", e);
+                        return Err(e);
+                    }
                 }
             }
             // Accept TLS connections if listener exists
