@@ -28,10 +28,8 @@ pub struct RmbtServerConfig {
     pub secret_key_labels: Vec<String>,
 }
 
-
 impl RmbtServerConfig {
     pub fn from_args(args: Vec<String>) -> Result<Self, Box<dyn Error + Send + Sync>> {
-
         // if args.len() == 1 {
         //     let addr = "127.0.0.1:5005".parse().unwrap();
         //     let config = RmbtServerConfig {
@@ -53,14 +51,10 @@ impl RmbtServerConfig {
         //     return Ok(config);
         // }
         // Show help if no arguments or help flag is present
-        if  args.contains(&"-h".to_string())
-            || args.contains(&"--help".to_string())
-        {
+        if args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
             print_help();
             return Err("Help printed".into());
         }
-
-      
 
         Self::from_args_vec(args)
     }
@@ -194,10 +188,14 @@ impl RmbtServerConfig {
 
         // Validate TLS configuration
         // if !config.ssl_listen_addresses.is_empty() {
-            if config.cert_path.is_some() && config.key_path.is_some() {
-               config.ssl_listen_addresses.push( parse_listen_address("8080").unwrap());
-            }
-            config.listen_addresses.push( parse_listen_address("5005").unwrap());
+        if config.cert_path.is_some() && config.key_path.is_some() {
+            config
+                .ssl_listen_addresses
+                .push(parse_listen_address("8080").unwrap());
+        }
+        config
+            .listen_addresses
+            .push(parse_listen_address("5005").unwrap());
         // }
 
         // Validate required options for non-TLS connections
@@ -232,7 +230,7 @@ impl RmbtServerConfig {
             .with_single_cert(certs, key)
             .expect("bad certificates/private key");
 
-            debug!("TLS configuration built successfully");
+        debug!("TLS configuration built successfully");
         Ok(TlsAcceptor::from(Arc::new(config)))
     }
 
@@ -308,13 +306,21 @@ pub fn parse_listen_address(addr: &str) -> Result<SocketAddr, Box<dyn Error + Se
     }
 
     // Try port only: 8080
-if let Ok(port) = addr.parse::<u16>() {
-    return Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port));
-}
+    if let Ok(port) = addr.parse::<u16>() {
+        return Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port));
+    }
 
     Err(format!("Invalid listen address format: {}", addr).into())
 }
 
+pub fn parse_listen_addressv6(addr: &str) -> Result<SocketAddr, Box<dyn Error + Send + Sync>> {
+    // println!("parse_listen_address: {}", addr);
+    if let Ok(port) = addr.parse::<u16>() {
+        return Ok(SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port));
+    }
+
+    Err(format!("Invalid listen address format: {}", addr).into())
+}
 fn print_help() {
     println!("==== rmbtd ====");
     println!("By default, rmbtd will listen TCP on port 5005 and TLS on port 8080.");

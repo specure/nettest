@@ -1,3 +1,7 @@
+use crate::mioserver::control_server::auto_registration::{
+    deregister_server, register_server, start_ping_job,
+};
+use crate::tokio_server::server_config::parse_listen_addressv6;
 use bytes::BytesMut;
 use log::{debug, info, LevelFilter};
 use mio::net::{TcpListener, TcpStream};
@@ -5,10 +9,12 @@ use mio::{Poll, Token, Waker};
 use std::collections::VecDeque;
 use std::io::{self};
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use std::thread;
-use std::time::{Instant};
-use crate::mioserver::control_server::auto_registration::{deregister_server, register_server, start_ping_job};
+use std::time::Instant;
 
 #[derive(Debug)]
 pub enum ConnectionType {
@@ -70,7 +76,7 @@ pub struct ServerConfig {
     pub user: Option<String>,
     pub daemon: bool,
     pub version: Option<String>,
-    pub secret_key: String,  
+    pub secret_key: String,
     pub log_level: Option<LevelFilter>,
     pub server_registration: bool,
     pub control_server: String,
@@ -89,9 +95,11 @@ impl MioServer {
 
         println!("TCP Server will listen on {}", server_config.tcp_address);
 
-        let tls_listener = if server_config.cert_path.is_some() && server_config.key_path.is_some() {
+        let tls_listener = if server_config.cert_path.is_some() && server_config.key_path.is_some()
+        {
             println!("TLS Server will listen on {}", server_config.tls_address);
-            let tls_addr: SocketAddr = parse_listen_address(&server_config.tls_address.to_string()).unwrap();
+            let tls_addr: SocketAddr =
+                parse_listen_address(&server_config.tls_address.to_string()).unwrap();
             match TcpListener::bind(tls_addr) {
                 Ok(listener) => {
                     debug!("MIO TLS Server will listen on {}", tls_addr);
@@ -123,7 +131,6 @@ impl MioServer {
             worker_threads.push(worker);
         }
 
-
         Ok(Self {
             tcp_listener,
             tls_listener,
@@ -135,7 +142,10 @@ impl MioServer {
     }
 
     pub fn run(&mut self) -> io::Result<()> {
-        info!("server_config.server_registration: {:?}", self.server_config.server_registration);
+        info!(
+            "server_config.server_registration: {:?}",
+            self.server_config.server_registration
+        );
         if self.server_config.server_registration {
             info!("Registering server with control server...");
             let config_clone = self.server_config.clone();
@@ -154,6 +164,33 @@ impl MioServer {
             });
         }
 
+        let tcp_listener_v6: Option<TcpListener> = match TcpListener::bind(
+            parse_listen_addressv6(self.server_config.tcp_address.port().to_string().as_str())
+                .unwrap(),
+        ) {
+            Ok(listener) => Some(listener),
+            Err(e) => {
+                debug!("Failed to bind TCP listener: {}", e);
+                None
+            }
+        };
+
+        let tls_listener_v6: Option<TcpListener> = if self.server_config.cert_path.is_some()
+            && self.server_config.key_path.is_some()
+        {
+            match TcpListener::bind(
+                parse_listen_addressv6(self.server_config.tls_address.port().to_string().as_str())
+                    .unwrap(),
+            ) {
+                Ok(listener) => Some(listener),
+                Err(e) => {
+                    debug!("Failed to bind TLS listener: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
         loop {
             // Check shutdown signal
             if self.shutdown_signal.load(Ordering::Relaxed) {
@@ -178,9 +215,43 @@ impl MioServer {
                 }
             }
 
+            match tcp_listener_v6.as_ref().unwrap().accept() {
+                Ok((stream, _addr)) => {
+                    if let Err(e) = stream.set_nodelay(true) {
+                        debug!("Failed to set TCP_NODELAY: {}", e);
+                    }
+                    self.handle_connection(stream, false, _addr)?;
+                }
+
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    // Continue
+                }
+                Err(e) => {
+                    debug!("Error accepting TCP connection: {}", e);
+                    return Err(e);
+                }
+            }
             // Accept TLS connections if listener exists
             if let Some(ref mut tls_listener) = self.tls_listener {
                 match tls_listener.accept() {
+                    Ok((stream, _addr)) => {
+                        if let Err(e) = stream.set_nodelay(true) {
+                            debug!("Failed to set TCP_NODELAY: {}", e);
+                        }
+                        self.handle_connection(stream, true, _addr)?;
+                    }
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        // Continue
+                    }
+                    Err(e) => {
+                        debug!("Error accepting TLS connection: {}", e);
+                        return Err(e);
+                    }
+                }
+            }
+
+            if let Some(listener) = tls_listener_v6.as_ref() {
+                match listener.accept() {
                     Ok((stream, _addr)) => {
                         if let Err(e) = stream.set_nodelay(true) {
                             debug!("Failed to set TCP_NODELAY: {}", e);
@@ -203,11 +274,10 @@ impl MioServer {
             thread::sleep(std::time::Duration::from_millis(10));
         }
 
-
         Ok(())
     }
 
-   pub  async fn shutdown(&mut self) -> io::Result<()> {
+    pub async fn shutdown(&mut self) -> io::Result<()> {
         info!("Starting graceful shutdown...");
 
         if self.server_config.server_registration {
@@ -232,7 +302,12 @@ impl MioServer {
         Ok(())
     }
 
-    fn handle_connection(&mut self, stream: TcpStream, is_tls: bool, client_addr: SocketAddr) -> io::Result<()> {
+    fn handle_connection(
+        &mut self,
+        stream: TcpStream,
+        is_tls: bool,
+        client_addr: SocketAddr,
+    ) -> io::Result<()> {
         let connection = if is_tls {
             ConnectionType::Tls(stream, client_addr)
         } else {
