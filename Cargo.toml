@@ -41,6 +41,7 @@ rgb = "0.8.50"
 prettytable = "0.10.0"
 num_cpus = "1.13"
 rayon = "1.8"
+mdns-sd = "0.17.1"
 
 [target.'cfg(unix)'.dependencies]
 nix = "0.26"

@@ -14,6 +14,9 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::thread;
+use std::time::{Instant};
+use crate::mioserver::control_server::auto_registration::{deregister_server, register_server, start_ping_job};
+use crate::mioserver::control_server::mdns::start_mdns_service;
 use std::time::Instant;
 
 #[derive(Debug)]
@@ -206,6 +209,15 @@ impl MioServer {
                 }
             });
         }
+
+        info!("Starting mDNS service for local network discovery...");
+        let mdns_config = self.server_config.clone();
+        let mdns_shutdown = self.shutdown_signal.clone();
+        tokio::spawn(async move {
+            if let Err(e) = start_mdns_service(mdns_config, mdns_shutdown).await {
+                log::warn!("mDNS service error: {}", e);
+            }
+        });
 
         loop {
             // Check shutdown signal
