@@ -18,10 +18,9 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "bonjour": "^3.5.0"
+    "bonjour-service": "^1.2.1"
   },
   "devDependencies": {
-    "@types/bonjour": "^3.5.13",
     "@types/node": "^20.10.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"

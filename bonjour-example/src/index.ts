@@ -1,12 +1,14 @@
-import bonjour from 'bonjour';
+import Bonjour, { Service } from 'bonjour-service';
 
 /**
- * Example TypeScript client for discovering nettest servers via Bonjour/mDNS
+ * Example TypeScript client for querying nettest servers via Bonjour/mDNS
  * 
  * This example demonstrates how to:
- * 1. Browse for _nettest._tcp services in the local network
+ * 1. Query TXT records for _nettest._tcp services using DNS-SD queries
  * 2. Parse TXT records to get server configuration
  * 3. Connect to discovered servers
+ * 
+ * Equivalent to: dns-sd -Q "nettest._nettest._tcp.local" TXT
  */
 
 interface NettestServerConfig {
@@ -20,55 +22,67 @@ interface NettestServerConfig {
 }
 
 class NettestServiceDiscovery {
-  private bonjourInstance: bonjour.Bonjour;
-  private browser?: bonjour.Browser;
+  private bonjourInstance: Bonjour;
+  private browser?: any;
   private discoveredServers: Map<string, NettestServerConfig> = new Map();
 
   constructor() {
-    this.bonjourInstance = bonjour();
+    this.bonjourInstance = new Bonjour({
+        name: 'nettest',
+    });
   }
 
   /**
-   * Start browsing for nettest services
+   * Start querying for nettest services using DNS-SD
+   * This is equivalent to: dns-sd -Q "nettest._nettest._tcp.local" TXT
    */
   startDiscovery(): void {
     console.log('🔍 Starting mDNS/Bonjour service discovery...');
-    console.log('Looking for services: _nettest._tcp.local\n');
+    console.log('Querying for services: _nettest._tcp\n');
 
     // Browse for _nettest._tcp services
-    // Note: bonjour library expects format without underscores and .local suffix
-    // It will automatically add _ prefix and .local suffix
-    // tcp or tls
+    // bonjour-service will automatically query TXT records
     this.browser = this.bonjourInstance.find({ type: 'nettest', protocol: 'tcp' });
 
     // Handle service discovery
-    this.browser.on('up', (service: bonjour.RemoteService) => {
+    this.browser.on('up', (service: Service) => {
       this.onServiceUp(service);
     });
 
     // Handle service removal
-    this.browser.on('down', (service: bonjour.RemoteService) => {
+    this.browser.on('down', (service: Service) => {
       this.onServiceDown(service);
     });
+
+    // Start the browser
+    this.browser.start();
   }
 
   /**
    * Handle when a service is discovered
    */
-  private onServiceUp(service: bonjour.RemoteService): void {
+  private onServiceUp(service: Service): void {
+    const serviceKey = `${service.host}:${service.port}`;
+    
     console.log('✅ Service discovered:');
     console.log(`   Name: ${service.name}`);
     console.log(`   Type: ${service.type}`);
+    console.log(`   Protocol: ${service.protocol}`);
     console.log(`   Host: ${service.host}`);
     console.log(`   Port: ${service.port}`);
+    console.log(`   FQDN: ${service.fqdn}`);
     console.log(`   Addresses: ${service.addresses?.join(', ') || 'N/A'}`);
     
     // Parse TXT records
     const txt = service.txt || {};
     console.log(`   TXT Records:`);
-    Object.entries(txt).forEach(([key, value]) => {
-      console.log(`     ${key}: ${value}`);
-    });
+    if (Object.keys(txt).length > 0) {
+      Object.entries(txt).forEach(([key, value]) => {
+        console.log(`     ${key}: ${value}`);
+      });
+    } else {
+      console.log(`     (no TXT records)`);
+    }
 
     // Build server configuration
     const config: NettestServerConfig = {
@@ -81,14 +95,14 @@ class NettestServiceDiscovery {
       server_name: txt['server_name'] as string | undefined,
     };
 
-    // Store discovered server
-    const serviceKey = `${service.host}:${service.port}`;
+    // Store discovered server (update if exists)
     this.discoveredServers.set(serviceKey, config);
 
     console.log(`\n📋 Server Configuration:`);
     console.log(`   TCP Port: ${config.tcp_port || 'N/A'}`);
     console.log(`   TLS Port: ${config.tls_port || 'N/A'}`);
     console.log(`   Version: ${config.version || 'N/A'}`);
+    console.log(`   Server Name: ${config.server_name || 'N/A'}`);
     console.log(`\n🔗 Connection URL: tcp://${config.hostname}:${config.tcp_port || config.port}\n`);
     console.log('─'.repeat(60) + '\n');
 
@@ -99,7 +113,7 @@ class NettestServiceDiscovery {
   /**
    * Handle when a service goes down
    */
-  private onServiceDown(service: bonjour.RemoteService): void {
+  private onServiceDown(service: Service): void {
     console.log('❌ Service removed:');
     console.log(`   Name: ${service.name}`);
     console.log(`   Host: ${service.host}:${service.port}\n`);
@@ -114,16 +128,6 @@ class NettestServiceDiscovery {
   private connectToServer(config: NettestServerConfig): void {
     // This is just an example - implement your actual connection logic here
     console.log(`💡 Example: Ready to connect to server at ${config.hostname}:${config.tcp_port || config.port}`);
-    
-    // Example connection code (commented out):
-    // const net = require('net');
-    // const socket = net.createConnection({
-    //   host: config.hostname,
-    //   port: parseInt(config.tcp_port || String(config.port))
-    // });
-    // socket.on('connect', () => {
-    //   console.log('Connected to server!');
-    // });
   }
 
   /**
@@ -176,4 +180,3 @@ if (require.main === module) {
 }
 
 export { NettestServiceDiscovery, NettestServerConfig };
-
