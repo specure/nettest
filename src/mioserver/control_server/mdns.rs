@@ -64,8 +64,10 @@ pub async fn start_mdns_service(
 
     // If TLS is available, create a separate service for TLS
     if config.cert_path.is_some() && config.key_path.is_some() {
+
+        info!("Announcing TLS service...");
         let tls_port = config.tls_address.port();
-        let tls_service_type = "_nettest._tls.local.";
+        let tls_service_type = "_nettest._tcp.local.";
         let tls_instance_name = format!("{}-tls", instance_name);
         let tls_hostname = format!("{}.local.", tls_instance_name);
         
@@ -77,17 +79,8 @@ pub async fn start_mdns_service(
             tls_txt_properties.insert("version".to_string(), version.clone());
         }
         
-        if let Some(ref server_name) = config.server_name {
-            tls_txt_properties.insert("server_name".to_string(), server_name.clone());
-        }
-        
-
-        let ip = get_local_network_ip().unwrap_or_else(|| "".to_string());
-
 
         info!("IP address: {}", ip);
-
-
 
         let tls_service_info = ServiceInfo::new(
             tls_service_type,
@@ -121,8 +114,11 @@ pub async fn start_mdns_service(
     }
 
     // On shutdown, send goodbye packets
+    let tls_instance_name = format!("{}-tls", instance_name);
+
     info!("Unregistering mDNS services...");
     mdns.unregister(&format!("{}.local.", instance_name))?;
+    mdns.unregister(&format!("{}.local.", tls_instance_name))?;
     mdns.shutdown()?;
 
     info!("mDNS service stopped");
