@@ -30,6 +30,7 @@ pub fn parse_args(
         x_nettest_client: default_config.x_nettest_client,
         registration_token: default_config.registration_token,
         server_name: default_config.server_name,
+        enable_mdns: false,
     };
 
     let mut i = 1;
@@ -84,6 +85,9 @@ pub fn parse_args(
             "-register" => {
                 config.server_registration = true;
             }
+            "-mdns" => {
+                config.enable_mdns = true;
+            }
             "--help" | "-h" => {
                 print_help();
                 return Err(anyhow::anyhow!("Help printed"));
@@ -125,6 +129,7 @@ fn print_help() {
     println!(" -d     fork into background as daemon (no argument)\n");
     println!(" -log    log level: info, debug, trace\n");
     println!(" -register  enable server registration\n");
+    println!(" -mdns  enable mDNS service discovery for local network\n");
     println!("--help - print help");
     println!("-h - print help");
 }

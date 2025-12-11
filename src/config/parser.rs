@@ -152,6 +152,13 @@ fn parse_config_content(content: &str) -> Result<FileConfig, anyhow::Error> {
                 "signed_result" => {
                     config.signed_result = value.parse().unwrap_or(false);
                 }
+                "enable_mdns" => {
+                    if value == "true" {
+                        config.enable_mdns = true;
+                    } else {
+                        config.enable_mdns = false;
+                    }
+                }
                 _ => {
                     //return error
                     println!("Warning: Unknown config key: {}", key);

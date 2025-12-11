@@ -89,6 +89,7 @@ pub struct ServerConfig {
     pub x_nettest_client: String,
     pub registration_token: Option<String>,
     pub server_name: Option<String>,
+    pub enable_mdns: bool,
 }
 
 impl MioServer {
@@ -218,6 +219,19 @@ impl MioServer {
                 log::warn!("mDNS service error: {}", e);
             }
         });
+        // Запускаем mDNS сервис для локального обнаружения, если включен
+        if self.server_config.enable_mdns {
+            info!("Starting mDNS service for local network discovery...");
+            let mdns_config = self.server_config.clone();
+            let mdns_shutdown = self.shutdown_signal.clone();
+            tokio::spawn(async move {
+                if let Err(e) = start_mdns_service(mdns_config, mdns_shutdown).await {
+                    log::warn!("mDNS service error: {}", e);
+                }
+            });
+        } else {
+            debug!("mDNS service disabled (use -mdns flag to enable)");
+        }
 
         loop {
             // Check shutdown signal
