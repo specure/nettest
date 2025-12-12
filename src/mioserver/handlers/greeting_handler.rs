@@ -60,7 +60,7 @@ pub fn handle_greeting_send_version(
             return Err(io::Error::new(io::ErrorKind::Other, "EOF"));
         }
         state.write_pos += n;
-        debug!("Wrote handle_greeting_send_version {}", n);
+        trace!("Wrote handle_greeting_send_version {} bytes", n);
         if state.write_pos == (version.as_bytes().len()) {
             state.write_pos = 0;
             state.read_pos = 0;

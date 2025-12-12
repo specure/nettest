@@ -7,7 +7,7 @@ use log::{debug, info, LevelFilter};
 use mio::net::{TcpListener, TcpStream};
 use mio::Token;
 use std::collections::VecDeque;
-use std::io::{self};
+use std::io::{self, Read};
 use std::net::SocketAddr;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -17,6 +17,7 @@ use std::thread;
 use std::time::{Instant};
 use crate::mioserver::control_server::auto_registration::{deregister_server, register_server, start_ping_job};
 use crate::mioserver::control_server::mdns::start_mdns_service;
+use std::net::{IpAddr, Ipv4Addr};
 use std::time::Instant;
 
 #[derive(Debug)]
@@ -35,6 +36,7 @@ pub struct MioServer {
     tcp_listener: Option<TcpListener>,
     tcp_listener_v6: Option<TcpListener>,
     tls_listener: Option<TcpListener>,
+    static_files_listener: Option<TcpListener>,
     tls_listener_v6: Option<TcpListener>,
     _worker_threads: Vec<WorkerThread>,
     global_queue: Arc<Mutex<VecDeque<(ConnectionType, Instant)>>>, // Global queue with timestamps
@@ -159,6 +161,21 @@ impl MioServer {
             None
         };
 
+        let static_files_listener = if server_config.enable_mdns {
+            println!("Static files server will listen on {}", 5006);
+            match TcpListener::bind(SocketAddr::from((IpAddr::V4(Ipv4Addr::UNSPECIFIED), 5006))) {
+                Ok(listener) => {
+                    Some(listener)
+                }
+                Err(e) => {
+                    debug!("Failed to bind static files listener: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         let logical = server_config.num_workers.unwrap_or(30);
 
         let worker_connection_counts = Arc::new(Mutex::new(vec![0; logical]));
@@ -180,6 +197,7 @@ impl MioServer {
             tcp_listener,
             tcp_listener_v6,
             tls_listener,
+            static_files_listener,
             tls_listener_v6,
             _worker_threads: worker_threads,
             global_queue,
@@ -315,6 +333,36 @@ impl MioServer {
                 }
             }
 
+            // Accept static files connections if listener exists
+            if let Some(ref mut static_listener) = self.static_files_listener {
+                match static_listener.accept() {
+                    Ok((_mio_stream, addr)) => {
+                        info!("Accepting static files connections...");
+
+                        // Convert to std::net::TcpStream for synchronous handling
+                        use std::os::unix::io::{FromRawFd, AsRawFd};
+                        let fd = _mio_stream.as_raw_fd();
+                        let std_stream = unsafe { std::net::TcpStream::from_raw_fd(fd) };
+                        std::mem::forget(_mio_stream); // Don't drop mio stream, we use std_stream
+
+                        // Handle in separate thread to not block main loop
+                        let config_clone = self.server_config.clone();
+                        std::thread::spawn(move || {
+                            if let Err(e) = Self::handle_static_file_connection_sync(std_stream, addr, config_clone.enable_mdns) {
+                                debug!("Error handling static file connection: {}", e);
+                            }
+                        });
+                    }
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        // Continue
+                    }
+                    Err(e) => {
+                        debug!("Error accepting static files connection: {}", e);
+                        return Err(e);
+                    }
+                }
+            }
+
             // Check global queue for stale connections
             self.check_global_queue()?;
 
@@ -370,6 +418,81 @@ impl MioServer {
             if is_tls { "TLS" } else { "TCP" },
             global_queue.len()
         );
+
+        Ok(())
+    }
+
+    fn handle_static_file_connection_sync(
+        mut stream: std::net::TcpStream,
+        client_addr: SocketAddr,
+        mdns_enabled: bool,
+    ) -> io::Result<()> {
+        use crate::mioserver::handlers::static_files::{is_static_file_request, parse_http_path, serve_static_file};
+        use crate::stream::stream::Stream;
+        use mio::net::TcpStream as MioTcpStream;
+
+        if !mdns_enabled {
+            return Ok(()); // Static files only when mdns is enabled
+        }
+
+        info!("Static file connection from {}", client_addr);
+
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(5)))?;
+        stream.set_write_timeout(Some(std::time::Duration::from_secs(5)))?;
+
+        // Read HTTP request
+        let mut buffer = vec![0; 4096];
+        let mut request_data = Vec::new();
+
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(0) => break, // EOF
+                Ok(n) => {
+                    request_data.extend_from_slice(&buffer[..n]);
+                    // Check if we have complete HTTP request
+                    if request_data.len() >= 4
+                        && (request_data[request_data.len() - 4..] == [b'\r', b'\n', b'\r', b'\n']
+                            || String::from_utf8_lossy(&request_data).contains("\r\n\r\n"))
+                    {
+                        break;
+                    }
+                }
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    continue;
+                }
+                Err(e) => {
+                    debug!("Error reading static file request: {}", e);
+                    return Ok(()); // Just close connection
+                }
+            }
+        }
+
+        let request = String::from_utf8_lossy(&request_data);
+        debug!("Static file request: {}", request);
+
+        if !is_static_file_request(&request) {
+            debug!("Not a static file request, closing connection");
+            return Ok(());
+        }
+
+        if let Some(path) = parse_http_path(&request) {
+            // Convert std::net::TcpStream to mio::net::TcpStream for Stream wrapper
+            use std::os::unix::io::{FromRawFd, AsRawFd};
+            let fd = stream.as_raw_fd();
+            let mio_stream = unsafe { MioTcpStream::from_raw_fd(fd) };
+            std::mem::forget(stream); // Don't drop std_stream, we use mio_stream
+
+            let mut stream_wrapper = Stream::Tcp(mio_stream);
+            match serve_static_file(&path, &mut stream_wrapper) {
+                Ok(_) => {
+                    info!("Served static file: {} to {}", path, client_addr);
+                }
+                Err(e) => {
+                    debug!("Failed to serve static file {}: {}", path, e);
+                    // 404 already sent by serve_static_file
+                }
+            }
+        }
 
         Ok(())
     }
