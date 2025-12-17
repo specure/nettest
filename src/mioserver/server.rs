@@ -340,9 +340,20 @@ impl MioServer {
                         info!("Accepting static files connections...");
 
                         // Convert to std::net::TcpStream for synchronous handling
-                        use std::os::unix::io::{FromRawFd, AsRawFd};
-                        let fd = _mio_stream.as_raw_fd();
-                        let std_stream = unsafe { std::net::TcpStream::from_raw_fd(fd) };
+                        #[cfg(unix)]
+                        let std_stream = {
+                            use std::os::unix::io::{FromRawFd, AsRawFd};
+                            let fd = _mio_stream.as_raw_fd();
+                            unsafe { std::net::TcpStream::from_raw_fd(fd) }
+                        };
+                        
+                        #[cfg(windows)]
+                        let std_stream = {
+                            use std::os::windows::io::{FromRawSocket, AsRawSocket};
+                            let socket = _mio_stream.as_raw_socket();
+                            unsafe { std::net::TcpStream::from_raw_socket(socket) }
+                        };
+                        
                         std::mem::forget(_mio_stream); // Don't drop mio stream, we use std_stream
 
                         // Handle in separate thread to not block main loop
@@ -477,9 +488,20 @@ impl MioServer {
 
         if let Some(path) = parse_http_path(&request) {
             // Convert std::net::TcpStream to mio::net::TcpStream for Stream wrapper
-            use std::os::unix::io::{FromRawFd, AsRawFd};
-            let fd = stream.as_raw_fd();
-            let mio_stream = unsafe { MioTcpStream::from_raw_fd(fd) };
+            #[cfg(unix)]
+            let mio_stream = {
+                use std::os::unix::io::{FromRawFd, AsRawFd};
+                let fd = stream.as_raw_fd();
+                unsafe { MioTcpStream::from_raw_fd(fd) }
+            };
+            
+            #[cfg(windows)]
+            let mio_stream = {
+                use std::os::windows::io::{FromRawSocket, AsRawSocket};
+                let socket = stream.as_raw_socket();
+                unsafe { MioTcpStream::from_raw_socket(socket) }
+            };
+            
             std::mem::forget(stream); // Don't drop std_stream, we use mio_stream
 
             let mut stream_wrapper = Stream::Tcp(mio_stream);
