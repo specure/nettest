@@ -1,27 +1,10 @@
 use log::{debug, info};
-use std::fs;
 use std::io::{self};
-use std::path::{Path, PathBuf};
+use include_dir::{include_dir, Dir};
 use crate::stream::stream::Stream;
 
-const STATIC_DIR_NAME: &str = "dist";
-
-/// Get the path to the static files directory (next to the binary)
-fn get_static_dir_path() -> io::Result<PathBuf> {
-    // Get the path to the current executable
-    let exe_path = std::env::current_exe()
-        .map_err(|e| io::Error::new(io::ErrorKind::NotFound, format!("Failed to get executable path: {}", e)))?;
-    
-    // Get the directory containing the executable
-    let exe_dir = exe_path.parent()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Executable has no parent directory"))?;
-    
-    // Build path to static files directory
-    let static_dir = exe_dir.join(STATIC_DIR_NAME);
-    
-    debug!("Static files directory: {:?}", static_dir);
-    Ok(static_dir)
-}
+// Embed the dist directory at compile time
+static STATIC_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/dist");
 
 pub fn serve_static_file(path: &str, stream: &mut Stream) -> io::Result<bool> {
     // Normalize path - remove leading slash and handle root
@@ -31,26 +14,14 @@ pub fn serve_static_file(path: &str, stream: &mut Stream) -> io::Result<bool> {
         path.trim_start_matches('/')
     };
 
-    // Get static directory path (next to binary)
-    let static_dir = get_static_dir_path()?;
-    
-    // Build full path to static file
-    let file_full_path = static_dir.join(file_path);
-    
-    // Security: prevent path traversal
-    let canonical_static = static_dir.canonicalize()
-        .map_err(|_| io::Error::new(io::ErrorKind::NotFound, "Static directory not found"))?;
-    let canonical_file = file_full_path.canonicalize()
-        .map_err(|_| io::Error::new(io::ErrorKind::NotFound, format!("File not found: {}", file_path)))?;
-    
-    if !canonical_file.starts_with(&canonical_static) {
-        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "Path traversal detected"));
-    }
+    debug!("Looking for static file: {}", file_path);
 
-    debug!("Serving static file: {:?}", canonical_file);
+    // Find file in embedded static directory
+    let file = STATIC_DIR.get_file(file_path)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("File not found: {}", file_path)))?;
 
-    // Read file
-    let content = fs::read(&canonical_file)?;
+    // Get file contents
+    let content = file.contents();
     
     // Determine MIME type from file path
     let mime_type = get_mime_type_from_path(file_path);
@@ -69,7 +40,7 @@ pub fn serve_static_file(path: &str, stream: &mut Stream) -> io::Result<bool> {
     // Send response header
     stream.write(response.as_bytes())?;
     // Send file content
-    stream.write(&content)?;
+    stream.write(content)?;
     stream.flush()?;
 
     info!("Served static file: {} ({} bytes)", file_path, content.len());
@@ -86,24 +57,6 @@ fn get_mime_type_from_path(path: &str) -> &'static str {
         "text/css; charset=utf-8"
     } else if path_lower.ends_with(".ico") {
         "image/x-icon"
-    } else if path_lower.ends_with(".png") {
-        "image/png"
-    } else if path_lower.ends_with(".jpg") || path_lower.ends_with(".jpeg") {
-        "image/jpeg"
-    } else if path_lower.ends_with(".gif") {
-        "image/gif"
-    } else if path_lower.ends_with(".svg") {
-        "image/svg+xml"
-    } else if path_lower.ends_with(".json") {
-        "application/json"
-    } else if path_lower.ends_with(".woff") {
-        "font/woff"
-    } else if path_lower.ends_with(".woff2") {
-        "font/woff2"
-    } else if path_lower.ends_with(".ttf") {
-        "font/ttf"
-    } else if path_lower.ends_with(".eot") {
-        "application/vnd.ms-fontobject"
     } else {
         "application/octet-stream"
     }
