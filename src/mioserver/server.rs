@@ -15,10 +15,8 @@ use std::sync::{
 };
 use std::thread;
 use std::time::{Instant};
-use crate::mioserver::control_server::auto_registration::{deregister_server, register_server, start_ping_job};
 use crate::mioserver::control_server::mdns::start_mdns_service;
 use std::net::{IpAddr, Ipv4Addr};
-use std::time::Instant;
 
 #[derive(Debug)]
 pub enum ConnectionType {
@@ -237,7 +235,7 @@ impl MioServer {
                 log::warn!("mDNS service error: {}", e);
             }
         });
-        // Запускаем mDNS сервис для локального обнаружения, если включен
+
         if self.server_config.enable_mdns {
             info!("Starting mDNS service for local network discovery...");
             let mdns_config = self.server_config.clone();
