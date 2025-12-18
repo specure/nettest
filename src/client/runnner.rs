@@ -88,7 +88,7 @@ pub async fn run_threads(
                 if config.raw_output {
                     print!("{:.2}", ping_ms);
                 } else {
-                    print_float_result("Ping Median", "ms", Some(ping_ms));
+                    print_float_result("Ping Median", "ms", Some(ping_ms), false);
                 }
             }
             barrier.wait();
@@ -119,7 +119,7 @@ pub async fn run_threads(
                 if config.raw_output {
                     print!("/{:.2}", speed.1); // speed.1 is Gbps
                 } else {
-                    print_test_result("Download Test", "Completed", Some(speed));
+                    print_test_result("Download Test", "Completed", Some(speed), false);
                 }
             }
 
@@ -151,7 +151,7 @@ pub async fn run_threads(
                 if config.raw_output {
                     println!("/{:.2}", speed.1); // speed.1 is Gbps, println! for line break
                 } else {
-                    print_test_result("Upload Test", "Completed", Some(speed));
+                    print_test_result("Upload Test", "Completed", Some(speed), true);
                 }
             }
 
