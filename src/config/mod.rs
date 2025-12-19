@@ -35,6 +35,7 @@ pub struct FileConfig {
     pub client_uuid: Option<String>,
     pub signed_result: bool,
     pub enable_mdns: bool,
+    pub max_chunk_size: Option<u32>,
 }
 
 impl Default for FileConfig {
@@ -64,6 +65,7 @@ impl Default for FileConfig {
             client_uuid: None,
             signed_result: false,
             enable_mdns: false,
+            max_chunk_size: None,
         }
     }
 }

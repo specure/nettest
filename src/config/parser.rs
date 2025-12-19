@@ -159,6 +159,13 @@ fn parse_config_content(content: &str) -> Result<FileConfig, anyhow::Error> {
                         config.enable_mdns = false;
                     }
                 }
+                "max_chunk_size" => {
+                    if let Ok(size) = value.parse::<u32>() {
+                        config.max_chunk_size = Some(size);
+                    } else {
+                        println!("Warning: Invalid max_chunk_size value: {}, using default", value);
+                    }
+                }
                 _ => {
                     //return error
                     println!("Warning: Unknown config key: {}", key);

@@ -1,4 +1,5 @@
 use crate::client::args_parser::{parse_args, print_help};
+use crate::client::constants::init_max_chunk_size;
 use crate::client::print::graph_service::GraphService;
 use crate::client::print::printer::print_test_header;
 use crate::client::runnner::run_threads;
@@ -50,6 +51,9 @@ pub struct ClientConfig {
 
 pub async fn client_run(args: Vec<String>, dafault_config: FileConfig) -> anyhow::Result<()> {
     info!("Starting measurement client...");
+
+    // Initialize MAX_CHUNK_SIZE from config
+    init_max_chunk_size(dafault_config.max_chunk_size);
 
     if args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
         print_help();

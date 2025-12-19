@@ -4,7 +4,7 @@ use anyhow::Result;
 use log::{debug, trace};
 use mio::{Interest, Poll};
 
-use crate::{client::constants::{MAX_CHUNK_SIZE, MIN_CHUNK_SIZE}, config::constants::CHUNK_SIZE, mioserver::{server::TestState, ServerTestPhase}};
+use crate::{client::constants::{get_max_chunk_size, MIN_CHUNK_SIZE}, config::constants::CHUNK_SIZE, mioserver::{server::TestState, ServerTestPhase}};
 use crate::mioserver::handlers::timeout_utils::check_timeout_periodic;
 
 pub fn handle_greeting_accep_token_read(
@@ -165,7 +165,7 @@ pub fn handle_greeting_send_ok(
 pub fn handle_greeting_send_chunksize( poll: &Poll,
     state: &mut TestState,) -> Result<usize, std::io::Error> {
     debug!("handle_greeting_send_ok");
-    let chunk_size_msg = format!("CHUNKSIZE {} {} {}\n", CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE); //todo compare version
+    let chunk_size_msg = format!("CHUNKSIZE {} {} {}\n", CHUNK_SIZE, MIN_CHUNK_SIZE, get_max_chunk_size()); //todo compare version
 
     if state.write_pos == 0 {
         state.write_buffer[..chunk_size_msg.len()].copy_from_slice(chunk_size_msg.as_bytes());
