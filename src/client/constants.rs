@@ -24,7 +24,7 @@ pub const GETCHUNKS_COMMAND: &[u8] = b"GETCHUNKS\n";
 pub const MIN_CHUNK_SIZE: u32 = 4096;
 
 /// Maximum chunk size (4MB)
-pub const MAX_CHUNK_SIZE: u32 = 4194304;
+pub const MAX_CHUNK_SIZE: u32 = 131072;
 
 /// Pre-download duration in nanoseconds (2 seconds)
 pub const PRE_DOWNLOAD_DURATION_NS: u64 = 2_000_000_000;
