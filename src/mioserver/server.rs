@@ -96,6 +96,7 @@ impl MioServer {
     #[cfg(unix)]
     fn set_ipv6_v6only(listener: &TcpListener) -> io::Result<()> {
         unsafe {
+            info!("Setting IPV6_V6ONLY for listener");
             let fd = listener.as_raw_fd();
             let v6only: libc::c_int = 1;
             let result = libc::setsockopt(
