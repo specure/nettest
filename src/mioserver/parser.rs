@@ -118,8 +118,9 @@ pub fn parse_args(
         ));
     }
     if config.tls_addresses.is_empty() {
+        //keep this order to avoid conflicts with IPv4 addresses on unix
         config.tls_addresses.push(SocketAddr::new(
-            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            IpAddr::V6(Ipv6Addr::UNSPECIFIED),
             default_config
                 .server_tls_port
                 .clone()
@@ -128,7 +129,7 @@ pub fn parse_args(
                 .unwrap(),
         ));
         config.tls_addresses.push(SocketAddr::new(
-            IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             default_config
                 .server_tls_port
                 .unwrap_or("443".to_string())
