@@ -117,6 +117,7 @@ impl MioServer {
     #[cfg(not(unix))]
     fn set_ipv6_v6only(_listener: &TcpListener) -> io::Result<()> {
         // IPV6_V6ONLY is Unix-specific, no-op on Windows
+        info!("IPV6_V6ONLY is not supported on Windows");
         Ok(())
     }
 
