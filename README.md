@@ -179,9 +179,6 @@ Nettest is optimized for high performance:
 
 - **Source code**: Apache License 2.0 ([LICENSE.txt](LICENSE.txt))
 
-## 🤝 Contributing
-
-We welcome contributions to Nettest development! Please read our [contributing guidelines](CONTRIBUTING.md).
 
 ## 📚 Documentation
 
