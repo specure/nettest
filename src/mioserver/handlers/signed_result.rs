@@ -90,6 +90,7 @@ fn sign_message(message: &str, secret_key: &str) -> Result<String, std::io::Erro
     Ok(signature)
 }
 
+//TODO: or get from file
 pub fn generate_secret_key() -> String {
     let mut secret_key = [0u8; 32];
     rand::rand_bytes(&mut secret_key).unwrap();

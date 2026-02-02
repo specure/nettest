@@ -22,7 +22,7 @@ pub async fn start_mdns_service(
 
     // Single mDNS service for both TCP and TLS (if available)
     // Both protocols share the same IP address, so we announce one host with both ports in TXT
-    let tcp_port = config.tcp_address.port();
+    let tcp_port = config.tcp_addresses.first().unwrap().port();
     let service_type = "_nettest._tcp.local.";
     let instance_name = "nettest";
     let hostname = format!("{}.local.", instance_name);
@@ -35,7 +35,7 @@ pub async fn start_mdns_service(
     
     // Add TLS port if available (optional, for external access or additional security)
     if config.cert_path.is_some() && config.key_path.is_some() {
-        let tls_port = config.tls_address.port();
+        let tls_port = config.tls_addresses.first().unwrap().port();
         txt_properties.insert("tls_port".to_string(), tls_port.to_string());
         info!("TLS available on port {}, will be included in mDNS TXT records", tls_port);
     }

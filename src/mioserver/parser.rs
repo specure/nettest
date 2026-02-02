@@ -5,17 +5,15 @@ use crate::{
     tokio_server::{server_config::parse_listen_address, utils::user},
 };
 use log::LevelFilter;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 pub fn parse_args(
     args: Vec<String>,
     default_config: FileConfig,
 ) -> Result<ServerConfig, anyhow::Error> {
     let mut config = ServerConfig {
-        tcp_address: parse_listen_address(&default_config.server_tcp_port).unwrap(),
-        tls_address: parse_listen_address(
-            &default_config.server_tls_port.unwrap_or("443".to_string()),
-        )
-        .unwrap(),
+        tcp_addresses: vec![],
+        tls_addresses: vec![],
         cert_path: default_config.cert_path,
         key_path: default_config.key_path,
         num_workers: default_config.server_workers,
@@ -41,9 +39,9 @@ pub fn parse_args(
                 if i < args.len() {
                     let addr = parse_listen_address(&args[i]).unwrap();
                     if args[i - 1] == "-L" {
-                        config.tls_address = addr;
+                        config.tls_addresses.push(addr);
                     } else {
-                        config.tcp_address = addr;
+                        config.tcp_addresses.push(addr);
                     }
                 }
             }
@@ -106,6 +104,37 @@ pub fn parse_args(
             config.log_level.unwrap()
         );
         logger::init_logger(config.log_level.unwrap()).unwrap();
+    }
+
+    //add default addresses if args were not provided
+    if config.tcp_addresses.is_empty() {
+        config.tcp_addresses.push(SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            default_config.server_tcp_port.parse().unwrap(),
+        ));
+        config.tcp_addresses.push(SocketAddr::new(
+            IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+            default_config.server_tcp_port.parse().unwrap(),
+        ));
+    }
+    if config.tls_addresses.is_empty() {
+        config.tls_addresses.push(SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            default_config
+                .server_tls_port
+                .clone()
+                .unwrap_or("443".to_string())
+                .parse()
+                .unwrap(),
+        ));
+        config.tls_addresses.push(SocketAddr::new(
+            IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+            default_config
+                .server_tls_port
+                .unwrap_or("443".to_string())
+                .parse()
+                .unwrap(),
+        ));
     }
     Ok(config)
 }

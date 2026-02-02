@@ -284,43 +284,55 @@ impl Default for RmbtServerConfig {
 }
 
 pub fn parse_listen_address(addr: &str) -> Result<SocketAddr, Box<dyn Error + Send + Sync>> {
-    // println!("parse_listen_address: {}", addr);
-    // Try IPv6 format: [::1]:8080
+    let addr = addr.trim();
+    
+    // Try parsing as SocketAddr first (handles IPv4:port and [IPv6]:port)
+    if let Ok(socket_addr) = addr.parse::<SocketAddr>() {
+        return Ok(socket_addr);
+    }
+    
+    // Try IPv6 format with brackets: [::1]:8080 or [fe80::1706:fb83:8249:73d0]:334
     if addr.starts_with('[') {
         if let Some(end_bracket) = addr.rfind(']') {
             let ip_str = &addr[1..end_bracket];
             if let Some(port_str) = addr[end_bracket + 1..].strip_prefix(':') {
-                let ip: Ipv6Addr = ip_str.parse()?;
-                let port: u16 = port_str.parse()?;
-                return Ok(SocketAddr::new(IpAddr::V6(ip), port));
+                if let Ok(ip) = ip_str.parse::<Ipv6Addr>() {
+                    if let Ok(port) = port_str.parse::<u16>() {
+                        return Ok(SocketAddr::new(IpAddr::V6(ip), port));
+                    }
+                }
             }
         }
-        return Err(format!("Invalid IPv6 address format: {}", addr).into());
     }
-
+    
     // Try IPv4 format: 127.0.0.1:8080
-    if let Some((ip, port)) = addr.split_once(':') {
-        let ip: std::net::Ipv4Addr = ip.parse()?;
-        let port: u16 = port.parse()?;
-        return Ok(SocketAddr::new(IpAddr::V4(ip), port));
+    if let Some((ip_str, port_str)) = addr.split_once(':') {
+        if let Ok(ip) = ip_str.parse::<Ipv4Addr>() {
+            if let Ok(port) = port_str.parse::<u16>() {
+                return Ok(SocketAddr::new(IpAddr::V4(ip), port));
+            }
+        }
     }
-
-    // Try port only: 8080
-    if let Ok(port) = addr.parse::<u16>() {
-        return Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port));
+    
+    // Try IPv6 format without brackets: ::1:8080 (less common, but valid in some contexts)
+    // Count colons to detect IPv6
+    let colon_count = addr.matches(':').count();
+    if colon_count > 1 {
+        // Likely IPv6, try to parse
+        if let Some((ip_str, port_str)) = addr.rsplit_once(':') {
+            // Check if port_str is a valid port number
+            if let Ok(port) = port_str.parse::<u16>() {
+                // Try parsing the rest as IPv6
+                if let Ok(ip) = ip_str.parse::<Ipv6Addr>() {
+                    return Ok(SocketAddr::new(IpAddr::V6(ip), port));
+                }
+            }
+        }
     }
-
+    
     Err(format!("Invalid listen address format: {}", addr).into())
 }
 
-pub fn parse_listen_addressv6(addr: &str) -> Result<SocketAddr, Box<dyn Error + Send + Sync>> {
-    // println!("parse_listen_address: {}", addr);
-    if let Ok(port) = addr.parse::<u16>() {
-        return Ok(SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port));
-    }
-
-    Err(format!("Invalid listen address format: {}", addr).into())
-}
 fn print_help() {
     println!("==== rmbtd ====");
     println!("By default, rmbtd will listen TCP on port 5005 and TLS on port 8080.");

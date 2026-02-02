@@ -30,26 +30,33 @@ pub async fn register_server(config: &ServerConfig) -> Result<()> {
     let control_server_url = config.control_server.clone();
 
     //if hostname isSome and keyPath is some and certPath is some then tlsPort is Some(tls_address.port()) else tlsPort is None
-    let tls_port = if config.hostname.is_some() && config.key_path.is_some() && config.cert_path.is_some() {
-        Some(config.tls_address.port() as i32)
-    } else {
-        None
-    };
-    
+    let tls_port =
+        if config.hostname.is_some() && config.key_path.is_some() && config.cert_path.is_some() {
+            match config.tls_addresses.first() {
+                Some(address) => Some(address.port() as i32),
+                None => None,
+            }
+        } else {
+            None
+        };
+
     let request = AutoMeasurementServerRegistrationRequest {
         token: config.registration_token.clone(),
         tls_port,
-        tcp_port: config.tcp_address.port() as i32,
+        tcp_port: config.tcp_addresses.first().unwrap().port() as i32,
         version: config.version.clone(),
         hostname: config.hostname.clone(),
         server_name: config.server_name.clone(),
         sig_key: Some(config.secret_key.clone()),
     };
-    info!("Registering server with control server json: {:?}", serde_json::to_string(&request).unwrap());
-    
+    info!(
+        "Registering server with control server json: {:?}",
+        serde_json::to_string(&request).unwrap()
+    );
+
     let client = reqwest::Client::new();
     let url = format!("{}/measurementServer/auto-register", control_server_url);
-    
+
     let response = client
         .post(&url)
         .header("x-nettest-client", config.x_nettest_client.clone())
@@ -57,7 +64,7 @@ pub async fn register_server(config: &ServerConfig) -> Result<()> {
         .json(&request)
         .send()
         .await?;
-    
+
     let status = response.status();
     if !status.is_success() {
         let error_text = response.text().await?;
@@ -68,21 +75,21 @@ pub async fn register_server(config: &ServerConfig) -> Result<()> {
             error_text
         ));
     }
-    
+
     info!("Successfully registered server with control server");
     Ok(())
 }
 
 pub async fn ping_server(config: &ServerConfig) -> Result<()> {
     let control_server_url = config.control_server.clone();
-    
+
     let request = PingRequest {
         message: "PING".to_string(),
     };
-    
+
     let client = reqwest::Client::new();
     let url = format!("{}/measurementServer/ping", control_server_url);
-    
+
     let response = client
         .post(&url)
         .header("x-nettest-client", config.x_nettest_client.clone())
@@ -90,7 +97,7 @@ pub async fn ping_server(config: &ServerConfig) -> Result<()> {
         .json(&request)
         .send()
         .await?;
-    
+
     let status = response.status();
     if !status.is_success() {
         let error_text = response.text().await?;
@@ -101,26 +108,26 @@ pub async fn ping_server(config: &ServerConfig) -> Result<()> {
             error_text
         ));
     }
-    
+
     info!("Successfully pinged control server");
     Ok(())
 }
 
 pub async fn deregister_server(config: &ServerConfig) -> Result<()> {
     let control_server_url = config.control_server.clone();
-    
+
     info!("Deregistering server with control server");
-    
+
     let client = reqwest::Client::new();
     let url = format!("{}/measurementServer/auto-deregister", control_server_url);
-    
+
     let response = client
         .delete(&url)
         .header("x-nettest-client", config.x_nettest_client.clone())
         .header("Content-Type", "application/json")
         .send()
         .await?;
-    
+
     let status = response.status();
     if !status.is_success() {
         let error_text = response.text().await?;
@@ -130,16 +137,16 @@ pub async fn deregister_server(config: &ServerConfig) -> Result<()> {
             error_text
         ));
     }
-    
+
     info!("Successfully deregistered server with control server");
     Ok(())
 }
 
 pub async fn start_ping_job(config: ServerConfig, shutdown_signal: Arc<AtomicBool>) {
     let mut interval_timer = interval(Duration::from_secs(10));
-    
+
     info!("Starting ping job - will ping control server every 10 seconds");
-    
+
     loop {
         info!("Ping job loop");
         // Check shutdown signal
@@ -147,15 +154,15 @@ pub async fn start_ping_job(config: ServerConfig, shutdown_signal: Arc<AtomicBoo
             info!("Ping job received shutdown signal, stopping...");
             break;
         }
-        
+
         // Wait for next interval
         interval_timer.tick().await;
-        
+
         // Send ping
         if let Err(e) = ping_server(&config).await {
             info!("Ping job error: {}", e);
         }
     }
-    
+
     info!("Ping job stopped");
 }

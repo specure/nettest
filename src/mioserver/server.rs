@@ -1,7 +1,7 @@
 use crate::mioserver::control_server::auto_registration::{
     deregister_server, register_server, start_ping_job,
 };
-use crate::tokio_server::server_config::parse_listen_addressv6;
+use crate::mioserver::control_server::mdns::start_mdns_service;
 use bytes::BytesMut;
 use log::{debug, info, LevelFilter};
 use mio::net::{TcpListener, TcpStream};
@@ -9,14 +9,13 @@ use mio::Token;
 use std::collections::VecDeque;
 use std::io::{self, Read};
 use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
 };
 use std::thread;
-use std::time::{Instant};
-use crate::mioserver::control_server::mdns::start_mdns_service;
-use std::net::{IpAddr, Ipv4Addr};
+use std::time::Instant;
 
 #[derive(Debug)]
 pub enum ConnectionType {
@@ -28,14 +27,11 @@ use crate::config::FileConfig;
 use crate::mioserver::worker::WorkerThread;
 use crate::mioserver::ServerTestPhase;
 use crate::stream::stream::Stream;
-use crate::tokio_server::server_config::parse_listen_address;
 
 pub struct MioServer {
-    tcp_listener: Option<TcpListener>,
-    tcp_listener_v6: Option<TcpListener>,
-    tls_listener: Option<TcpListener>,
+    tcp_listeners: Vec<TcpListener>,
+    tls_listeners: Vec<TcpListener>,
     static_files_listener: Option<TcpListener>,
-    tls_listener_v6: Option<TcpListener>,
     _worker_threads: Vec<WorkerThread>,
     global_queue: Arc<Mutex<VecDeque<(ConnectionType, Instant)>>>, // Global queue with timestamps
     server_config: ServerConfig,
@@ -73,8 +69,8 @@ pub struct TestState {
 
 #[derive(Clone)]
 pub struct ServerConfig {
-    pub tcp_address: SocketAddr,
-    pub tls_address: SocketAddr,
+    pub tcp_addresses: Vec<SocketAddr>,
+    pub tls_addresses: Vec<SocketAddr>,
     pub cert_path: Option<String>,
     pub key_path: Option<String>,
     pub num_workers: Option<usize>,
@@ -97,74 +93,39 @@ impl MioServer {
         let server_config = crate::mioserver::parser::parse_args(args, config.clone())
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
-        let v6_addr =
-            parse_listen_addressv6(server_config.tcp_address.port().to_string().as_str()).unwrap();
-
-        let tcp_listener_v6 = match TcpListener::bind(v6_addr) {
-            Ok(listener) => {
-                info!("TCP Server will listen on V6 {}", v6_addr);
-                Some(listener)
-            }
-            Err(e) => {
-                info!("Failed to bind TCP V6 listener: {}", e);
-                None
-            }
-        };
-
-
-        let tcp_listener = match TcpListener::bind(server_config.tcp_address) {
-            Ok(listener) => {
-                info!("TCP Server will listen on V4 {}", server_config.tcp_address);
-                Some(listener)
-            }
-            Err(e) => {
-                info!("Failed to bind TCP V4 listener: {}. On linux it can be because of IPv4-mapped addresses", e);
-                None
-            }
-        };
-
-        let tls_listener_v6: Option<TcpListener> =
-            if server_config.cert_path.is_some() && server_config.key_path.is_some() {
-                let v6_addr =
-                    parse_listen_addressv6(server_config.tls_address.port().to_string().as_str())
-                        .unwrap();
-                info!("TLS Server will listen on V6 {}", v6_addr);
-                match TcpListener::bind(v6_addr) {
-                    Ok(listener) => Some(listener),
-                    Err(e) => {
-                        info!("Failed to bind TLS listener: {}", e);
-                        None
-                    }
-                }
-            } else {
-                None
-            };
-
-        let tls_listener = if server_config.cert_path.is_some() && server_config.key_path.is_some()
-        {
-            info!("TLS Server will listen on {}", server_config.tls_address);
-            let tls_addr: SocketAddr =
-                parse_listen_address(&server_config.tls_address.to_string()).unwrap();
-            match TcpListener::bind(tls_addr) {
+        let mut tcp_listeners = Vec::new();
+        let mut tls_listeners = Vec::new();
+        
+        for addr in &server_config.tcp_addresses {
+            match TcpListener::bind(*addr) {
                 Ok(listener) => {
-                    info!("MIO TLS Server will listen on {}", tls_addr);
-                    Some(listener)
+                    info!("TCP Server listening on {}", addr);
+                    tcp_listeners.push(listener);
                 }
                 Err(e) => {
-                    info!("Failed to bind TLS listener: {}", e);
-                    None
+                    info!("Failed to bind TCP V4 listener: {}. On linux it can be because of IPv4-mapped addresses", e);
+                }
+            };
+        }
+
+        for addr in &server_config.tls_addresses {
+            if server_config.cert_path.is_some() && server_config.key_path.is_some() {
+                match TcpListener::bind(*addr) {
+                    Ok(listener) => {
+                        info!("TLS Server listening on {}", addr);
+                        tls_listeners.push(listener);
+                    }
+                    Err(e) => {
+                        info!("Failed to bind TLS listener: {}", e);
+                    }
                 }
             }
-        } else {
-            None
-        };
+        }
 
         let static_files_listener = if server_config.enable_mdns {
-            println!("Static files server will listen on {}", 5006);
+            info!("Static files server listening on {}", 5006);
             match TcpListener::bind(SocketAddr::from((IpAddr::V4(Ipv4Addr::UNSPECIFIED), 5006))) {
-                Ok(listener) => {
-                    Some(listener)
-                }
+                Ok(listener) => Some(listener),
                 Err(e) => {
                     debug!("Failed to bind static files listener: {}", e);
                     None
@@ -192,11 +153,9 @@ impl MioServer {
         }
 
         Ok(Self {
-            tcp_listener,
-            tcp_listener_v6,
-            tls_listener,
+            tcp_listeners,
+            tls_listeners,
             static_files_listener,
-            tls_listener_v6,
             _worker_threads: worker_threads,
             global_queue,
             server_config,
@@ -257,16 +216,17 @@ impl MioServer {
             }
 
             // Accept TCP connections
-            if let Some(listener) = self.tcp_listener.as_ref() {
+            let mut tcp_connections = Vec::new();
+            for listener in &self.tcp_listeners {
                 match listener.accept() {
-                    Ok((stream, _addr)) => {
+                    Ok((stream, addr)) => {
                         if let Err(e) = stream.set_nodelay(true) {
                             debug!("Failed to set TCP_NODELAY: {}", e);
                         }
-                        self.handle_connection(stream, false, _addr)?;
+                        tcp_connections.push((stream, addr));
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        // Continue
+                        // Continue - no connections available
                     }
                     Err(e) => {
                         debug!("Error accepting TCP connection: {}", e);
@@ -274,61 +234,35 @@ impl MioServer {
                     }
                 }
             }
-
-            if let Some(listener) = self.tcp_listener_v6.as_ref() {
-                match listener.accept() {
-                    Ok((stream, _addr)) => {
-                        if let Err(e) = stream.set_nodelay(true) {
-                            debug!("Failed to set TCP_NODELAY: {}", e);
-                        }
-                        self.handle_connection(stream, false, _addr)?;
-                    }
-
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        // Continue
-                    }
-                    Err(e) => {
-                        debug!("Error accepting TCP connection: {}", e);
-                        return Err(e);
-                    }
-                }
+            // Handle connections after releasing the borrow
+            for (stream, addr) in tcp_connections {
+                self.handle_connection(stream, false, addr)?;
             }
 
-            if let Some(listener) = self.tls_listener_v6.as_ref() {
-                match listener.accept() {
-                    Ok((stream, _addr)) => {
-                        if let Err(e) = stream.set_nodelay(true) {
-                            debug!("Failed to set TCP_NODELAY: {}", e);
-                        }
-                        self.handle_connection(stream, true, _addr)?;
-                    }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        // Continue
-                    }
-                    Err(e) => {
-                        debug!("Error accepting TLS connection: {}", e);
-                        return Err(e);
-                    }
-                }
-            }
+
 
             // Accept TLS connections if listener exists
-            if let Some(ref mut tls_listener) = self.tls_listener {
-                match tls_listener.accept() {
-                    Ok((stream, _addr)) => {
+            let mut tls_connections = Vec::new();
+            for listener in &self.tls_listeners {
+                match listener.accept() {
+                    Ok((stream, addr)) => {
                         if let Err(e) = stream.set_nodelay(true) {
                             debug!("Failed to set TCP_NODELAY: {}", e);
                         }
-                        self.handle_connection(stream, true, _addr)?;
+                        tls_connections.push((stream, addr));
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        // Continue
+                        // Continue - no connections available
                     }
                     Err(e) => {
                         debug!("Error accepting TLS connection: {}", e);
                         return Err(e);
                     }
                 }
+            }
+            // Handle connections after releasing the borrow
+            for (stream, addr) in tls_connections {
+                self.handle_connection(stream, true, addr)?;
             }
 
             // Accept static files connections if listener exists
@@ -436,7 +370,9 @@ impl MioServer {
         client_addr: SocketAddr,
         mdns_enabled: bool,
     ) -> io::Result<()> {
-        use crate::mioserver::handlers::static_files::{is_static_file_request, parse_http_path, serve_static_file};
+        use crate::mioserver::handlers::static_files::{
+            is_static_file_request, parse_http_path, serve_static_file,
+        };
         use crate::stream::stream::Stream;
         use mio::net::TcpStream as MioTcpStream;
 
@@ -488,18 +424,18 @@ impl MioServer {
             // Convert std::net::TcpStream to mio::net::TcpStream for Stream wrapper
             #[cfg(unix)]
             let mio_stream = {
-                use std::os::unix::io::{FromRawFd, AsRawFd};
+                use std::os::unix::io::{AsRawFd, FromRawFd};
                 let fd = stream.as_raw_fd();
                 unsafe { MioTcpStream::from_raw_fd(fd) }
             };
-            
+
             #[cfg(windows)]
             let mio_stream = {
-                use std::os::windows::io::{FromRawSocket, AsRawSocket};
+                use std::os::windows::io::{AsRawSocket, FromRawSocket};
                 let socket = stream.as_raw_socket();
                 unsafe { MioTcpStream::from_raw_socket(socket) }
             };
-            
+
             std::mem::forget(stream); // Don't drop std_stream, we use mio_stream
 
             let mut stream_wrapper = Stream::Tcp(mio_stream);
