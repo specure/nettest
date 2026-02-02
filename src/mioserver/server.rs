@@ -10,6 +10,10 @@ use std::collections::VecDeque;
 use std::io::{self, Read};
 use std::net::SocketAddr;
 use std::net::{IpAddr, Ipv4Addr};
+#[cfg(unix)]
+use std::os::unix::io::AsRawFd;
+#[cfg(unix)]
+use libc;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -89,6 +93,32 @@ pub struct ServerConfig {
 }
 
 impl MioServer {
+    #[cfg(unix)]
+    fn set_ipv6_v6only(listener: &TcpListener) -> io::Result<()> {
+        unsafe {
+            let fd = listener.as_raw_fd();
+            let v6only: libc::c_int = 1;
+            let result = libc::setsockopt(
+                fd,
+                libc::IPPROTO_IPV6,
+                libc::IPV6_V6ONLY,
+                &v6only as *const _ as *const libc::c_void,
+                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+            );
+            if result == 0 {
+                Ok(())
+            } else {
+                Err(io::Error::last_os_error())
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn set_ipv6_v6only(_listener: &TcpListener) -> io::Result<()> {
+        // IPV6_V6ONLY is Unix-specific, no-op on Windows
+        Ok(())
+    }
+
     pub fn new(args: Vec<String>, config: FileConfig) -> io::Result<Self> {
         let server_config = crate::mioserver::parser::parse_args(args, config.clone())
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
@@ -99,6 +129,11 @@ impl MioServer {
         for addr in &server_config.tcp_addresses {
             match TcpListener::bind(*addr) {
                 Ok(listener) => {
+                    if addr.is_ipv6() {
+                        if let Err(e) = Self::set_ipv6_v6only(&listener) {
+                            debug!("Failed to set IPV6_V6ONLY for TCP listener on {}: {}", addr, e);
+                        }
+                    }
                     info!("TCP Server listening on {}", addr);
                     tcp_listeners.push(listener);
                 }
@@ -112,6 +147,12 @@ impl MioServer {
             if server_config.cert_path.is_some() && server_config.key_path.is_some() {
                 match TcpListener::bind(*addr) {
                     Ok(listener) => {
+                        // Set IPV6_V6ONLY for IPv6 addresses to allow simultaneous IPv4 and IPv6 binding
+                        if addr.is_ipv6() {
+                            if let Err(e) = Self::set_ipv6_v6only(&listener) {
+                                debug!("Failed to set IPV6_V6ONLY for TLS listener on {}: {}", addr, e);
+                            }
+                        }
                         info!("TLS Server listening on {}", addr);
                         tls_listeners.push(listener);
                     }
