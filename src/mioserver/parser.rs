@@ -109,11 +109,11 @@ pub fn parse_args(
     //add default addresses if args were not provided
     if config.tcp_addresses.is_empty() {
         config.tcp_addresses.push(SocketAddr::new(
-            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            IpAddr::V6(Ipv6Addr::UNSPECIFIED),
             default_config.server_tcp_port.parse().unwrap(),
         ));
         config.tcp_addresses.push(SocketAddr::new(
-            IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             default_config.server_tcp_port.parse().unwrap(),
         ));
     }
