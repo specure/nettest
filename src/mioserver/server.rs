@@ -95,22 +95,23 @@ pub struct ServerConfig {
 impl MioServer {
     #[cfg(unix)]
     fn set_ipv6_v6only(listener: &TcpListener) -> io::Result<()> {
-        info!("Setting IPV6_V6ONLY for listener");
-        unsafe {
+        let result = unsafe {
             let fd = listener.as_raw_fd();
             let v6only: libc::c_int = 1;
-            let result = libc::setsockopt(
+            libc::setsockopt(
                 fd,
                 libc::IPPROTO_IPV6,
                 libc::IPV6_V6ONLY,
                 &v6only as *const _ as *const libc::c_void,
                 std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-            );
-            if result == 0 {
-                Ok(())
-            } else {
-                Err(io::Error::last_os_error())
-            }
+            )
+        };
+        if result == 0 {
+            info!("Successfully set IPV6_V6ONLY for listener");
+            Ok(())
+        } else {
+            info!("Failed to set IPV6_V6ONLY for listener: {}", io::Error::last_os_error());
+            Err(io::Error::last_os_error())
         }
     }
 
