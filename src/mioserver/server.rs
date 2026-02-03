@@ -129,6 +129,8 @@ impl MioServer {
                         info!("Failed to bind TLS listener: {}", e);
                     }
                 }
+            } else {
+                println!("Key and certificate files are not provided, skipping TLS listener");
             }
         }
 
