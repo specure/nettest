@@ -10,6 +10,8 @@ use std::collections::VecDeque;
 use std::io::{self, Read};
 use std::net::SocketAddr;
 use std::net::{IpAddr, Ipv4Addr};
+#[cfg(unix)]
+use libc;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -97,7 +99,11 @@ impl MioServer {
         let mut tls_listeners = Vec::new();
 
         for addr in &server_config.tcp_addresses {
-            match TcpListener::bind(*addr) {
+            match if addr.is_ipv6() {
+                Self::bind_ipv6_with_v6only(*addr)
+            } else {
+                TcpListener::bind(*addr)
+            } {
                 Ok(listener) => {
                     info!("TCP Server listening on {}", addr);
                     tcp_listeners.push(listener);
@@ -110,13 +116,17 @@ impl MioServer {
 
         for addr in &server_config.tls_addresses {
             if server_config.cert_path.is_some() && server_config.key_path.is_some() {
-                match TcpListener::bind(*addr) {
+                match if addr.is_ipv6() {
+                    Self::bind_ipv6_with_v6only(*addr)
+                } else {
+                    TcpListener::bind(*addr)
+                } {
                     Ok(listener) => {
                         info!("TLS Server listening on {}", addr);
                         tls_listeners.push(listener);
                     }
                     Err(e) => {
-                        info!("Failed to bind TLS listener: {}", e);
+                        debug!("Failed to bind TLS listener: {}", e);
                     }
                 }
             }
@@ -450,6 +460,128 @@ impl MioServer {
 
         Ok(())
     }
+
+    #[cfg(unix)]
+    fn bind_ipv6_with_v6only(addr: SocketAddr) -> io::Result<TcpListener> {
+        use std::os::unix::io::FromRawFd;
+        
+        // Extract IPv6 address and port
+        let addr_v6 = match addr {
+            SocketAddr::V6(addr) => addr,
+            _ => return Err(io::Error::new(io::ErrorKind::InvalidInput, "Not an IPv6 address")),
+        };
+        
+        // Create IPv6 socket
+        let fd = unsafe {
+            libc::socket(libc::AF_INET6, libc::SOCK_STREAM, 0)
+        };
+        
+        if fd < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        
+        // Set IPV6_V6ONLY before bind
+        let v6only: libc::c_int = 1;
+        let result = unsafe {
+            libc::setsockopt(
+                fd,
+                libc::IPPROTO_IPV6,
+                libc::IPV6_V6ONLY,
+                &v6only as *const _ as *const libc::c_void,
+                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+            )
+        };
+        
+        if result != 0 {
+            unsafe { libc::close(fd); }
+            return Err(io::Error::last_os_error());
+        }
+        
+        // Set non-blocking mode
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        if flags < 0 {
+            unsafe { libc::close(fd); }
+            return Err(io::Error::last_os_error());
+        }
+        let result = unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) };
+        if result != 0 {
+            unsafe { libc::close(fd); }
+            return Err(io::Error::last_os_error());
+        }
+        
+        // Prepare sockaddr_in6 structure
+        // Note: macOS (BSD) requires sin6_len field, Linux doesn't have it
+        let ip = addr_v6.ip().octets();
+        let port = addr_v6.port();
+        let flowinfo = addr_v6.flowinfo();
+        let scope_id = addr_v6.scope_id();
+        
+        let sockaddr = {
+            #[cfg(target_os = "macos")]
+            {
+                libc::sockaddr_in6 {
+                    sin6_len: std::mem::size_of::<libc::sockaddr_in6>() as u8,
+                    sin6_family: libc::AF_INET6 as u8,
+                    sin6_port: port.to_be(),
+                    sin6_flowinfo: flowinfo,
+                    sin6_addr: libc::in6_addr { s6_addr: ip },
+                    sin6_scope_id: scope_id,
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                libc::sockaddr_in6 {
+                    sin6_family: libc::AF_INET6 as u8,
+                    sin6_port: port.to_be(),
+                    sin6_flowinfo: flowinfo,
+                    sin6_addr: libc::in6_addr { s6_addr: ip },
+                    sin6_scope_id: scope_id,
+                }
+            }
+        };
+        
+        // Bind socket
+        let bind_result = unsafe {
+            libc::bind(
+                fd,
+                &sockaddr as *const _ as *const libc::sockaddr,
+                std::mem::size_of::<libc::sockaddr_in6>() as libc::socklen_t,
+            )
+        };
+        
+        if bind_result != 0 {
+            unsafe { libc::close(fd); }
+            return Err(io::Error::last_os_error());
+        }
+        
+        // Listen on socket
+        let listen_result = unsafe {
+            libc::listen(fd, 128) // backlog = 128
+        };
+        
+        if listen_result != 0 {
+            unsafe { libc::close(fd); }
+            return Err(io::Error::last_os_error());
+        }
+        
+        // Convert to std::net::TcpListener
+        let std_listener = unsafe {
+            std::net::TcpListener::from_raw_fd(fd)
+        };
+        
+        // Convert to mio::TcpListener
+        let mio_listener = TcpListener::from_std(std_listener);
+        
+        info!("Successfully set IPV6_V6ONLY and bound IPv6 listener on {}", addr);
+        Ok(mio_listener)
+    }
+    
+    #[cfg(not(unix))]
+    fn bind_ipv6_with_v6only(addr: SocketAddr) -> io::Result<TcpListener> {
+        // On Windows, IPV6_V6ONLY is set by default, so just bind normally
+        TcpListener::bind(addr)
+    }
+
 }
 
 impl Drop for MioServer {
