@@ -143,7 +143,7 @@ fn increase_chunk_size(measurement_state: &mut MeasurementState) {
         measurement_state.total_chunks *= 2;
     } else {
         measurement_state.chunk_size =
-            (measurement_state.chunk_size * 2).min(get_max_chunk_size() as usize);
+            (measurement_state.chunk_size * 2).min(4194304 as usize);
         measurement_state
             .chunk_buffer
             .resize(measurement_state.chunk_size as usize, 0);
