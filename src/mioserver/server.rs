@@ -198,15 +198,6 @@ impl MioServer {
             });
         }
 
-        info!("Starting mDNS service for local network discovery...");
-        let mdns_config = self.server_config.clone();
-        let mdns_shutdown = self.shutdown_signal.clone();
-        tokio::spawn(async move {
-            if let Err(e) = start_mdns_service(mdns_config, mdns_shutdown).await {
-                log::warn!("mDNS service error: {}", e);
-            }
-        });
-
         if self.server_config.enable_mdns {
             info!("Starting mDNS service for local network discovery...");
             let mdns_config = self.server_config.clone();
