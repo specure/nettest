@@ -1,6 +1,6 @@
 use crate::client::state::TestPhase;
 use crate::client::constants::{
-    ACCEPT_GETCHUNKS_STRING, MAX_CHUNKS_BEFORE_SIZE_INCREASE, get_max_chunk_size, OK_COMMAND,
+    ACCEPT_GETCHUNKS_STRING, MAX_CHUNKS_BEFORE_SIZE_INCREASE, OK_COMMAND,
     PRE_DOWNLOAD_DURATION_NS,
 };
 use crate::client::state::MeasurementState;
@@ -22,7 +22,7 @@ pub fn handle_get_chunks_receive_time(
 
         if buffer_str.contains(ACCEPT_GETCHUNKS_STRING) {
             if let Some(time_ns) = parse_time_response(&buffer_str) {
-                if time_ns < PRE_DOWNLOAD_DURATION_NS && state.chunk_size < get_max_chunk_size() as usize
+                if time_ns < PRE_DOWNLOAD_DURATION_NS && state.chunk_size < 4194304
                 {
                     increase_chunk_size(state);
                     state.phase = TestPhase::GetChunksSendChunksCommand;
