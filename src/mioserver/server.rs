@@ -531,7 +531,7 @@ impl MioServer {
             #[cfg(not(target_os = "macos"))]
             {
                 libc::sockaddr_in6 {
-                    sin6_family: libc::AF_INET6 as u8,
+                    sin6_family: libc::AF_INET6 as u16,
                     sin6_port: port.to_be(),
                     sin6_flowinfo: flowinfo,
                     sin6_addr: libc::in6_addr { s6_addr: ip },
