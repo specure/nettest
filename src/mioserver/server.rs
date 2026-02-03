@@ -109,7 +109,7 @@ impl MioServer {
                     tcp_listeners.push(listener);
                 }
                 Err(e) => {
-                    debug!("Failed to bind TCP V4 listener: {}. On linux it can be because of IPv4-mapped addresses", e);
+                    info!("Failed to bind TCP V4 listener: {}. On linux it can be because of IPv4-mapped addresses", e);
                 }
             };
         }
@@ -126,7 +126,7 @@ impl MioServer {
                         tls_listeners.push(listener);
                     }
                     Err(e) => {
-                        debug!("Failed to bind TLS listener: {}", e);
+                        info!("Failed to bind TLS listener: {}", e);
                     }
                 }
             }
@@ -572,7 +572,7 @@ impl MioServer {
         // Convert to mio::TcpListener
         let mio_listener = TcpListener::from_std(std_listener);
         
-        info!("Successfully set IPV6_V6ONLY and bound IPv6 listener on {}", addr);
+        debug!("Successfully set IPV6_V6ONLY and bound IPv6 listener on {}", addr);
         Ok(mio_listener)
     }
     
