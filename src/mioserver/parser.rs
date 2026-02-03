@@ -2,7 +2,8 @@ use crate::{
     config::FileConfig,
     logger,
     mioserver::{handlers::signed_result::generate_secret_key, server::ServerConfig},
-    tokio_server::{server_config::parse_listen_address, utils::user},
+    tokio_server::{ utils::user},
+    config::parser::parse_listen_address,
 };
 use log::LevelFilter;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};

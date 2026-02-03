@@ -1,9 +1,9 @@
 use std::{
-    net::SocketAddr,
     sync::{Arc, Barrier},
     thread,
 };
 
+use crate::config::parser::parse_listen_address;
 use std::sync::Mutex;
 
 use log::debug;
@@ -44,10 +44,12 @@ pub async fn run_threads(
 
     debug!("Resolved IP: {}", ip);
 
+    debug!("config.port: {}, config.tls_port: {}", config.port, config.tls_port);
+
     let addr = if !config.use_tls {
-        format!("{}:{}", ip, config.port).parse::<SocketAddr>()?
+        parse_listen_address(&format!("{}:{}", ip, config.port)).unwrap()
     } else {
-        format!("{}:{}", ip, config.tls_port).parse::<SocketAddr>()?
+        parse_listen_address(&format!("{}:{}", ip, config.tls_port)).unwrap()
     };
 
     for i in 0..config.thread_count {
