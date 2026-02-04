@@ -18,9 +18,6 @@ pub fn handle_get_time_send_chunk(poll: &Poll, state: &mut TestState) -> io::Res
         state.clock = Some(Instant::now());
     }
 
-    let elapsed = state.clock.unwrap().elapsed().as_nanos();
-    debug!("elapsed: {}", elapsed);
-
    let chunk = CHUNK_STORAGE.get(&(chunk_size as u64)).unwrap_or_else(|| {
         if state.chunk.is_none() {
             let chunk = get_chunk(chunk_size as u64, false);
