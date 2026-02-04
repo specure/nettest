@@ -42,7 +42,7 @@ pub fn handle_put_time_result_receive_time(
         measurement_state.time_result_buffer.extend_from_slice(&measurement_state.read_buffer[..n]);
 
         let time_line = String::from_utf8_lossy(&measurement_state.time_result_buffer);
-        trace!("Time result buffer: {}", time_line.len());
+        debug!("Time result buffer: {}", time_line.len());
         
         let end = "ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n";
 
