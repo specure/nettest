@@ -70,7 +70,7 @@ pub struct MeasurementState {
     pub chunk_size: usize,
     pub ping_median: Option<u64>,
     pub phase_start_time: Option<Instant>,
-    pub read_buffer: [u8; 1024 * 8],
+    pub read_buffer: [u8; 1024 * 1024],
     pub write_buffer: [u8; 1024 * 8],
     pub read_pos: usize,
     pub write_pos: usize,
