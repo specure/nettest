@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::{debug, info};
+use log::{debug, info, trace};
 use mio::{Interest, Poll};
 use std::time::Instant;
 
@@ -42,7 +42,7 @@ pub fn handle_put_time_result_receive_time(
         measurement_state.time_result_buffer.extend_from_slice(&measurement_state.read_buffer[..n]);
 
         let time_line = String::from_utf8_lossy(&measurement_state.time_result_buffer);
-        debug!("Time result buffer: {}", time_line.len());
+        trace!("Time result buffer: {}", time_line.len());
         
         let end = "ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n";
 
@@ -50,7 +50,7 @@ pub fn handle_put_time_result_receive_time(
             // Check if this is a TIMERESULT message
             if time_line.starts_with("TIMERESULT ") {
                 let data_part = &time_line[11..]; // Remove "TIMERESULT "
-                debug!("Parsing TIMERESULT data: {}", data_part.trim());
+                trace!("Parsing TIMERESULT data: {}", data_part.trim());
                 
                 // Parse (time bytes) pairs from TIMERESULT message
                 let pairs: Vec<(u64, u64)> = data_part
@@ -68,7 +68,7 @@ pub fn handle_put_time_result_receive_time(
                     })
                     .collect();
                 
-                debug!("Parsed {} time-bytes pairs: {:?}", pairs.len(), pairs);
+                trace!("Parsed {} time-bytes pairs: {:?}", pairs.len(), pairs);
                 
                 // Add all pairs to upload_measurements
                 for (time, bytes) in &pairs {
@@ -127,6 +127,7 @@ pub fn handle_put_time_result_send_chunks(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
+    debug!("handle_put_time_result_send_chunks token {:?}", measurement_state.token);
     // debug!("handle_perf_send_chunks token {:?}", measurement_state.token);
     if measurement_state.phase_start_time.is_none() {
         measurement_state.write_pos = 0;
@@ -152,6 +153,7 @@ pub fn handle_put_time_result_send_chunks(
                 let is_last = tt >= TEST_DURATION_NS as u128;
 
                 if is_last {
+                    debug!("is_last");
                     measurement_state.phase = TestPhase::PerfSendLastChunk;
                     measurement_state.stream.reregister(
                         &poll,
