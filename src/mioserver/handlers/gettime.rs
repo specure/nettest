@@ -36,7 +36,9 @@ pub fn handle_get_time_send_chunk(poll: &Poll, state: &mut TestState) -> io::Res
         state.total_bytes_sent += n as u64;
         if state.write_pos == chunk.len() {
             trace!("handle_get_time_send_chunk token {:?}", state.token);
-            if state.clock.unwrap().elapsed().as_nanos() > duration as u128 * 1000000000 {
+            
+            state.write_pos = 0;
+            if is_last {
                 debug!("is_last");
                 state.measurement_state = ServerTestPhase::GetTimeSendLastChunk;
                 state.read_pos = 0;
@@ -51,6 +53,11 @@ pub fn handle_get_time_send_chunk(poll: &Poll, state: &mut TestState) -> io::Res
                 )?;
                 return Ok(n);
             }
+            if elapsed > duration as u128 * 1000000000 {
+                debug!("elapsed > duration");
+                return Ok(n);
+            }
+
         }
     }
 }
