@@ -47,7 +47,7 @@ pub fn handle_put_time_result_receive_chunk(
     poll: &Poll,
     state: &mut TestState,
 ) -> io::Result<usize> {
-    debug!("handle_put_time_result_receive_chunk");
+    trace!("handle_put_time_result_receive_chunk");
     loop {
         let n = state
             .stream

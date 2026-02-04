@@ -276,7 +276,7 @@ impl Worker {
                         // If n > 0, continue processing
                     }
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        debug!(
+                        trace!(
                             "Worker {}: would block for token {:?}",
                             self.id, event_token
                         );
