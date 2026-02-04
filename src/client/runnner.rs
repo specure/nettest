@@ -72,7 +72,8 @@ pub async fn run_threads(
             match greeting {
                 Ok(_) => {}
                 Err(e) => {
-                    debug!("Greeting error: {:?} token: {}", e, i);
+                    println!("Thread {i} could not connect to the server. {:?}", e);
+                    return Err(anyhow::anyhow!("Greeting failed with error: {:?}", e));
                 }
             }
             barrier.wait();
@@ -205,7 +206,7 @@ pub async fn run_threads(
         .collect();
 
     if state_refs.len() != config.thread_count {
-        println!("Failed threads: {}", config.thread_count - state_refs.len());
+        println!("Failed threads: {} out of {}", config.thread_count - state_refs.len(), config.thread_count);
     }
 
     // Save results if -save option is enabled

@@ -247,20 +247,19 @@ impl TestState {
                 .poll(&mut self.events, Some(Duration::from_nanos(test_duration_ns as u64)))?;
 
             if self.events.is_empty() {
-                let time = self
+                let elapsed = self
                     .measurement_state
                     .phase_start_time
                     .unwrap()
                     .elapsed()
                     .as_nanos();
-                let now = Instant::now().elapsed().as_nanos();
-                if now - time > test_duration_ns {
+                if elapsed > test_duration_ns {
                     info!(
                         "Test duration exceeded {:?} for token {:?}",
                         self.measurement_state.phase, self.measurement_state.token
                     );
                     self.measurement_state.failed = true;
-                    break;
+                    return Err(anyhow::anyhow!("Test duration exceeded"));
                 }
             }
 
