@@ -91,6 +91,7 @@ pub fn handle_put_time_result_receive_time(
             measurement_state.read_pos = 0;
             measurement_state.write_pos = 0;
             measurement_state.time_result_buffer.clear();
+            debug!("PerfCompleted");
             return Ok(n);
         }
     }
