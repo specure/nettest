@@ -130,7 +130,7 @@ impl TestState {
             download_time: None,
             chunk_size: MIN_CHUNK_SIZE as usize,
             ping_median: None,
-            read_buffer: [0u8; 1024 * 8],
+            read_buffer: [0u8; 1024 * 1024],
             download_measurements: VecDeque::new(),
             upload_measurements: VecDeque::new(),
             phase_start_time: None,
