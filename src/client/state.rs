@@ -47,6 +47,14 @@ pub enum TestPhase {
     PerfReceiveTime,
     PerfCompleted,
 
+    PutSendCommand,
+    PutReceiveOk,
+    PutSendChunks,
+    PutReceiveTimeBytes,
+    PutSendLastChunk,
+    PutReceiveFinalTime,
+    PutCompleted,
+
     SignedResultSend,
     SignedResultReceive,
     SignedResultSendOk,
@@ -228,6 +236,19 @@ impl TestState {
             Interest::WRITABLE,
         )?;
         self.process_phase(TestPhase::GetTimeCompleted, ONE_SECOND_NS * 12)?;
+        Ok(())
+    }
+
+    pub fn run_put(&mut self) -> Result<()> {
+        debug!("Run PUT");
+        self.measurement_state.phase = TestPhase::PutSendCommand;
+        self.measurement_state.stream.reregister(
+            &mut self.poll,
+            self.measurement_state.token,
+            Interest::WRITABLE,
+        )?;
+        self.process_phase(TestPhase::PutCompleted, ONE_SECOND_NS * 10)?;
+        debug!("Run PUT completed");
         Ok(())
     }
 

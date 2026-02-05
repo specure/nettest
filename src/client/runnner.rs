@@ -128,7 +128,11 @@ pub async fn run_threads(
 
             barrier.wait();
 
-            state.run_perf_test().unwrap();
+            if config.legacy {
+                state.run_put().unwrap();
+            } else {
+                state.run_perf_test().unwrap();
+            }
             {
                 let mut stats = stats.lock().unwrap();
                 stats.upload_measurements.push(

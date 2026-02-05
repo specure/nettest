@@ -3,6 +3,6 @@ pub mod get_chunks;
 pub mod ping;
 pub mod basic_handler;
 pub mod get_time;
-// pub mod perf;
+pub mod put;
 pub mod puttimeresult;
 pub mod signed_result;
