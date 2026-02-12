@@ -15,6 +15,7 @@ pub fn handle_put_send_command(
     state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
     debug!("handle_put_send_command token {:?}", state.token);
+    println!("chunk_size: {}", state.chunk_size);
     let command = format!("PUT {}\n", state.chunk_size);
     if state.write_pos == 0 {
         state.write_buffer[..command.len()].copy_from_slice(command.as_bytes());
