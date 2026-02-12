@@ -168,7 +168,7 @@ pub fn handle_put_receive_time_bytes(
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 // No data available yet, return to allow poll() to check again
                 debug!("WouldBlock - no data available, returning");
-                return Ok(0);
+                return Err(e);
             }
             Err(e) => return { debug!("Error reading time bytes: {}", e); Err(e) },
         };
