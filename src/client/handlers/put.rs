@@ -169,6 +169,8 @@ pub fn handle_put_receive_time_bytes(
 
         let buffer_str = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
 
+        debug!("buffer_str: {}", buffer_str);
+
         // Read until we get a complete line (ending with \n)
         if let Some(newline_pos) = buffer_str.find('\n') {
             // Extract the complete message up to and including \n
@@ -195,6 +197,7 @@ pub fn handle_put_receive_time_bytes(
             // Continue sending chunks
             state.phase = TestPhase::PutSendChunks;
             state.read_pos = 0;
+
             state
                 .stream
                 .reregister(&poll, state.token, Interest::WRITABLE)?;
