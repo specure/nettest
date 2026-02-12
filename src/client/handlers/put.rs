@@ -163,10 +163,18 @@ pub fn handle_put_receive_time_bytes(
 
     loop {
         debug!("reading time bytes, read_pos: {}", state.read_pos);
-        let n = state
-            .stream
-            .read(&mut state.read_buffer[state.read_pos..])?;
+        let n = match state.stream.read(&mut state.read_buffer[state.read_pos..]) {
+            Ok(n) => n,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                // No data available yet, return to allow poll() to check again
+                debug!("WouldBlock - no data available, returning");
+                return Ok(0);
+            }
+            Err(e) => return { debug!("Error reading time bytes: {}", e); Err(e) },
+        };
+        
         debug!("read {} bytes", n);
+        
         state.read_pos += n;
 
         debug!("read_pos: {}", state.read_pos);
@@ -188,25 +196,27 @@ pub fn handle_put_receive_time_bytes(
                     time_ns, bytes, state.token
                 );
 
-                // Store measurement
-                state.upload_measurements.push_back((time_ns, bytes));
-            } else {
-                debug!(
-                    "Failed to parse TIME BYTES from message: {}",
-                    message.trim()
-                );
-            }
-
-         
-            // Continue sending chunks
-            state.phase = TestPhase::PutSendChunks;
-            state.read_pos = 0;
-
-            state
-                .stream
-                .reregister(&poll, state.token, Interest::WRITABLE)?;
-            return Ok(n);
+            // Store measurement
+            state.upload_measurements.push_back((time_ns, bytes));
+        } else {
+            debug!(
+                "Failed to parse TIME BYTES from message: {}",
+                message.trim()
+            );
         }
+
+        // Continue sending chunks
+        state.phase = TestPhase::PutSendChunks;
+        state.read_pos = 0;
+
+        state
+            .stream
+            .reregister(&poll, state.token, Interest::WRITABLE)?;
+        return Ok(n);
+        }
+        
+        // No complete line yet, continue reading in the loop
+        // The loop will call read() again, which will return WouldBlock if no data available
     }
 }
 
