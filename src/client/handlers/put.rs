@@ -127,6 +127,8 @@ pub fn handle_put_send_chunks(
                     return Ok(written);
                 } else {
                     state.write_pos = 0;
+
+                    state.read_pos = 0;
                     
                     // After sending each chunk, server sends TIME BYTES
                     // Switch to readable to receive TIME BYTES from server
@@ -189,17 +191,10 @@ pub fn handle_put_receive_time_bytes(
                 );
             }
 
-            // Clear processed data (move remaining data to start of buffer)
-            let remaining = state.read_pos - (newline_pos + 1);
-            if remaining > 0 {
-                state
-                    .read_buffer
-                    .copy_within(newline_pos + 1..state.read_pos, 0);
-            }
-            state.read_pos = remaining;
-
+         
             // Continue sending chunks
             state.phase = TestPhase::PutSendChunks;
+            state.read_pos = 0;
             state
                 .stream
                 .reregister(&poll, state.token, Interest::WRITABLE)?;
