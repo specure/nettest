@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::debug;
+use log::{debug, info, trace};
 use mio::{Interest, Poll};
 use std::time::Instant;
 
@@ -51,6 +51,7 @@ pub fn handle_put_receive_ok(
             if received.starts_with(OK_COMMAND) {
                 state.phase = TestPhase::PutSendChunks;
                 state.phase_start_time = Some(Instant::now());
+                debug!("PUT test started, phase_start_time set, target duration: {} ns ({} seconds)", UPLINK_DURATION_NS, UPLINK_DURATION_NS as f64 / 1_000_000_000.0);
                 state
                     .stream
                     .reregister(&poll, state.token, Interest::WRITABLE)?;
@@ -67,62 +68,78 @@ pub fn handle_put_send_chunks(
     poll: &Poll,
     state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
-    debug!("handle_put_send_chunks token {:?}", state.token);
-
+    trace!("handle_put_send_chunks token {:?}", state.token);
+    
     if state.phase_start_time.is_none() {
+        state.write_pos = 0;
         state.phase_start_time = Some(Instant::now());
     }
-
-    let start_time = state.phase_start_time.unwrap();
-    let elapsed_ns = start_time.elapsed().as_nanos() as u64;
-
-    // Check if test duration exceeded
-    if elapsed_ns >= UPLINK_DURATION_NS {
-        state.phase = TestPhase::PutSendLastChunk;
-        state
-            .stream
-            .reregister(&poll, state.token, Interest::WRITABLE)?;
-        state.write_pos = 0;
-        return Ok(0);
-    }
-
-    // Get chunk buffer
-    let buffer = CHUNK_STORAGE.get(&(state.chunk_size as u64)).unwrap();
-
-    loop {
-        // Write from current position
-        let written = state.stream.write(&buffer[state.write_pos..])?;
-        if written == 0 {
-            return Ok(0);
-        }
-        state.bytes_sent += written as u64;
-        state.write_pos += written;
-
-        // Check if chunk is complete
-        if state.write_pos == state.chunk_size {
-            let elapsed = start_time.elapsed().as_nanos() as u64;
-
-            // Check if we should send last chunk
-            if elapsed >= UPLINK_DURATION_NS {
+    
+    if let Some(start_time) = state.phase_start_time {
+        let buffer = CHUNK_STORAGE
+            .get(&(state.chunk_size as u64))
+            .unwrap();
+        loop {
+            // Check time before writing to determine if this should be the last chunk
+            let elapsed_ns = start_time.elapsed().as_nanos();
+            let is_last = elapsed_ns >= UPLINK_DURATION_NS as u128;
+            
+            if is_last && state.write_pos == 0 {
+                // Time limit reached before starting to write this chunk, switch to sending last chunk
                 state.phase = TestPhase::PutSendLastChunk;
-                state
-                    .stream
-                    .reregister(&poll, state.token, Interest::WRITABLE)?;
-                state.write_pos = 0;
-                return Ok(written);
+                state.stream.reregister(
+                    &poll,
+                    state.token,
+                    Interest::WRITABLE,
+                )?;
+                debug!("Time limit reached before chunk start ({} ns >= {} ns), switching to last chunk", elapsed_ns, UPLINK_DURATION_NS);
+                return Ok(0);
             }
+            
+            // Write from current position
+            let written = state.stream.write(&buffer[state.write_pos..])?;
+            if written == 0 {
+                info!("No data to write");
+                return Ok(0);
+            }
+            state.bytes_sent += written as u64;
+            state.write_pos += written;
 
-            // Reset for next chunk
-            state.write_pos = 0;
+            if state.write_pos == state.chunk_size {
+                // Chunk completed, check time again
+                let tt = start_time.elapsed().as_nanos();
+                let is_last_after_chunk = tt >= UPLINK_DURATION_NS as u128;
 
-            // After sending each chunk, server sends TIME BYTES
-            // Switch to readable to receive TIME BYTES from server
-            state.phase = TestPhase::PutReceiveTimeBytes;
-            state
-                .stream
-                .reregister(&poll, state.token, Interest::READABLE)?;
-            return Ok(written);
+                debug!("Chunk completed: elapsed={} ns ({} s), target={} ns ({} s), is_last={}", 
+                    tt, tt as f64 / 1_000_000_000.0, 
+                    UPLINK_DURATION_NS, UPLINK_DURATION_NS as f64 / 1_000_000_000.0,
+                    is_last_after_chunk);
+
+                if is_last_after_chunk {
+                    state.phase = TestPhase::PutSendLastChunk;
+                    state.stream.reregister(
+                        &poll,
+                        state.token,
+                        Interest::WRITABLE,
+                    )?;
+                    state.write_pos = 0;
+                    debug!("Time limit reached after chunk completion ({} ns >= {} ns), switching to last chunk", tt, UPLINK_DURATION_NS);
+                    return Ok(written);
+                } else {
+                    state.write_pos = 0;
+                    
+                    // After sending each chunk, server sends TIME BYTES
+                    // Switch to readable to receive TIME BYTES from server
+                    state.phase = TestPhase::PutReceiveTimeBytes;
+                    state
+                        .stream
+                        .reregister(&poll, state.token, Interest::READABLE)?;
+                    return Ok(written);
+                }
+            }
         }
+    } else {
+        return Ok(0);
     }
 }
 
@@ -185,24 +202,23 @@ pub fn handle_put_send_last_chunk(
     poll: &Poll,
     state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
-    debug!("handle_put_send_last_chunk token {:?}", state.token);
-
+    trace!("handle_put_send_last_chunk token {:?}", state.token);
     let buffer = CHUNK_TERMINATION_STORAGE
         .get(&(state.chunk_size as u64))
         .unwrap();
 
     loop {
+        // Write from current position
         let n = state.stream.write(&buffer[state.write_pos..])?;
         state.bytes_sent += n as u64;
         state.write_pos += n;
-
         if state.write_pos == state.chunk_size {
             state.phase = TestPhase::PutReceiveFinalTime;
-            state
-                .stream
-                .reregister(&poll, state.token, Interest::READABLE)?;
-            state.write_pos = 0;
-            state.read_pos = 0;
+            state.stream.reregister(
+                &poll,
+                state.token,
+                Interest::READABLE,
+            )?;
             return Ok(n);
         }
     }
@@ -212,7 +228,7 @@ pub fn handle_put_receive_final_time(
     poll: &Poll,
     state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
-    debug!("handle_put_receive_final_time token {:?}", state.token);
+    trace!("handle_put_receive_final_time token {:?}", state.token);
 
     loop {
         let n = state
@@ -220,22 +236,77 @@ pub fn handle_put_receive_final_time(
             .read(&mut state.read_buffer[state.read_pos..])?;
         state.read_pos += n;
 
-        // Read until we get a complete line (ending with \n)
         let buffer_str = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
 
-        // Check for ACCEPT message first - this indicates the final TIME has been sent
+        // Check for ACCEPT message - this indicates the final TIME has been sent
         if buffer_str.contains("ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n") {
-            // Now parse the final TIME <t> response (server sends TIME <t>\n before ACCEPT)
-            if let Some(newline_pos) = buffer_str.find('\n') {
-                let message = &buffer_str[..newline_pos + 1];
-
-                if let Some(time_ns) = parse_time_response(message) {
-                    debug!("Received final TIME {} token {:?}", time_ns, state.token);
-
-                    // Store final time (bytes were already counted during chunk sending)
-                    state.upload_time = Some(time_ns);
-                    // state.upload_bytes = Some(state.bytes_sent);
+            // Process all messages in buffer before ACCEPT
+            let accept_pos = buffer_str.find("ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n").unwrap();
+            let before_accept = &buffer_str[..accept_pos];
+            
+            // Process all TIME BYTES messages before ACCEPT
+            let mut processed_pos = 0;
+            while let Some(newline_pos) = before_accept[processed_pos..].find('\n') {
+                let full_pos = processed_pos + newline_pos;
+                let message = &before_accept[processed_pos..full_pos + 1];
+                
+                // Check if it's a TIME BYTES message
+                if message.starts_with("TIME ") && message.contains(" BYTES ") {
+                    if let Some(time_bytes) = parse_time_bytes_response(message) {
+                        let (time_ns, bytes) = time_bytes;
+                        debug!("Parsed TIME BYTES from final buffer: TIME {} BYTES {}", time_ns, bytes);
+                        state.upload_measurements.push_back((time_ns, bytes));
+                    }
                 }
+                
+                processed_pos = full_pos + 1;
+            }
+            
+            // Find the last TIME line (without BYTES) before ACCEPT
+            let mut last_time_pos = None;
+            let mut search_pos = 0;
+            while let Some(time_pos) = before_accept[search_pos..].find("TIME ") {
+                let full_pos = search_pos + time_pos;
+                // Check if this is "TIME <t>\n" (not "TIME <t> BYTES")
+                if let Some(newline_pos) = before_accept[full_pos..].find('\n') {
+                    let time_line = &before_accept[full_pos..full_pos + newline_pos];
+                    // If it doesn't contain "BYTES", it's the final TIME
+                    if !time_line.contains("BYTES") {
+                        last_time_pos = Some(full_pos);
+                    }
+                }
+                search_pos = full_pos + 5; // Move past "TIME "
+            }
+            
+            if let Some(time_pos) = last_time_pos {
+                if let Some(newline_pos) = before_accept[time_pos..].find('\n') {
+                    let time_line = &before_accept[time_pos..time_pos + newline_pos];
+                    if let Some(time_ns) = parse_time_response(time_line) {
+                        debug!("Received final TIME {} token {:?}", time_ns, state.token);
+                        state.upload_time = Some(time_ns);
+                    } else {
+                        debug!("Failed to parse final TIME from line: {}", time_line);
+                    }
+                }
+            } else {
+                debug!("No final TIME found before ACCEPT message");
+            }
+
+            // Print last 20 pairs from upload_measurements
+            let total_measurements = state.upload_measurements.len();
+            let start_idx = if total_measurements > 20 {
+                total_measurements - 20
+            } else {
+                0
+            };
+            debug!("Total upload_measurements: {}, showing last {} pairs:", total_measurements, total_measurements - start_idx);
+            for (idx, (time, bytes)) in state.upload_measurements.iter().enumerate().skip(start_idx) {
+                debug!("  [{}] TIME: {} ns ({:.3} s), BYTES: {} ({:.2} MB)", 
+                    idx, 
+                    time, 
+                    *time as f64 / 1_000_000_000.0,
+                    bytes,
+                    *bytes as f64 / (1024.0 * 1024.0));
             }
 
             state.phase = TestPhase::PutCompleted;
@@ -248,13 +319,32 @@ pub fn handle_put_receive_final_time(
         }
 
         // Continue reading if ACCEPT not found yet
-        if let Some(newline_pos) = buffer_str.find('\n') {
-            // Clear processed data (move remaining data to start of buffer)
-            let remaining = state.read_pos - (newline_pos + 1);
+        // Process any complete TIME BYTES messages we've received so far
+        let mut processed_pos = 0;
+        while let Some(newline_pos) = buffer_str[processed_pos..].find('\n') {
+            let full_pos = processed_pos + newline_pos;
+            let message = &buffer_str[processed_pos..full_pos + 1];
+            
+            // Check if it's a TIME BYTES message
+            if message.starts_with("TIME ") && message.contains(" BYTES ") {
+                if let Some(time_bytes) = parse_time_bytes_response(message) {
+                    let (time_ns, bytes) = time_bytes;
+                    debug!("Parsed TIME BYTES while reading final time: TIME {} BYTES {}", time_ns, bytes);
+                    state.upload_measurements.push_back((time_ns, bytes));
+                }
+            }
+            
+            processed_pos = full_pos + 1;
+        }
+        
+        // Clear processed data (move remaining data to start of buffer)
+        if processed_pos > 0 {
+            drop(buffer_str); // Drop borrow before modifying buffer
+            let remaining = state.read_pos - processed_pos;
             if remaining > 0 {
                 state
                     .read_buffer
-                    .copy_within(newline_pos + 1..state.read_pos, 0);
+                    .copy_within(processed_pos..state.read_pos, 0);
             }
             state.read_pos = remaining;
         }
@@ -281,7 +371,9 @@ fn parse_time_response(buffer_str: &str) -> Option<u64> {
 fn parse_time_bytes_response(buffer_str: &str) -> Option<(u64, u64)> {
     // Look for "TIME <t> BYTES <b>" pattern
     if let Some(time_start) = buffer_str.find("TIME ") {
+        debug!("time_start: {}", time_start);
         if let Some(bytes_start) = buffer_str[time_start..].find(" BYTES ") {
+            debug!("bytes_start: {}", bytes_start);
             // Extract time: between "TIME " and " BYTES "
             let time_str_start = time_start + 5;
             let time_str_end = time_start + bytes_start;
@@ -295,6 +387,7 @@ fn parse_time_bytes_response(buffer_str: &str) -> Option<(u64, u64)> {
             let bytes_str = &buffer_str[bytes_str_start..bytes_str_start + bytes_str_end].trim();
 
             if let (Ok(time), Ok(bytes)) = (time_str.parse::<u64>(), bytes_str.parse::<u64>()) {
+                debug!("time: {}, bytes: {}", time, bytes);
                 return Some((time, bytes));
             }
         }
