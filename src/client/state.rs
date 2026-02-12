@@ -9,7 +9,7 @@ use std::io;
 use crate::client::handlers::basic_handler::{
     handle_client_readable_data, handle_client_writable_data,
 };
-use crate::config::constants::MIN_CHUNK_SIZE;
+use crate::client::constants::{MIN_CHUNK_SIZE, get_max_chunk_size};
 use crate::stream::stream::Stream;
 
 pub const ONE_SECOND_NS: u128 = 1_000_000_000;
@@ -136,7 +136,7 @@ impl TestState {
             upload_time: None,
             upload_speed: None,
             download_time: None,
-            chunk_size: MIN_CHUNK_SIZE as usize,
+            chunk_size: get_max_chunk_size() as usize,
             ping_median: None,
             read_buffer: [0u8; 1024 * 8 * 16],
             download_measurements: VecDeque::new(),
