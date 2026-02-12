@@ -123,7 +123,7 @@ pub fn handle_put_send_chunks(
                         Interest::WRITABLE,
                     )?;
                     state.write_pos = 0;
-                    debug!("Time limit reached after chunk completion ({} ns >= {} ns), switching to last chunk", tt, UPLINK_DURATION_NS);
+                    debug!("Time limit reached after chunk completion ({} ns >= {} ns), switching to last chunk, written: {}", tt, UPLINK_DURATION_NS, written);
                     return Ok(written);
                 } else {
                     state.write_pos = 0;
@@ -134,7 +134,17 @@ pub fn handle_put_send_chunks(
                     state
                         .stream
                         .reregister(&poll, state.token, Interest::READABLE)?;
-                    return Ok(written);
+                    
+                    // Try to read immediately - data might already be available
+                    // This handles the case where server sent data while we were writing
+                    match handle_put_receive_time_bytes(poll, state) {
+                        Ok(n) => return Ok(written + n),
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            // No data available yet, will be handled by next readable event
+                            return Ok(written);
+                        }
+                        Err(e) => return Err(e),
+                    }
                 }
             }
         }
