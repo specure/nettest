@@ -162,10 +162,14 @@ pub fn handle_put_receive_time_bytes(
     debug!("handle_put_receive_time_bytes token {:?}", state.token);
 
     loop {
+        debug!("reading time bytes, read_pos: {}", state.read_pos);
         let n = state
             .stream
             .read(&mut state.read_buffer[state.read_pos..])?;
+        debug!("read {} bytes", n);
         state.read_pos += n;
+
+        debug!("read_pos: {}", state.read_pos);
 
         let buffer_str = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
 
