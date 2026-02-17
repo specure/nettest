@@ -337,7 +337,7 @@ pub fn handle_put_receive_final_time(
                 .reregister(&poll, state.token, Interest::READABLE)?;
             state.read_pos = 0;
             state.write_pos = 0;
-            return Ok(n);
+            return Ok(1);
         }
 
         // Continue reading if ACCEPT not found yet
