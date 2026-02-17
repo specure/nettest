@@ -306,7 +306,7 @@ impl TestState {
                         continue;
                     }
                     Err(e) => {
-                        trace!("Error: {:?}", e);
+                        println!("Error: {:?}", e);
                         self.measurement_state.failed = true;
                         break;
                     }
