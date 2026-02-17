@@ -278,6 +278,7 @@ impl TestState {
                         self.measurement_state.phase, self.measurement_state.token
                     );
                     self.measurement_state.failed = true;
+                    println!("Test duration exceeded for token {:?}", self.measurement_state.token);
                     return Err(anyhow::anyhow!("Test duration exceeded"));
                 }
             }
@@ -298,6 +299,7 @@ impl TestState {
                         if n == 0 {
                             trace!("No data to read");
                             self.measurement_state.failed = true;
+                            println!("No data to read for token {:?}", self.measurement_state.token);
                         }
                         // If n > 0, continue processing
                     }
