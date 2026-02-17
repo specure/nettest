@@ -7,6 +7,7 @@ use crate::config::FileConfig;
 use log::{info, LevelFilter};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use crate::client::state::TestPhase;
 
 pub struct CommandLineArgs {
     pub thread_count: usize,
@@ -20,6 +21,7 @@ pub struct Measurement {
     pub measurements: Vec<(u64, u64)>,
     pub failed: bool,
     pub thread_id: usize,
+    pub phase: TestPhase,
     pub upload_measurements: Vec<(u64, u64)>,
     pub envelope: Option<String>,
 }

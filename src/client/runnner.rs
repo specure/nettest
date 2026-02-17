@@ -172,6 +172,7 @@ pub async fn run_threads(
             let result: Measurement = Measurement {
                 thread_id: i,
                 failed: state.measurement_state().failed,
+                phase: state.measurement_state().phase.clone(),
                 measurements: state
                     .measurement_state()
                     .download_measurements
@@ -211,6 +212,11 @@ pub async fn run_threads(
 
     if state_refs.len() != config.thread_count {
         println!("Failed threads: {} out of {}", config.thread_count - state_refs.len(), config.thread_count);
+        for s in state_refs.iter() {
+            if s.failed {
+                println!("Failed thread {} on phase {:?}", s.thread_id, s.phase);
+            }
+        }
     }
 
     // Save results if -save option is enabled
