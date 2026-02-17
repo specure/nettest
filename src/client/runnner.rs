@@ -6,7 +6,7 @@ use std::{
 use crate::config::parser::parse_listen_address;
 use std::sync::Mutex;
 
-use log::debug;
+use log::{debug, info};
 
 use crate::client::{
     calculator::{
@@ -203,7 +203,7 @@ pub async fn run_threads(
 
     for s in states.iter() {
         if s.failed {
-            println!("Failed thread {} on phase {:?}", s.thread_id, s.phase);
+            info!("Failed thread {} on phase {:?}", s.thread_id, s.phase);
         }
     }
 
@@ -213,6 +213,10 @@ pub async fn run_threads(
         .filter(|s| !s.failed)
         .cloned()
         .collect();
+
+    if state_refs.len() != config.thread_count {
+        println!("Failed threads: {} out of {}", config.thread_count - state_refs.len(), config.thread_count);
+    }
 
     let envelopes: Vec<Option<String>> = state_refs.iter().map(|s| s.envelope.clone()).collect();
 
