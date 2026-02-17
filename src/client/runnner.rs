@@ -44,7 +44,10 @@ pub async fn run_threads(
 
     debug!("Resolved IP: {}", ip);
 
-    debug!("config.port: {}, config.tls_port: {}", config.port, config.tls_port);
+    debug!(
+        "config.port: {}, config.tls_port: {}",
+        config.port, config.tls_port
+    );
 
     let addr = if !config.use_tls {
         parse_listen_address(&format!("{}:{}", ip, config.port)).unwrap()
@@ -200,12 +203,9 @@ pub async fn run_threads(
 
     println!("States: {:?}", states.len());
 
-    if states.len() != config.thread_count {
-        println!("Failed threads: {} out of {}", config.thread_count - states.len(), config.thread_count);
-        for s in states.iter() {
-            if s.failed {
-                println!("Failed thread {} on phase {:?}", s.thread_id, s.phase);
-            }
+    for s in states.iter() {
+        if s.failed {
+            println!("Failed thread {} on phase {:?}", s.thread_id, s.phase);
         }
     }
 
@@ -218,11 +218,7 @@ pub async fn run_threads(
 
     println!("State refs: {:?}", state_refs.len());
 
-    let envelopes: Vec<Option<String>> = state_refs
-        .iter()
-        .map(|s| s.envelope.clone())
-        .collect();
-
+    let envelopes: Vec<Option<String>> = state_refs.iter().map(|s| s.envelope.clone()).collect();
 
     // Save results if -save option is enabled
     if config.save_results {
