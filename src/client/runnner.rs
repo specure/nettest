@@ -130,7 +130,6 @@ pub async fn run_threads(
 
             if config.legacy {
                 state.run_put().unwrap();
-                println!("PUT completed for thread {}", i);
             } else {
                 state.run_perf_test().unwrap();
             }
@@ -201,6 +200,15 @@ pub async fn run_threads(
 
     println!("States: {:?}", states.len());
 
+    if states.len() != config.thread_count {
+        println!("Failed threads: {} out of {}", config.thread_count - states.len(), config.thread_count);
+        for s in states.iter() {
+            if s.failed {
+                println!("Failed thread {} on phase {:?}", s.thread_id, s.phase);
+            }
+        }
+    }
+
     let state_refs: Vec<Measurement> = states
         .iter()
         //TODO whar to do on failed threads?
@@ -215,14 +223,6 @@ pub async fn run_threads(
         .map(|s| s.envelope.clone())
         .collect();
 
-    if state_refs.len() != config.thread_count {
-        println!("Failed threads: {} out of {}", config.thread_count - state_refs.len(), config.thread_count);
-        for s in state_refs.iter() {
-            if s.failed {
-                println!("Failed thread {} on phase {:?}", s.thread_id, s.phase);
-            }
-        }
-    }
 
     // Save results if -save option is enabled
     if config.save_results {
