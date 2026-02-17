@@ -159,7 +159,7 @@ pub fn handle_put_receive_time_bytes(
     poll: &Poll,
     state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
-    debug!("handle_put_receive_time_bytes token {:?}", state.token);
+    println!("handle_put_receive_time_bytes token {:?}", state.token);
 
     loop {
         debug!("reading time bytes, read_pos: {}", state.read_pos);
