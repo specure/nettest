@@ -93,7 +93,8 @@ pub fn handle_put_send_chunks(
                     Interest::WRITABLE,
                 )?;
                 debug!("Time limit reached before chunk start ({} ns >= {} ns), switching to last chunk", elapsed_ns, UPLINK_DURATION_NS);
-                return Ok(0);
+                // Return Ok(1) to indicate successful phase switch (not Ok(0) which would be treated as error)
+                return Ok(1);
             }
             
             // Write from current position
@@ -337,7 +338,7 @@ pub fn handle_put_receive_final_time(
                 .reregister(&poll, state.token, Interest::READABLE)?;
             state.read_pos = 0;
             state.write_pos = 0;
-            return Ok(1);
+            return Ok(n);
         }
 
         // Continue reading if ACCEPT not found yet
