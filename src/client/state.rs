@@ -240,7 +240,6 @@ impl TestState {
     }
 
     pub fn run_put(&mut self) -> Result<()> {
-        debug!("Run PUT");
         self.measurement_state.phase = TestPhase::PutSendCommand;
         self.measurement_state.stream.reregister(
             &mut self.poll,
@@ -248,7 +247,6 @@ impl TestState {
             Interest::WRITABLE,
         )?;
         self.process_phase(TestPhase::PutCompleted, ONE_SECOND_NS * 10)?;
-        debug!("Run PUT completed");
         Ok(())
     }
 

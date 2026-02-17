@@ -191,7 +191,7 @@ pub fn handle_put_receive_time_bytes(
             // Parse TIME BYTES response
             if let Some(time_bytes) = parse_time_bytes_response(message) {
                 let (time_ns, bytes) = time_bytes;
-                debug!(
+                println!(
                     "Received TIME {} BYTES {} token {:?}",
                     time_ns, bytes, state.token
                 );

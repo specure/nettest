@@ -129,7 +129,9 @@ pub async fn run_threads(
             barrier.wait();
 
             if config.legacy {
+                println!("Running PUT for thread {}", i);
                 state.run_put().unwrap();
+                println!("PUT completed for thread {}", i);
             } else {
                 state.run_perf_test().unwrap();
             }
