@@ -201,8 +201,6 @@ pub async fn run_threads(
         .map(|s| s.unwrap())
         .collect();
 
-    println!("States: {:?}", states.len());
-
     for s in states.iter() {
         if s.failed {
             println!("Failed thread {} on phase {:?}", s.thread_id, s.phase);
@@ -215,8 +213,6 @@ pub async fn run_threads(
         .filter(|s| !s.failed)
         .cloned()
         .collect();
-
-    println!("State refs: {:?}", state_refs.len());
 
     let envelopes: Vec<Option<String>> = state_refs.iter().map(|s| s.envelope.clone()).collect();
 

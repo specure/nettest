@@ -297,9 +297,8 @@ impl TestState {
                 match should_remove {
                     Ok(n) => {
                         if n == 0 {
-                            trace!("No data to read");
+                            info!("No data to read for token {:?} phase: {:?}", self.measurement_state.token, self.measurement_state.phase);
                             self.measurement_state.failed = true;
-                            println!("No data to read for token {:?}", self.measurement_state.token);
                         }
                         // If n > 0, continue processing
                     }
@@ -308,7 +307,7 @@ impl TestState {
                         continue;
                     }
                     Err(e) => {
-                        println!("Error: {:?}", e);
+                        info!("Error: {:?} for token {:?} phase: {:?}", e, self.measurement_state.token, self.measurement_state.phase);
                         self.measurement_state.failed = true;
                         break;
                     }
