@@ -129,7 +129,6 @@ pub async fn run_threads(
             barrier.wait();
 
             if config.legacy {
-                println!("Running PUT for thread {}", i);
                 state.run_put().unwrap();
                 println!("PUT completed for thread {}", i);
             } else {
@@ -200,12 +199,16 @@ pub async fn run_threads(
         .map(|s| s.unwrap())
         .collect();
 
+    println!("States: {:?}", states.len());
+
     let state_refs: Vec<Measurement> = states
         .iter()
         //TODO whar to do on failed threads?
         .filter(|s| !s.failed)
         .cloned()
         .collect();
+
+    println!("State refs: {:?}", state_refs.len());
 
     let envelopes: Vec<Option<String>> = state_refs
         .iter()
