@@ -196,31 +196,3 @@ pub fn handle_put_time_result_send_last_chunk(
         }
     }
 }
-
-pub fn calculate_upload_speed(bytes: u64, time_ns: u64) -> f64 {
-    // Convert nanoseconds to seconds, ensuring we don't lose precision
-    let time_seconds = if time_ns > u64::MAX / 1_000_000_000 {
-        // If time_ns is very large, divide first to avoid overflow
-        (time_ns / 1_000_000_000) as f64 + (time_ns % 1_000_000_000) as f64 / 1_000_000_000.0
-    } else {
-        time_ns as f64 / 1_000_000_000.0
-    };
-    let speed_bps: f64 = bytes as f64 / time_seconds; // Convert to bytes per second
-    debug!("Upload speed calculation:");
-    debug!("  Total bytes sent: {}", bytes);
-    debug!(
-        " Total bytes sent GB: {}",
-        bytes as f64 / (1024.0 * 1024.0 * 1024.0)
-    );
-    debug!("  Total time: {:.9} seconds ({} ns)", time_seconds, time_ns);
-    debug!(
-        "  Speed: {:.2} MB/s ({:.2} GB/s)  GBit/s: {}  Mbit/s: {}",
-        speed_bps / (1024.0 * 1024.0),
-        speed_bps / (1024.0 * 1024.0 * 1024.0),
-        speed_bps * 8.0 / (1024.0 * 1024.0 * 1024.0),
-        speed_bps * 8.0 / (1024.0 * 1024.0)
-    );
-    speed_bps
-}
-
-

@@ -44,7 +44,6 @@ impl GraphService {
             })
             .collect();
 
-        // let upload_speed = calculate_upload_speed(&state_refs);
 
         // Render graphs using GraphService
         if !download_results.is_empty()  {
