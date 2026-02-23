@@ -138,14 +138,14 @@ pub async fn run_threads(
             }
             {
                 let mut stats = stats.lock().unwrap();
-                stats.upload_measurements.push(
-                    state
-                        .measurement_state()
-                        .upload_measurements
-                        .iter()
-                        .cloned()
-                        .collect(),
-                );
+                let a = state
+                    .measurement_state()
+                    .upload_measurements
+                    .iter()
+                    .cloned()
+                    .collect();
+                debug!("upload_measurements: {:?}", a);
+                stats.upload_measurements.push(a);
             }
 
             barrier.wait();
@@ -215,7 +215,11 @@ pub async fn run_threads(
         .collect();
 
     if state_refs.len() != config.thread_count {
-        println!("Failed threads: {} out of {}", config.thread_count - state_refs.len(), config.thread_count);
+        println!(
+            "Failed threads: {} out of {}",
+            config.thread_count - state_refs.len(),
+            config.thread_count
+        );
     }
 
     let envelopes: Vec<Option<String>> = state_refs.iter().map(|s| s.envelope.clone()).collect();
