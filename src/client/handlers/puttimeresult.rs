@@ -67,7 +67,7 @@ pub fn handle_put_time_result_receive_time(
                     })
                     .collect();
                 
-                trace!("Parsed {} time-bytes pairs: {:?}", pairs.len(), pairs);
+                debug!("Parsed {} time-bytes pairs: {:?}", pairs.len(), pairs);
                 
                 // Add all pairs to upload_measurements
                 for (time, bytes) in &pairs {
