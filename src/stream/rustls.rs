@@ -97,7 +97,7 @@ impl RustlsStream {
             let to_copy = buf.len().min(self.temp_buf.len());
             buf[..to_copy].copy_from_slice(&self.temp_buf[..to_copy]);
             self.temp_buf.drain(..to_copy);
-            debug!("Left {} bytes in temp_buf", self.temp_buf.len());
+            trace!("Left {} bytes in temp_buf", self.temp_buf.len());
             return Ok(to_copy);
         } 
 
@@ -111,7 +111,6 @@ impl RustlsStream {
                 if self.conn.wants_write() {
                     self.conn.write_tls(&mut self.stream)?;
                 }
-                debug!("WouldBlock 1");
                 if self.temp_buf.len() > 0 {
                     let to_copy = buf.len().min(self.temp_buf.len());
                     buf[..to_copy].copy_from_slice(&self.temp_buf[..to_copy]);
@@ -143,7 +142,7 @@ impl RustlsStream {
         // debug!("Processing new packets");
         let io_state = match self.conn.process_new_packets() {
             Ok(state) => {
-                debug!("Processed new packets {:?}", state.plaintext_bytes_to_read());
+                trace!("Processed new packets {:?}", state.plaintext_bytes_to_read());
                 state
             }
             Err(e) => {
