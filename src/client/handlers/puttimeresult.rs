@@ -166,6 +166,7 @@ pub fn handle_put_time_result_send_chunks(
             }
         }
     } else {
+        debug!("Send 0");
         return Ok(0);
     }
 }
@@ -174,7 +175,7 @@ pub fn handle_put_time_result_send_last_chunk(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
-    // debug!("handle_perf_send_last_chunk token {:?}", measurement_state.token);
+    debug!("handle_perf_send_last_chunk token {:?}", measurement_state.token);
     let buffer = CHUNK_TERMINATION_STORAGE
         .get(&(measurement_state.chunk_size as u64))
         .unwrap();
