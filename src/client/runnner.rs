@@ -152,7 +152,6 @@ pub async fn run_threads(
 
             if i == 0 {
                 let stats_guard = stats.lock().unwrap();
-                debug!("starting calculate_upload_speed_from_stats_silent");
                 let speed =
                     calculate_upload_speed_from_stats_silent(&stats_guard.upload_measurements);
 
