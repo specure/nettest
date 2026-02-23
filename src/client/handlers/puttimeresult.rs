@@ -77,6 +77,7 @@ pub fn handle_put_time_result_receive_time(
                 
                 // Set final results (last pair)
                 if let Some((last_time, last_bytes)) = pairs.last() {
+                    debug!("Setting final time-bytes pair: {:?} {:?}", last_time, last_bytes);
                     measurement_state.upload_time = Some(*last_time);
                     measurement_state.upload_bytes = Some(*last_bytes);
                 }
