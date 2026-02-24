@@ -49,7 +49,6 @@ pub fn calculate_speed_from_measurements(measurements: Vec<Vec<(u64, u64)>>) -> 
             continue;
         }
 
-        println!("calculate_speed_from_measurements thread_measurements: {:?}", thread_measurements);
 
         // Interpolate data at start (after skipping 2 seconds)
         let bytes_at_start = interpolate_bytes_at_time(&thread_measurements, min_start_time + skip_time_ns);
