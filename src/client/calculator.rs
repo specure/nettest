@@ -4,6 +4,7 @@ use log::debug;
 pub fn calculate_speed_from_measurements(measurements: Vec<Vec<(u64, u64)>>) -> (f64, f64, f64) {
     debug!("calculate_speed_from_measurements measurements: {:?}", measurements);
     if measurements.is_empty() {
+        println!("calculate_speed_from_measurements measurements is empty");
         return (0.0, 0.0, 0.0);
     }
 
@@ -16,6 +17,8 @@ pub fn calculate_speed_from_measurements(measurements: Vec<Vec<(u64, u64)>>) -> 
         .min()
         .unwrap_or(0);
 
+    println!("calculate_speed_from_measurements min_start_time: {:?}", min_start_time);
+
     // Find t* - minimum time of last measurement among all threads
     let t_star_original = measurements
         .iter()
@@ -23,15 +26,19 @@ pub fn calculate_speed_from_measurements(measurements: Vec<Vec<(u64, u64)>>) -> 
         .min()
         .unwrap_or(0);
 
+    println!("calculate_speed_from_measurements t_star_original: {:?}", t_star_original);
+
     if t_star_original == 0 {
+        println!("calculate_speed_from_measurements t_star_original is 0");
         return (0.0, 0.0, 0.0);
     }
 
     // t* accounting for skipping first 2 seconds
     let t_star = t_star_original - skip_time_ns;
-    
+    println!("calculate_speed_from_measurements t_star: {:?}", t_star);
     // If after skipping 2 seconds time is insufficient, return 0
     if t_star <= 0 {
+        println!("calculate_speed_from_measurements t_star is less than or equal to 0");
         return (0.0, 0.0, 0.0);
     }
 
