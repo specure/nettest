@@ -50,6 +50,8 @@ pub fn calculate_speed_from_measurements(measurements: Vec<Vec<(u64, u64)>>) -> 
             continue;
         }
 
+        println!("calculate_speed_from_measurements thread_measurements: {:?}", thread_measurements);
+
         // Interpolate data at start (after skipping 2 seconds)
         let bytes_at_start = interpolate_bytes_at_time(&thread_measurements, min_start_time + skip_time_ns);
         
@@ -62,24 +64,31 @@ pub fn calculate_speed_from_measurements(measurements: Vec<Vec<(u64, u64)>>) -> 
             }
         }
 
+        println!("calculate_speed_from_measurements l_k_index: {:?}", l_k_index);
+
         // If no measurement >= t_star found, use last one
         let l_k = l_k_index.unwrap_or(thread_measurements.len() - 1);
 
         // Interpolation according to RMBT specification
         let b_k = if l_k == 0 {
             // If first measurement already >= t_star, interpolate from start
+            println!("Interpolation according to RMBT specification");
             interpolate_bytes_at_time(&thread_measurements, min_start_time + skip_time_ns + t_star)
         } else if l_k < thread_measurements.len() {
+
+            println!("Interpolation between two points");
             // Interpolation between two points
             let (t_lk_minus_1, b_lk_minus_1) = thread_measurements[l_k - 1];
             let (t_lk, b_lk) = thread_measurements[l_k];
 
             if t_lk > t_lk_minus_1 {
+                println!("Times are greater, interpolating");
                 // b_k = b_k^(l_k-1) + (t* - t_k^(l_k-1)) * (b_k^(l_k) - b_k^(l_k-1)) / (t_k^(l_k) - t_k^(l_k-1))
                 let target_time = min_start_time + skip_time_ns + t_star;
                 let ratio = (target_time - t_lk_minus_1) as f64 / (t_lk - t_lk_minus_1) as f64;
                 b_lk_minus_1 as f64 + ratio * (b_lk - b_lk_minus_1) as f64
             } else {
+                println!("Times are equal, using last value");
                 // If times are equal, use last value
                 b_lk as f64
             }
@@ -88,16 +97,21 @@ pub fn calculate_speed_from_measurements(measurements: Vec<Vec<(u64, u64)>>) -> 
             thread_measurements.last().unwrap().1 as f64
         };
 
+        println!("calculate_speed_from_measurements b_k: {:?}", b_k);
         // Subtract bytes at start (after skipping 2 seconds)
         let b_k_adjusted = b_k - bytes_at_start;
+        println!("calculate_speed_from_measurements b_k_adjusted: {:?}", b_k_adjusted);
         total_bytes += b_k_adjusted;
     }
 
+    println!("calculate_speed_from_measurements total_bytes: {:?}", total_bytes);
     // Calculate speed R = (1/t*) * Σ(b_k) accounting for skipping first 2 seconds
     let speed_bps = (total_bytes * 8.0) / (t_star as f64 / 1_000_000_000.0);
+    println!("calculate_speed_from_measurements speed_bps: {:?}", speed_bps);
     let speed_gbps = speed_bps / 1_000_000_000.0;
+    println!("calculate_speed_from_measurements speed_gbps: {:?}", speed_gbps);
     let speed_mbps = speed_bps / 1_000_000.0;
-
+    println!("calculate_speed_from_measurements speed_mbps: {:?}", speed_mbps);
     (speed_bps, speed_gbps, speed_mbps)
 }
 
