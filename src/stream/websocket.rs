@@ -20,6 +20,8 @@ pub struct WebSocketClient {
     ws: WebSocket<TcpStream>,
     handshake_rrequest: Vec<u8>,
     flushed: bool,
+    /// Остаток от предыдущего Binary/Text-фрейма, не влезший в read(buf)
+    read_buffer: Vec<u8>,
 }
 
 impl WebSocketClient {
@@ -41,6 +43,7 @@ impl WebSocketClient {
             ws,
             handshake_rrequest: vec![],
             flushed: true,
+            read_buffer: vec![],
         })
     }
 
@@ -205,6 +208,7 @@ impl WebSocketClient {
             ws,
             handshake_rrequest: request.as_bytes().to_vec(),
             flushed: true,
+            read_buffer: vec![],
         })
     }
 
@@ -245,17 +249,44 @@ impl WebSocketClient {
 
 impl Read for WebSocketClient {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut current_pos = 0;
+
+        // Сначала отдать остаток из предыдущего фрейма
+        if !self.read_buffer.is_empty() {
+            let take = self.read_buffer.len().min(buf.len());
+            buf[..take].copy_from_slice(&self.read_buffer[..take]);
+            self.read_buffer.drain(..take);
+            current_pos = take;
+            if current_pos == buf.len() {
+                return Ok(current_pos);
+            }
+        }
+
         match self.ws.read() {
             Ok(Message::Binary(data)) => {
-                let len = data.len().min(buf.len());
-                buf[..len].copy_from_slice(&data[..len]);
-                Ok(len)
+                let space = buf.len() - current_pos;
+                if data.len() <= space {
+                    let len = data.len();
+                    buf[current_pos..current_pos + len].copy_from_slice(&data[..len]);
+                    Ok(current_pos + len)
+                } else {
+                    buf[current_pos..].copy_from_slice(&data[..space]);
+                    self.read_buffer.extend_from_slice(&data[space..]);
+                    Ok(buf.len())
+                }
             }
             Ok(Message::Text(text)) => {
                 let bytes = text.as_bytes();
-                let len = bytes.len().min(buf.len());
-                buf[..len].copy_from_slice(&bytes[..len]);
-                Ok(len)
+                let space = buf.len() - current_pos;
+                if bytes.len() <= space {
+                    let len = bytes.len();
+                    buf[current_pos..current_pos + len].copy_from_slice(&bytes[..len]);
+                    Ok(current_pos + len)
+                } else {
+                    buf[current_pos..].copy_from_slice(&bytes[..space]);
+                    self.read_buffer.extend_from_slice(&bytes[space..]);
+                    Ok(buf.len())
+                }
             }
             Ok(Message::Close(_)) => {
                 debug!("WebSocket close message");
@@ -269,6 +300,9 @@ impl Read for WebSocketClient {
                 tungstenite::Error::Io(io_err)
                     if io_err.kind() == std::io::ErrorKind::WouldBlock =>
                 {
+                    if current_pos > 0 {
+                        return Ok(current_pos);
+                    }
                     Err(io::Error::new(io::ErrorKind::WouldBlock, "WouldBlock"))
                 }
                 _ => Err(io::Error::new(io::ErrorKind::Other, e)),
