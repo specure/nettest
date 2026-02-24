@@ -88,6 +88,7 @@ pub fn handle_put_time_result_send_time(poll: &Poll, state: &mut TestState) -> i
     info!("handle_put_time_result_send_time");
     let result = state.bytes_received.iter().map(|(t, b)| format!("({} {})", t, b)).collect::<Vec<String>>().join("; ");
     let command = format!("TIMERESULT {}\n", result);
+    log::debug!("command: {}", command);
     if state.write_pos == 0 {
         if state.chunk_buffer.len() < command.len() {
             state.chunk_buffer.resize(command.len(), 0);
