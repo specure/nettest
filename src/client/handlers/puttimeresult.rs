@@ -123,8 +123,7 @@ pub fn handle_put_time_result_send_chunks(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
-    debug!("handle_put_time_result_send_chunks token {:?}", measurement_state.token);
-    // debug!("handle_perf_send_chunks token {:?}", measurement_state.token);
+    trace!("handle_put_time_result_send_chunks token {:?}", measurement_state.token);
     if measurement_state.phase_start_time.is_none() {
         measurement_state.write_pos = 0;
         measurement_state.phase_start_time = Some(Instant::now());
