@@ -32,12 +32,18 @@ pub fn calculate_speed_from_measurements(measurements: Vec<Vec<(u64, u64)>>) -> 
         return (0.0, 0.0, 0.0);
     }
 
-    // t* accounting for skipping first 2 seconds
-    let t_star = t_star_original - skip_time_ns;
+    // Окно измерения: от (min_start_time + skip) до t_star_original. Длительность в наносекундах.
+    let window_start = min_start_time + skip_time_ns;
+    let t_star = match t_star_original.checked_sub(window_start) {
+        Some(d) => d,
+        None => {
+            println!("calculate_speed_from_measurements test too short: t_star_original < min_start_time + skip");
+            return (0.0, 0.0, 0.0);
+        }
+    };
     println!("calculate_speed_from_measurements t_star: {:?}", t_star);
-    // If after skipping 2 seconds time is insufficient, return 0
-    if t_star <= 0 {
-        println!("calculate_speed_from_measurements t_star is less than or equal to 0");
+    if t_star == 0 {
+        println!("calculate_speed_from_measurements t_star is 0 (no measurement window)");
         return (0.0, 0.0, 0.0);
     }
 
