@@ -48,13 +48,11 @@ pub fn handle_put_time_result_receive_time(
         if time_line.ends_with(end) {
             // Check if this is a TIMERESULT message
             if time_line.starts_with("TIMERESULT ") {
-                // Только первая строка: при WS в буфере может быть "TIMERESULT ...\nACCEPT...\n"
                 let data_part = &time_line[11..]; // Remove "TIMERESULT "
-                let timeresult_line = data_part.lines().next().unwrap_or("");
-                trace!("Parsing TIMERESULT data: {}", timeresult_line);
+                trace!("Parsing TIMERESULT data: {}", data_part.trim());
                 
                 // Parse (time bytes) pairs from TIMERESULT message
-                let pairs: Vec<(u64, u64)> = timeresult_line
+                let pairs: Vec<(u64, u64)> = data_part
                     .split("; ")
                     .filter_map(|pair| {
                         let pair = pair.trim_start_matches('(').trim_end_matches(')');
