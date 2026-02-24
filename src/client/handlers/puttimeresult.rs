@@ -69,15 +69,14 @@ pub fn handle_put_time_result_receive_time(
                 
                 trace!("Parsed {} time-bytes pairs: {:?}", pairs.len(), pairs);
                 
-                // Add all pairs to upload_measurements
-                for (time, bytes) in &pairs {
-                    trace!("Adding time-bytes pair: {:?} {:?}", time, bytes);
-                    measurement_state.upload_measurements.push_back((*time, *bytes));
+                // Как при download: для расчёта скорости используем данные клиента (записаны при отправке).
+                // TIMERESULT используем только если клиент не записал пары (fallback) и для upload_time/upload_bytes.
+                if measurement_state.upload_measurements.is_empty() {
+                    for (time, bytes) in &pairs {
+                        measurement_state.upload_measurements.push_back((*time, *bytes));
+                    }
                 }
-                
-                // Set final results (last pair)
                 if let Some((last_time, last_bytes)) = pairs.last() {
-                    trace!("Setting final time-bytes pair: {:?} {:?}", last_time, last_bytes);
                     measurement_state.upload_time = Some(*last_time);
                     measurement_state.upload_bytes = Some(*last_bytes);
                 }
@@ -151,6 +150,11 @@ pub fn handle_put_time_result_send_chunks(
             // debug!("Sent {} bytes token {:?}", measurement_state.bytes_sent, measurement_state.token);
             if measurement_state.write_pos == measurement_state.chunk_size  {
                 let tt = start_time.elapsed().as_nanos();
+                // Как при download: клиент записывает (elapsed_ns, bytes) на каждой границе чанка
+                measurement_state.upload_measurements.push_back((
+                    tt as u64,
+                    measurement_state.bytes_sent,
+                ));
                 let is_last = tt >= TEST_DURATION_NS as u128;
 
                 if is_last {
@@ -188,6 +192,13 @@ pub fn handle_put_time_result_send_last_chunk(
         measurement_state.bytes_sent += n as u64;
         measurement_state.write_pos += n;
         if measurement_state.write_pos == measurement_state.chunk_size {
+            // Последний чанк: записать (elapsed_ns, bytes_sent) как при download
+            if let Some(st) = measurement_state.phase_start_time {
+                measurement_state.upload_measurements.push_back((
+                    st.elapsed().as_nanos() as u64,
+                    measurement_state.bytes_sent,
+                ));
+            }
             measurement_state.phase = TestPhase::PerfReceiveTime;
             measurement_state.stream.reregister(
                 &poll,
