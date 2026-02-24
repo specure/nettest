@@ -196,9 +196,7 @@ pub fn handle_put_receive_time_bytes(
                     "Received TIME {} BYTES {} token {:?}",
                     time_ns, bytes, state.token
                 );
-
-            // Store measurement
-            state.upload_measurements.push_back((time_ns, bytes));
+                state.upload_measurements.push_back((time_ns, bytes));
         } else {
             debug!(
                 "Failed to parse TIME BYTES from message: {}",
