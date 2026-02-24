@@ -292,19 +292,15 @@ impl Write for WebSocketClient {
                     self.flushed = false;
                     return self.write(buf)
                 },
-                Err(e) => {
-                    match e {
-                        tungstenite::Error::Io(io_err)
-                            if io_err.kind() == std::io::ErrorKind::WouldBlock =>
-                        {
-                            self.flushed = false;
-                            Err(io::Error::new(io::ErrorKind::WouldBlock, "WouldBlock"))
-                        }
-                        _ =>  {
-                            return Err(io::Error::new(io::ErrorKind::Other, e));
-                        },
+                Err(e) => match e {
+                    tungstenite::Error::Io(io_err)
+                        if io_err.kind() == std::io::ErrorKind::WouldBlock =>
+                    {
+                        self.flushed = false;
+                        return Err(io::Error::new(io::ErrorKind::WouldBlock, "WouldBlock"));
                     }
-                }
+                    _ => return Err(io::Error::new(io::ErrorKind::Other, e)),
+                },
             }
         }
         else {
