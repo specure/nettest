@@ -33,7 +33,8 @@ pub fn handle_put_time_result_send_ok(poll: &Poll, state: &mut TestState) -> io:
             state.read_pos = 0;
             //TODO: remove this
             state.chunk_buffer = vec![0u8; state.chunk_size as usize];
-            state.clock = Some(Instant::now());
+            // Не сбрасывать clock: отсчёт с момента отправки OK. Тогда первое (time, bytes)
+            // будет ~1–2 с (когда клиент по WebSocket реально пришлёт первый чанк), последнее ~7 с.
 
             state
                 .stream
