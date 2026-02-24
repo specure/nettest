@@ -22,6 +22,7 @@ pub struct WebSocketTlsClient {
     ws: WebSocket<RustlsStream>,
     handshake_rrequest: Vec<u8>,
     flushed: bool,
+    read_buffer: Vec<u8>,
 }
 
 impl WebSocketTlsClient {
@@ -226,6 +227,7 @@ impl WebSocketTlsClient {
             ws,
             handshake_rrequest: request.as_bytes().to_vec(),
             flushed: true,
+            read_buffer: vec![],
         })
     }
 
@@ -319,38 +321,56 @@ mod danger {
 impl Read for WebSocketTlsClient {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let mut current_pos = 0;
-        loop {
-            match self.ws.read() {
-                Ok(Message::Binary(data)) => {
-                    let len: usize = data.len().min(buf.len() - current_pos);
+
+        if !self.read_buffer.is_empty() {
+            let take = self.read_buffer.len().min(buf.len());
+            buf[..take].copy_from_slice(&self.read_buffer[..take]);
+            self.read_buffer.drain(..take);
+            current_pos = take;
+            if current_pos == buf.len() {
+                return Ok(current_pos);
+            }
+        }
+
+        match self.ws.read() {
+            Ok(Message::Binary(data)) => {
+                let space = buf.len() - current_pos;
+                if data.len() <= space {
+                    let len = data.len();
                     buf[current_pos..current_pos + len].copy_from_slice(&data[..len]);
-                    current_pos += len;
-                    if current_pos == buf.len() {
+                    Ok(current_pos + len)
+                } else {
+                    buf[current_pos..].copy_from_slice(&data[..space]);
+                    self.read_buffer.extend_from_slice(&data[space..]);
+                    Ok(buf.len())
+                }
+            }
+            Ok(Message::Text(text)) => {
+                let bytes = text.as_bytes();
+                let space = buf.len() - current_pos;
+                if bytes.len() <= space {
+                    let len = bytes.len();
+                    buf[current_pos..current_pos + len].copy_from_slice(&bytes[..len]);
+                    Ok(current_pos + len)
+                } else {
+                    buf[current_pos..].copy_from_slice(&bytes[..space]);
+                    self.read_buffer.extend_from_slice(&bytes[space..]);
+                    Ok(buf.len())
+                }
+            }
+            Ok(Message::Close(_)) => Ok(0),
+            Ok(_) => Ok(0),
+            Err(e) => match e {
+                tungstenite::Error::Io(io_err)
+                    if io_err.kind() == std::io::ErrorKind::WouldBlock =>
+                {
+                    if current_pos > 0 {
                         return Ok(current_pos);
                     }
+                    return Err(io::Error::new(io::ErrorKind::WouldBlock, "WouldBlock"));
                 }
-                Ok(Message::Text(text)) => {
-                    let bytes = text.as_bytes();
-                    let len = bytes.len().min(buf.len());
-                    buf[..len].copy_from_slice(&bytes[..len]);
-                    return Ok(len);
-                }
-                Ok(Message::Close(_)) => return Ok(0),
-                Ok(_) => return Ok(0),
-                Err(e) => match e {
-                    tungstenite::Error::Io(io_err)
-                        if io_err.kind() == std::io::ErrorKind::WouldBlock =>
-                    {
-                        debug!("WouldBlock");
-                        if current_pos > 0 {
-                            return Ok(current_pos);
-                        }
-                        
-                        return Err(io::Error::new(io::ErrorKind::WouldBlock, "WouldBlock"));
-                    }
-                    _ => return Err(io::Error::new(io::ErrorKind::Other, e)),
-                },
-            }
+                _ => return Err(io::Error::new(io::ErrorKind::Other, e)),
+            },
         }
     }
 }

@@ -64,22 +64,47 @@ impl WebSocketRustlsServerStream {
 impl Read for WebSocketRustlsServerStream {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let mut current_pos = 0;
+
+        if !self.buffer.is_empty() {
+            let take = self.buffer.len().min(buf.len());
+            buf[..take].copy_from_slice(&self.buffer[..take]);
+            self.buffer.drain(..take);
+            current_pos = take;
+            if current_pos == buf.len() {
+                return Ok(current_pos);
+            }
+        }
+
         loop {
             match self.ws.read() {
                 Ok(Message::Binary(data)) => {
-                    let len: usize = data.len().min(buf.len() - current_pos);
-                    buf[current_pos..current_pos + len].copy_from_slice(&data[..len]);
-                    current_pos += len;
-                    if current_pos == buf.len() {
-                        return Ok(current_pos);
+                    let space = buf.len() - current_pos;
+                    if data.len() <= space {
+                        let len = data.len();
+                        buf[current_pos..current_pos + len].copy_from_slice(&data[..len]);
+                        current_pos += len;
+                        if current_pos == buf.len() {
+                            return Ok(current_pos);
+                        }
+                    } else {
+                        buf[current_pos..].copy_from_slice(&data[..space]);
+                        self.buffer.extend_from_slice(&data[space..]);
+                        return Ok(buf.len());
                     }
                 }
                 Ok(Message::Text(text)) => {
                     let bytes = text.as_bytes();
-                    let len = bytes.len().min(buf.len());
-                    buf[..len].copy_from_slice(&bytes[..len]);
-                    trace!("Read {} bytes from WebSocket", len);
-                    return Ok(len);
+                    let space = buf.len() - current_pos;
+                    if bytes.len() <= space {
+                        let len = bytes.len();
+                        buf[current_pos..current_pos + len].copy_from_slice(&bytes[..len]);
+                        trace!("Read {} bytes from WebSocket", len);
+                        return Ok(current_pos + len);
+                    } else {
+                        buf[current_pos..].copy_from_slice(&bytes[..space]);
+                        self.buffer.extend_from_slice(&bytes[space..]);
+                        return Ok(buf.len());
+                    }
                 }
                 Ok(Message::Close(_)) => return Ok(0),
                 Ok(_) => return Ok(0),
@@ -88,13 +113,9 @@ impl Read for WebSocketRustlsServerStream {
                         if io_err.kind() == std::io::ErrorKind::WouldBlock =>
                     {
                         debug!("WouldBlock");
-
-                     
-
                         if current_pos > 0 {
                             return Ok(current_pos);
                         }
-                        
                         return Err(io::Error::new(io::ErrorKind::WouldBlock, "WouldBlock"));
                     }
                     _ => return Err(io::Error::new(io::ErrorKind::Other, e)),
