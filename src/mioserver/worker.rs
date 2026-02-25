@@ -229,7 +229,7 @@ impl Worker {
     fn process_all_connections(&mut self) -> io::Result<()> {
         if let Err(e) = self
             .poll
-            .poll(&mut self.events, Some(std::time::Duration::from_millis(10)))
+            .poll(&mut self.events, None)
         {
             info!("Worker {}: Poll error: {}", self.id, e);
             return Err(e);

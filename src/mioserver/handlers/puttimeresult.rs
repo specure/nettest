@@ -34,7 +34,7 @@ pub fn handle_put_time_result_send_ok(poll: &Poll, state: &mut TestState) -> io:
             //TODO: remove this
             state.chunk_buffer = vec![0u8; state.chunk_size as usize];
             state.clock = Some(Instant::now());
-            info!("Starting clock at {:?}", state.clock.unwrap());
+            info!("Starting clock at {:?}", state.clock.unwrap().elapsed().as_nanos());
 
             state
                 .stream
@@ -49,7 +49,7 @@ pub fn handle_put_time_result_receive_chunk(
     state: &mut TestState,
 ) -> io::Result<usize> {
     if (0 == state.total_bytes_received as usize) {
-        info!("Starting clock at {} ns", state.clock.unwrap().elapsed().as_nanos());
+        info!("Starting clock handle_put_time_result_receive_chunk at {} ns", state.clock.unwrap().elapsed().as_nanos());
         }
     loop {
         let n = state
