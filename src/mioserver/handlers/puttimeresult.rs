@@ -48,6 +48,9 @@ pub fn handle_put_time_result_receive_chunk(
     poll: &Poll,
     state: &mut TestState,
 ) -> io::Result<usize> {
+    if (0 == state.total_bytes_received as usize) {
+        info!("Starting clock at {:?}", state.clock.unwrap());
+        }
     loop {
         let n = state
             .stream
