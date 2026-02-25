@@ -64,7 +64,6 @@ pub fn handle_put_time_result_receive_chunk(
             state
                     .bytes_received
                     .push_back((tt as u64, state.total_bytes_received));
-            info!("Chunk size reached, time: {} ns", tt);
             if state.chunk_buffer[state.read_pos - 1] == 0xFF {
                 state.received_time_ns = Some(tt as u128);
                 state.measurement_state = ServerTestPhase::PutTimeResultSendTimeResult;
@@ -75,6 +74,9 @@ pub fn handle_put_time_result_receive_chunk(
                     .reregister(poll, state.token, Interest::WRITABLE)?;
                 return Ok(n);
             } else {
+                if (state.chunk_size == state.total_bytes_received as usize) {
+                info!("Chunk size reached, time: {} ns", tt);
+                }
                 if state.chunk_buffer[state.read_pos - 1] != 0x00 {
                     return Err(io::Error::new(io::ErrorKind::Other, "Invalid chunk"));
                 }
