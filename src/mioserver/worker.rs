@@ -221,7 +221,7 @@ impl Worker {
                     }
                 });
 
-                // thread::sleep(Duration::from_millis(100));
+                thread::sleep(Duration::from_millis(100));
             }
         }
     }

@@ -39,7 +39,8 @@ pub fn handle_put_time_result_send_ok(poll: &Poll, state: &mut TestState) -> io:
             state
                 .stream
                 .reregister(poll, state.token, Interest::READABLE)?;
-            return Ok(n);
+
+            return handle_put_time_result_receive_chunk(poll, state);
         }
     }
 }
