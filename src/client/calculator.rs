@@ -1,5 +1,4 @@
 use crate::client::{client::Measurement};
-use log::debug;
 
 pub fn calculate_speed_from_measurements(measurements: Vec<Vec<(u64, u64)>>) -> (f64, f64, f64) {
     if measurements.is_empty() {
