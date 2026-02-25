@@ -162,7 +162,6 @@ pub fn handle_put_time_result_send_chunks(
             }
         }
     } else {
-        debug!("Send 0");
         return Ok(0);
     }
 }

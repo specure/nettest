@@ -75,7 +75,6 @@ impl RustlsStream {
         })
     }
 
-    /// Создать поток из уже установленного TLS-соединения (например после handshake в WebSocket).
     pub fn from_connection(conn: ClientConnection, stream: TcpStream) -> Self {
         Self {
             conn,

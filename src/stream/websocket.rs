@@ -20,7 +20,6 @@ pub struct WebSocketClient {
     ws: WebSocket<TcpStream>,
     handshake_rrequest: Vec<u8>,
     flushed: bool,
-    /// Остаток от предыдущего Binary/Text-фрейма, не влезший в read(buf)
     read_buffer: Vec<u8>,
 }
 
@@ -251,7 +250,6 @@ impl Read for WebSocketClient {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let mut current_pos = 0;
 
-        // Сначала отдать остаток из предыдущего фрейма
         if !self.read_buffer.is_empty() {
             let take = self.read_buffer.len().min(buf.len());
             buf[..take].copy_from_slice(&self.read_buffer[..take]);

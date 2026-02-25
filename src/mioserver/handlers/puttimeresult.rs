@@ -34,7 +34,6 @@ pub fn handle_put_time_result_send_ok(poll: &Poll, state: &mut TestState) -> io:
             //TODO: remove this
             state.chunk_buffer = vec![0u8; state.chunk_size as usize];
             state.clock = Some(Instant::now());
-            info!("Starting clock at {:?}", state.clock.unwrap().elapsed().as_nanos());
 
             state
                 .stream
@@ -49,9 +48,6 @@ pub fn handle_put_time_result_receive_chunk(
     poll: &Poll,
     state: &mut TestState,
 ) -> io::Result<usize> {
-    if (0 == state.total_bytes_received as usize) {
-        info!("Starting clock handle_put_time_result_receive_chunk at {} ns", state.clock.unwrap().elapsed().as_nanos());
-        }
     loop {
         let n = state
             .stream
@@ -78,9 +74,6 @@ pub fn handle_put_time_result_receive_chunk(
                     .reregister(poll, state.token, Interest::WRITABLE)?;
                 return Ok(n);
             } else {
-                if (state.chunk_size == state.total_bytes_received as usize) {
-                info!("Chunk size reached, time: {} ns", tt);
-                }
                 if state.chunk_buffer[state.read_pos - 1] != 0x00 {
                     return Err(io::Error::new(io::ErrorKind::Other, "Invalid chunk"));
                 }
@@ -94,7 +87,6 @@ pub fn handle_put_time_result_send_time(poll: &Poll, state: &mut TestState) -> i
     info!("handle_put_time_result_send_time");
     let result = state.bytes_received.iter().map(|(t, b)| format!("({} {})", t, b)).collect::<Vec<String>>().join("; ");
     let command = format!("TIMERESULT {}\n", result);
-    log::debug!("last 150 characters of TIMERESULT command: {:?}", &command[command.len() - 150..]);
     if state.write_pos == 0 {
         if state.chunk_buffer.len() < command.len() {
             state.chunk_buffer.resize(command.len(), 0);
