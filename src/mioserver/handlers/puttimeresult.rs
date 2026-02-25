@@ -34,6 +34,7 @@ pub fn handle_put_time_result_send_ok(poll: &Poll, state: &mut TestState) -> io:
             //TODO: remove this
             state.chunk_buffer = vec![0u8; state.chunk_size as usize];
             state.clock = Some(Instant::now());
+            info!("Starting clock at {:?}", state.clock.unwrap());
 
             state
                 .stream
@@ -47,7 +48,6 @@ pub fn handle_put_time_result_receive_chunk(
     poll: &Poll,
     state: &mut TestState,
 ) -> io::Result<usize> {
-    trace!("handle_put_time_result_receive_chunk");
     loop {
         let n = state
             .stream
@@ -60,11 +60,11 @@ pub fn handle_put_time_result_receive_chunk(
         state.total_bytes_received += n as u64;
         trace!("Read {} bytes", state.read_pos);
         if state.read_pos == state.chunk_size {
-            trace!("Chunk size reached");
             let tt = state.clock.unwrap().elapsed().as_nanos();
             state
                     .bytes_received
                     .push_back((tt as u64, state.total_bytes_received));
+            info!("Chunk size reached, time: {} ns", tt);
             if state.chunk_buffer[state.read_pos - 1] == 0xFF {
                 state.received_time_ns = Some(tt as u128);
                 state.measurement_state = ServerTestPhase::PutTimeResultSendTimeResult;
