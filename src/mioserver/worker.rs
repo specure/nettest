@@ -227,10 +227,7 @@ impl Worker {
     }
 
     fn process_all_connections(&mut self) -> io::Result<()> {
-        if let Err(e) = self
-            .poll
-            .poll(&mut self.events, None)
-        {
+        if let Err(e) = self.poll.poll(&mut self.events, None) {
             info!("Worker {}: Poll error: {}", self.id, e);
             return Err(e);
         }
@@ -246,9 +243,15 @@ impl Worker {
             );
             let event_token = event.token();
             if let Some(state) = self.connections.get_mut(&event_token) {
-                if state.measurement_state == ServerTestPhase::PutTimeResultReceiveChunk && state.clock.is_some()
-                && 0 == state.total_bytes_received as usize {
-                    info!("Worker 123123 {}: PutTimeResultReceiveChunk at {} ns", self.id, state.clock.unwrap().elapsed().as_nanos());
+                if state.measurement_state == ServerTestPhase::PutTimeResultReceiveChunk
+                    && state.clock.is_some()
+                    && 0 == state.total_bytes_received as usize
+                {
+                    info!(
+                        "Worker 123123 {}: PutTimeResultReceiveChunk at {} ns",
+                        self.id,
+                        state.clock.unwrap().elapsed().as_nanos()
+                    );
                 }
                 let mut should_remove: Result<usize, io::Error> = Ok(0);
                 if event.is_readable() {
@@ -265,6 +268,16 @@ impl Worker {
                         event_token
                     );
                     should_remove = handle_client_writable_data(state, &self.poll);
+                    if state.measurement_state == ServerTestPhase::PutTimeResultReceiveChunk
+                        && state.clock.is_some()
+                        && 0 == state.total_bytes_received as usize
+                    {
+                        info!(
+                            "Worker finished write {}: PutTimeResultReceiveChunk at {} ns",
+                            self.id,
+                            state.clock.unwrap().elapsed().as_nanos()
+                        );
+                    }
                 }
 
                 match should_remove {
@@ -282,7 +295,8 @@ impl Worker {
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                         trace!(
                             "Worker {}: would block for token {:?}",
-                            self.id, event_token
+                            self.id,
+                            event_token
                         );
                         continue;
                     }
