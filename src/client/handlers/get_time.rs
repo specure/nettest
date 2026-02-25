@@ -1,13 +1,12 @@
 use anyhow::Result;
-use log::{debug};
+use log::debug;
 use mio::{Interest, Poll};
 use std::time::Instant;
 
-use crate::client::state::{MeasurementState, TestPhase};
 use crate::client::constants::ACCEPT_GETCHUNKS_STRING;
+use crate::client::state::{MeasurementState, TestPhase};
 
 const TEST_DURATION_NS: u64 = 7_000_000_000; // 7 seconds
-
 
 pub fn handle_get_time_send_ok(
     poll: &Poll,
@@ -72,24 +71,19 @@ pub fn handle_get_time_receive_chunk(
     poll: &Poll,
     state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
-    debug!("handle_get_time_receive_chunk token {:?} chunk_buffer_len {:?}", state.token, state.chunk_buffer.len());
+    debug!("handle_get_time_receive_chunk token {:?}", state.token);
     loop {
-        debug!(" started reading at {:?}", Instant::now());
         let n = state
             .stream
             .read(&mut state.chunk_buffer[state.read_pos..])?;
-        debug!("read {:?} bytes at {:?}", n, Instant::now());
         state.read_pos += n;
-        debug!("handle_get_time_receive_chunk read_pos {:?} chunk_size {:?}", state.read_pos, state.chunk_size);
         if state.read_pos == state.chunk_size {
             state.bytes_received += state.chunk_size as u64;
             state.download_measurements.push_back((
                 state.phase_start_time.unwrap().elapsed().as_nanos() as u64,
                 state.bytes_received,
             ));
-            debug!("handle_get_time_receive_chunk bytes_received {:?}", state.bytes_received);
             if state.chunk_buffer[state.read_pos - 1] == 0xFF {
-                debug!("handle_get_time_receive_chunk last byte is 0xFF");
                 state.phase = TestPhase::GetTimeSendOk;
                 state
                     .stream

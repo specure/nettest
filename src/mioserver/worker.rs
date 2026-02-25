@@ -227,7 +227,7 @@ impl Worker {
     }
 
     fn process_all_connections(&mut self) -> io::Result<()> {
-        if let Err(e) = self.poll.poll(&mut self.events, None) {
+        if let Err(e) = self.poll.poll(&mut self.events, Some(Duration::from_millis(1000))) {
             info!("Worker {}: Poll error: {}", self.id, e);
             return Err(e);
         }
