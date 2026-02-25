@@ -49,7 +49,7 @@ pub fn handle_put_time_result_receive_chunk(
     state: &mut TestState,
 ) -> io::Result<usize> {
     if (0 == state.total_bytes_received as usize) {
-        info!("Starting clock at {:?}", state.clock.unwrap());
+        info!("Starting clock at {} ns", state.clock.unwrap().elapsed().as_nanos());
         }
     loop {
         let n = state
