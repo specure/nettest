@@ -246,6 +246,10 @@ impl Worker {
             );
             let event_token = event.token();
             if let Some(state) = self.connections.get_mut(&event_token) {
+                if state.measurement_state == ServerTestPhase::PutTimeResultReceiveChunk && state.clock.is_some()
+                && 0 == state.total_bytes_received as usize {
+                    info!("Worker 123123 {}: PutTimeResultReceiveChunk at {} ns", self.id, state.clock.unwrap().elapsed().as_nanos());
+                }
                 let mut should_remove: Result<usize, io::Error> = Ok(0);
                 if event.is_readable() {
                     trace!(
