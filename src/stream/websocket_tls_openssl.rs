@@ -431,7 +431,6 @@ impl Write for WebSocketTlsClient {
         match self.ws.flush() {
             Ok(_) => {
                 self.flushed = true;
-                debug!("WebSocket 222 flush success");
                 // let a = self.ws.close(None);
                 return Ok(());
             }
