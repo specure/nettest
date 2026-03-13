@@ -9,40 +9,35 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-        
+
     - name: Update latest tag
       run: |
-        # Получаем информацию о релизе
         RELEASE_TAG="${{ github.event.release.tag_name }}"
         echo "Updating latest tag to: $RELEASE_TAG"
-        
-        # Удаляем старый latest тег если он существует
+
         if git rev-parse "latest" >/dev/null 2>&1; then
           echo "Deleting existing latest tag..."
           git tag -d latest
           git push origin :refs/tags/latest
         fi
-        
-        # Создаем новый latest тег
+
         echo "Creating new latest tag..."
         git tag latest
         git push origin latest
-        
+
         echo "Latest tag updated successfully to $RELEASE_TAG"
-        
+
     - name: Download release assets
       run: |
-        # Создаем временную директорию
         mkdir -p release-assets
         cd release-assets
-        
-        # Список всех файлов для скачивания
+
         ASSETS=(
           "nettest-linux-x86_64.tar.gz"
           "nettest-linux-aarch64.tar.gz"
@@ -50,28 +45,21 @@ jobs:
           "nettest-windows-aarch64.zip"
           "nettest-macos-x86_64.tar.gz"
           "nettest-macos-aarch64.tar.gz"
-          "nettest-debian-11-x86_64.tar.gz"
-          "nettest-debian-11-aarch64.tar.gz"
-          "nettest-debian-12-x86_64.tar.gz"
-          "nettest-debian-12-aarch64.tar.gz"
-          "nettest-ubuntu-22-x86_64.tar.gz"
-          "nettest-ubuntu-22-aarch64.tar.gz"
         )
-        
-        # Скачиваем каждый файл из релиза
+
         for asset in "${ASSETS[@]}"; do
           echo "Downloading $asset..."
           wget -q "https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/$asset" -O "$asset"
           if [ $? -eq 0 ]; then
-            echo "✅ Downloaded $asset"
+            echo "Downloaded $asset"
           else
-            echo "❌ Failed to download $asset"
+            echo "Failed to download $asset"
           fi
         done
-        
+
         echo "Downloaded assets:"
         ls -la
-        
+
     - name: Create latest release
       uses: softprops/action-gh-release@v1
       with:
@@ -79,50 +67,43 @@ jobs:
         name: Latest
         body: |
           ## Latest Release
-          
+
           This is the latest stable release. For the most recent version, see [Release ${{ github.event.release.tag_name }}](${{ github.event.release.html_url }}).
-          
+
           ### Quick Downloads
-          
+
           #### Linux
-          - **Ubuntu 24.04 x86_64**: [nettest-linux-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/latest/nettest-linux-x86_64.tar.gz)
-          - **Ubuntu 24.04 ARM64**: [nettest-linux-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/latest/nettest-linux-aarch64.tar.gz)
-          - **Ubuntu 22.04 x86_64**: [nettest-ubuntu-22-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/latest/nettest-ubuntu-22-x86_64.tar.gz)
-          - **Ubuntu 22.04 ARM64**: [nettest-ubuntu-22-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/latest/nettest-ubuntu-22-aarch64.tar.gz)
-          
-          #### Debian
-          - **Debian 12 x86_64**: [nettest-debian-12-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/latest/nettest-debian-12-x86_64.tar.gz)
-          - **Debian 12 ARM64**: [nettest-debian-12-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/latest/nettest-debian-12-aarch64.tar.gz)
-          - **Debian 11 x86_64**: [nettest-debian-11-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/latest/nettest-debian-11-x86_64.tar.gz)
-          - **Debian 11 ARM64**: [nettest-debian-11-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/latest/nettest-debian-11-aarch64.tar.gz)
-          
+          Built on Debian 11 (Bullseye) with glibc 2.31 — compatible with Debian 11+, Ubuntu 22.04+, RHEL 8+, CentOS Stream 9+, and other distributions with glibc >= 2.31.
+          - **Linux x86_64**: [nettest-linux-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/latest/nettest-linux-x86_64.tar.gz)
+          - **Linux ARM64**: [nettest-linux-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/latest/nettest-linux-aarch64.tar.gz)
+
           #### macOS
           - **macOS Apple Silicon**: [nettest-macos-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/latest/nettest-macos-aarch64.tar.gz)
           - **macOS Intel**: [nettest-macos-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/latest/nettest-macos-x86_64.tar.gz)
-          
+
           #### Windows
           - **Windows x86_64**: [nettest-windows-x86_64.zip](https://github.com/${{ github.repository }}/releases/download/latest/nettest-windows-x86_64.zip)
           - **Windows ARM64**: [nettest-windows-aarch64.zip](https://github.com/${{ github.repository }}/releases/download/latest/nettest-windows-aarch64.zip)
-          
+
           ### Installation
-          
+
           #### Linux/macOS
           ```bash
           # Download and extract
-          wget https://github.com/${{ github.repository }}/releases/download/latest/nettest-<distribution>-<arch>.tar.gz
-          tar -xzf nettest-<distribution>-<arch>.tar.gz
-          
+          wget https://github.com/${{ github.repository }}/releases/download/latest/nettest-linux-x86_64.tar.gz
+          tar -xzf nettest-linux-x86_64.tar.gz
+
           # Run
           ./nettest -s  # Server
           ./nettest -c <address>  # Client
           ```
-          
+
           #### Windows
           ```powershell
           # Download and extract
           Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/download/latest/nettest-windows-x86_64.zip" -OutFile "nettest-windows-x86_64.zip"
           Expand-Archive -Path "nettest-windows-x86_64.zip" -DestinationPath "."
-          
+
           # Run
           .\nettest.exe -s  # Server
           .\nettest.exe -c <address>  # Client
@@ -134,12 +115,6 @@ jobs:
           release-assets/nettest-windows-aarch64.zip
           release-assets/nettest-macos-x86_64.tar.gz
           release-assets/nettest-macos-aarch64.tar.gz
-          release-assets/nettest-debian-11-x86_64.tar.gz
-          release-assets/nettest-debian-11-aarch64.tar.gz
-          release-assets/nettest-debian-12-x86_64.tar.gz
-          release-assets/nettest-debian-12-aarch64.tar.gz
-          release-assets/nettest-ubuntu-22-x86_64.tar.gz
-          release-assets/nettest-ubuntu-22-aarch64.tar.gz
         token: ${{ secrets.GITHUB_TOKEN }}
         overwrite: true
         draft: false

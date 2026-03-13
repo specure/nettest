@@ -1,6 +1,9 @@
 name: Build All Platforms
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       version:
@@ -10,31 +13,54 @@ on:
         default: '1.0.0'
 
 jobs:
-  # Linux x86_64 (Ubuntu 24.04)
+  # Determine version from tag or manual input
+  determine-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+    - name: Determine version
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" = "push" ]; then
+          VERSION="${GITHUB_REF_NAME#v}"
+        else
+          VERSION="${{ github.event.inputs.version }}"
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Version: $VERSION"
+
+  # Linux x86_64 (Debian Bullseye - glibc 2.31, compatible with all supported distros)
   build-linux-x86_64:
-    runs-on: ubuntu-24.04
+    needs: [determine-version]
+    runs-on: ubuntu-latest
+    container:
+      image: debian:bullseye
     permissions:
       contents: write
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
+      run: sed -i "s/^version = .*/version = \"${{ needs.determine-version.outputs.version }}\"/" Cargo.toml
 
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: x86_64-unknown-linux-gnu
-        override: true
-        
     - name: Install system dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y pkg-config libssl-dev libfontconfig1-dev
-        
+        apt-get update
+        apt-get install -y curl build-essential pkg-config libssl-dev libfontconfig1-dev
+
+    - name: Install Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: Add Rust target
+      run: |
+        . $HOME/.cargo/env
+        rustup target add x86_64-unknown-linux-gnu
+
     - name: Cache dependencies
       uses: actions/cache@v4
       with:
@@ -42,42 +68,50 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-x86_64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
-        
+        key: ${{ runner.os }}-cargo-bullseye-x86_64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
+
     - name: Build for Linux x86_64
       run: |
+        . $HOME/.cargo/env
         cargo build --release --target x86_64-unknown-linux-gnu
-        
+
     - name: Upload binary for release
       uses: actions/upload-artifact@v4
       with:
         name: nettest-linux-x86_64-binary
         path: target/x86_64-unknown-linux-gnu/release/nettest
 
-  # Linux aarch64 (Ubuntu 24.04 ARM)
+  # Linux aarch64 (Debian Bullseye - glibc 2.31, compatible with all supported distros)
   build-linux-aarch64:
+    needs: [determine-version]
     runs-on: ubuntu-24.04-arm
+    container:
+      image: arm64v8/debian:bullseye
     permissions:
       contents: write
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
+      run: sed -i "s/^version = .*/version = \"${{ needs.determine-version.outputs.version }}\"/" Cargo.toml
 
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        override: true
-        
     - name: Install system dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y pkg-config libssl-dev libfontconfig1-dev
-        
+        apt-get update
+        apt-get install -y curl build-essential pkg-config libssl-dev libfontconfig1-dev
+
+    - name: Install Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: Add Rust target
+      run: |
+        . $HOME/.cargo/env
+        rustup target add aarch64-unknown-linux-gnu
+
     - name: Cache dependencies
       uses: actions/cache@v4
       with:
@@ -85,30 +119,32 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-arm64-${{ hashFiles('**/Cargo.lock') }}
-        
+        key: ${{ runner.os }}-cargo-bullseye-aarch64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
+
     - name: Build for Linux ARM64
       run: |
-        cargo build --release
-        
+        . $HOME/.cargo/env
+        cargo build --release --target aarch64-unknown-linux-gnu
+
     - name: Upload binary for release
       uses: actions/upload-artifact@v4
       with:
         name: nettest-linux-aarch64-binary
-        path: target/release/nettest
+        path: target/aarch64-unknown-linux-gnu/release/nettest
 
   # Windows x86_64
   build-windows-x86_64:
+    needs: [determine-version]
     runs-on: windows-latest
     permissions:
       contents: write
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
+      run: sed -i "s/^version = .*/version = \"${{ needs.determine-version.outputs.version }}\"/" Cargo.toml
 
     - name: Install Rust
       uses: actions-rs/toolchain@v1
@@ -116,7 +152,7 @@ jobs:
         toolchain: stable
         target: x86_64-pc-windows-msvc
         override: true
-        
+
     - name: Cache dependencies
       uses: actions/cache@v4
       with:
@@ -125,11 +161,11 @@ jobs:
           ~/.cargo/git
           target
         key: ${{ runner.os }}-cargo-x86_64-pc-windows-msvc-${{ hashFiles('**/Cargo.lock') }}
-        
+
     - name: Build for Windows x86_64
       run: |
         cargo build --release --target x86_64-pc-windows-msvc
-        
+
     - name: Upload binary for release
       uses: actions/upload-artifact@v4
       with:
@@ -138,16 +174,17 @@ jobs:
 
   # Windows aarch64
   build-windows-aarch64:
+    needs: [determine-version]
     runs-on: windows-latest
     permissions:
       contents: write
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
+      run: sed -i "s/^version = .*/version = \"${{ needs.determine-version.outputs.version }}\"/" Cargo.toml
 
     - name: Install Rust
       uses: actions-rs/toolchain@v1
@@ -155,7 +192,7 @@ jobs:
         toolchain: stable
         target: aarch64-pc-windows-msvc
         override: true
-        
+
     - name: Cache dependencies
       uses: actions/cache@v4
       with:
@@ -164,11 +201,11 @@ jobs:
           ~/.cargo/git
           target
         key: ${{ runner.os }}-cargo-aarch64-pc-windows-msvc-${{ hashFiles('**/Cargo.lock') }}
-        
+
     - name: Build for Windows ARM64
       run: |
         cargo build --release --target aarch64-pc-windows-msvc
-        
+
     - name: Upload binary for release
       uses: actions/upload-artifact@v4
       with:
@@ -177,16 +214,17 @@ jobs:
 
   # macOS x86_64 (Intel)
   build-macos-x86_64:
+    needs: [determine-version]
     runs-on: macos-latest
     permissions:
       contents: write
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
+      run: sed -i "s/^version = .*/version = \"${{ needs.determine-version.outputs.version }}\"/" Cargo.toml
 
     - name: Install Rust
       uses: actions-rs/toolchain@v1
@@ -194,11 +232,11 @@ jobs:
         toolchain: stable
         target: x86_64-apple-darwin
         override: true
-        
+
     - name: Install system dependencies
       run: |
         brew install pkg-config openssl fontconfig
-        
+
     - name: Cache dependencies
       uses: actions/cache@v4
       with:
@@ -207,13 +245,13 @@ jobs:
           ~/.cargo/git
           target
         key: ${{ runner.os }}-cargo-x86_64-apple-darwin-${{ hashFiles('**/Cargo.lock') }}
-        
+
     - name: Build for macOS Intel
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig
       run: |
         cargo build --release --target x86_64-apple-darwin
-        
+
     - name: Upload binary for release
       uses: actions/upload-artifact@v4
       with:
@@ -222,16 +260,17 @@ jobs:
 
   # macOS aarch64 (Apple Silicon)
   build-macos-aarch64:
+    needs: [determine-version]
     runs-on: macos-latest
     permissions:
       contents: write
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
+      run: sed -i "s/^version = .*/version = \"${{ needs.determine-version.outputs.version }}\"/" Cargo.toml
 
     - name: Install Rust
       uses: actions-rs/toolchain@v1
@@ -239,11 +278,11 @@ jobs:
         toolchain: stable
         target: aarch64-apple-darwin
         override: true
-        
+
     - name: Install system dependencies
       run: |
         brew install pkg-config openssl fontconfig
-        
+
     - name: Cache dependencies
       uses: actions/cache@v4
       with:
@@ -252,766 +291,43 @@ jobs:
           ~/.cargo/git
           target
         key: ${{ runner.os }}-cargo-aarch64-apple-darwin-${{ hashFiles('**/Cargo.lock') }}
-        
+
     - name: Build for macOS Apple Silicon
       env:
         PKG_CONFIG_PATH: /opt/homebrew/lib/pkgconfig
       run: |
         cargo build --release --target aarch64-apple-darwin
-        
+
     - name: Upload binary for release
       uses: actions/upload-artifact@v4
       with:
         name: nettest-macos-aarch64-binary
         path: target/aarch64-apple-darwin/release/nettest
 
-  # Debian 12 x86_64
-  build-debian-12-x86_64:
-    runs-on: ubuntu-latest
-    container:
-      image: debian:bookworm
-    permissions:
-      contents: write
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
-
-    - name: Install system dependencies
-      run: |
-        apt-get update
-        apt-get install -y curl build-essential pkg-config libssl-dev libfontconfig1-dev
-        
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-        
-    - name: Add Rust target
-      run: |
-        . $HOME/.cargo/env
-        rustup target add x86_64-unknown-linux-gnu
-        
-    - name: Cache dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-debian-12-cargo-x86_64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
-        
-    - name: Build for Debian 12 x86_64
-      run: |
-        . $HOME/.cargo/env
-        cargo build --release --target x86_64-unknown-linux-gnu
-        
-    - name: Upload binary for release
-      uses: actions/upload-artifact@v4
-      with:
-        name: nettest-debian-12-x86_64-binary
-        path: target/x86_64-unknown-linux-gnu/release/nettest
-
-  # Debian 12 aarch64
-  build-debian-12-aarch64:
-    runs-on: ubuntu-24.04-arm
-    container:
-      image: arm64v8/debian:bookworm
-    permissions:
-      contents: write
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
-
-    - name: Install system dependencies
-      run: |
-        apt-get update
-        apt-get install -y curl build-essential pkg-config libssl-dev libfontconfig1-dev
-        
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-        
-    - name: Add Rust target
-      run: |
-        . $HOME/.cargo/env
-        rustup target add aarch64-unknown-linux-gnu
-        
-    - name: Cache dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-debian-12-cargo-aarch64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
-        
-    - name: Build for Debian 12 ARM64
-      run: |
-        . $HOME/.cargo/env
-        cargo build --release --target aarch64-unknown-linux-gnu
-        
-    - name: Upload binary for release
-      uses: actions/upload-artifact@v4
-      with:
-        name: nettest-debian-12-aarch64-binary
-        path: target/aarch64-unknown-linux-gnu/release/nettest
-
-  # Debian 13 x86_64
-  build-debian-13-x86_64:
-    runs-on: ubuntu-latest
-    container:
-      image: debian:trixie
-    permissions:
-      contents: write
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
-
-    - name: Install system dependencies
-      run: |
-        apt-get update
-        apt-get install -y curl build-essential pkg-config libssl-dev libfontconfig1-dev
-        
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-        
-    - name: Add Rust target
-      run: |
-        . $HOME/.cargo/env
-        rustup target add x86_64-unknown-linux-gnu
-        
-    - name: Cache dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-debian-13-cargo-x86_64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
-        
-    - name: Build for Debian 13 x86_64
-      run: |
-        . $HOME/.cargo/env
-        cargo build --release --target x86_64-unknown-linux-gnu
-        
-    - name: Upload binary for release
-      uses: actions/upload-artifact@v4
-      with:
-        name: nettest-debian-13-x86_64-binary
-        path: target/x86_64-unknown-linux-gnu/release/nettest
-
-  # Debian 13 aarch64
-  build-debian-13-aarch64:
-    runs-on: ubuntu-24.04-arm
-    container:
-      image: arm64v8/debian:trixie
-    permissions:
-      contents: write
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
-
-    - name: Install system dependencies
-      run: |
-        apt-get update
-        apt-get install -y curl build-essential pkg-config libssl-dev libfontconfig1-dev
-        
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-        
-    - name: Add Rust target
-      run: |
-        . $HOME/.cargo/env
-        rustup target add aarch64-unknown-linux-gnu
-        
-    - name: Cache dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-debian-13-cargo-aarch64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
-        
-    - name: Build for Debian 13 ARM64
-      run: |
-        . $HOME/.cargo/env
-        cargo build --release --target aarch64-unknown-linux-gnu
-        
-    - name: Upload binary for release
-      uses: actions/upload-artifact@v4
-      with:
-        name: nettest-debian-13-aarch64-binary
-        path: target/aarch64-unknown-linux-gnu/release/nettest
-
-  # Ubuntu 22.04 x86_64
-  build-ubuntu-22-x86_64:
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
-
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: x86_64-unknown-linux-gnu
-        override: true
-        
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y pkg-config libssl-dev libfontconfig1-dev clang
-        
-    - name: Cache dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-ubuntu-22-x86_64-${{ hashFiles('**/Cargo.lock') }}
-        
-    - name: Build for Ubuntu 22.04 x86_64
-      env:
-        CFLAGS: "-D_DEFAULT_SOURCE"
-        CXXFLAGS: "-D_DEFAULT_SOURCE"
-        RUSTFLAGS: "-C link-arg=-Wl,-z,relro,-z,now"
-        LIBCLANG_PATH: /usr/lib/llvm-14/lib/libclang.so
-      run: |
-        cargo build --release
-        
-    - name: Upload binary for release
-      uses: actions/upload-artifact@v4
-      with:
-        name: nettest-ubuntu-22-x86_64-binary
-        path: target/release/nettest
-
-  # Ubuntu 22.04 aarch64
-  build-ubuntu-22-aarch64:
-    runs-on: ubuntu-22.04-arm
-    permissions:
-      contents: write
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
-
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        override: true
-        
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y pkg-config libssl-dev libfontconfig1-dev build-essential
-        
-    - name: Cache dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-arm64-${{ hashFiles('**/Cargo.lock') }}
-        
-    - name: Build for Ubuntu 22.04 ARM64
-      env:
-        OPENSSL_DIR: /usr
-        OPENSSL_LIB_DIR: /usr/lib/aarch64-linux-gnu
-        OPENSSL_INCLUDE_DIR: /usr/include
-        CFLAGS: "-D_DEFAULT_SOURCE"
-        CXXFLAGS: "-D_DEFAULT_SOURCE"
-        RUSTFLAGS: "-C link-arg=-Wl,-z,relro,-z,now"
-      run: |
-        cargo build --release
-        
-    - name: Upload binary for release
-      uses: actions/upload-artifact@v4
-      with:
-        name: nettest-ubuntu-22-aarch64-binary
-        path: target/release/nettest
-
-  # Ubuntu 25.04 x86_64
-  build-ubuntu-25-x86_64:
-    runs-on: ubuntu-latest
-    container:
-      image: ubuntu:25.04
-    permissions:
-      contents: write
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
-
-    - name: Install system dependencies
-      run: |
-        apt-get update
-        apt-get install -y curl build-essential pkg-config libssl-dev libfontconfig1-dev clang
-        
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-        
-    - name: Add Rust target
-      run: |
-        . $HOME/.cargo/env
-        rustup target add x86_64-unknown-linux-gnu
-        
-    - name: Cache dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-ubuntu-25-x86_64-${{ hashFiles('**/Cargo.lock') }}
-        
-    - name: Build for Ubuntu 25.04 x86_64
-      env:
-        CFLAGS: "-D_DEFAULT_SOURCE"
-        CXXFLAGS: "-D_DEFAULT_SOURCE"
-        RUSTFLAGS: "-C link-arg=-Wl,-z,relro,-z,now"
-      run: |
-        . $HOME/.cargo/env
-        cargo build --release --target x86_64-unknown-linux-gnu
-        
-    - name: Upload binary for release
-      uses: actions/upload-artifact@v4
-      with:
-        name: nettest-ubuntu-25-x86_64-binary
-        path: target/x86_64-unknown-linux-gnu/release/nettest
-
-  # Ubuntu 25.04 aarch64
-  build-ubuntu-25-aarch64:
-    runs-on: ubuntu-24.04-arm
-    container:
-      image: ubuntu:25.04
-    permissions:
-      contents: write
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
-
-    - name: Install system dependencies
-      run: |
-        apt-get update
-        apt-get install -y curl build-essential pkg-config libssl-dev libfontconfig1-dev
-        
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-        
-    - name: Add Rust target
-      run: |
-        . $HOME/.cargo/env
-        rustup target add aarch64-unknown-linux-gnu
-        
-    - name: Cache dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-ubuntu-25-aarch64-${{ hashFiles('**/Cargo.lock') }}
-        
-    - name: Build for Ubuntu 25.04 ARM64
-      env:
-        OPENSSL_DIR: /usr
-        OPENSSL_LIB_DIR: /usr/lib/aarch64-linux-gnu
-        OPENSSL_INCLUDE_DIR: /usr/include
-        CFLAGS: "-D_DEFAULT_SOURCE"
-        CXXFLAGS: "-D_DEFAULT_SOURCE"
-        RUSTFLAGS: "-C link-arg=-Wl,-z,relro,-z,now"
-      run: |
-        . $HOME/.cargo/env
-        cargo build --release --target aarch64-unknown-linux-gnu
-        
-    - name: Upload binary for release
-      uses: actions/upload-artifact@v4
-      with:
-        name: nettest-ubuntu-25-aarch64-binary
-        path: target/aarch64-unknown-linux-gnu/release/nettest
-
-  # CentOS Stream 9 x86_64
-  build-centos-stream-9-x86_64:
-    runs-on: ubuntu-latest
-    container:
-      image: quay.io/centos/centos:stream9
-    permissions:
-      contents: write
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
-
-    - name: Install system dependencies
-      run: |
-        dnf update -y
-        dnf install -y --allowerasing curl gcc make pkgconfig openssl-devel fontconfig-devel perl
-      
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-      
-    - name: Add Rust target
-      run: |
-        . $HOME/.cargo/env
-        rustup target add x86_64-unknown-linux-gnu
-      
-    - name: Cache dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-centos-stream-9-cargo-x86_64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
-      
-    - name: Build for CentOS Stream 9 x86_64
-      run: |
-        . $HOME/.cargo/env
-        cargo build --release --target x86_64-unknown-linux-gnu
-      
-    - name: Upload binary for release
-      uses: actions/upload-artifact@v4
-      with:
-        name: nettest-centos-stream-9-x86_64-binary
-        path: target/x86_64-unknown-linux-gnu/release/nettest
-
-  # CentOS Stream 9 aarch64
-  build-centos-stream-9-aarch64:
-    runs-on: ubuntu-24.04-arm
-    container:
-      image: quay.io/centos/centos:stream9
-    permissions:
-      contents: write
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
-
-    - name: Install system dependencies
-      run: |
-        dnf update -y
-        dnf install -y --allowerasing curl gcc make pkgconfig openssl-devel fontconfig-devel perl
-      
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-      
-    - name: Add Rust target
-      run: |
-        . $HOME/.cargo/env
-        rustup target add aarch64-unknown-linux-gnu
-      
-    - name: Cache dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-centos-stream-9-cargo-aarch64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
-      
-    - name: Build for CentOS Stream 9 ARM64
-      run: |
-        . $HOME/.cargo/env
-        cargo build --release --target aarch64-unknown-linux-gnu
-      
-    - name: Upload binary for release
-      uses: actions/upload-artifact@v4
-      with:
-        name: nettest-centos-stream-9-aarch64-binary
-        path: target/aarch64-unknown-linux-gnu/release/nettest
-
-  # RHEL 8 x86_64
-  build-rhel-8-x86_64:
-    runs-on: ubuntu-latest
-    container:
-      image: redhat/ubi8
-    permissions:
-      contents: write
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
-
-    - name: Install system dependencies
-      run: |
-        dnf update -y
-        dnf install -y curl gcc gcc-c++ make pkgconfig openssl-devel fontconfig-devel perl
-        
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-        
-    - name: Add Rust target
-      run: |
-        . $HOME/.cargo/env
-        rustup target add x86_64-unknown-linux-gnu
-        
-    - name: Cache dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-rhel-8-cargo-x86_64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
-        
-    - name: Build for RHEL 8 x86_64
-      run: |
-        . $HOME/.cargo/env
-        cargo build --release --target x86_64-unknown-linux-gnu
-        
-    - name: Upload binary for release
-      uses: actions/upload-artifact@v4
-      with:
-        name: nettest-rhel-8-x86_64-binary
-        path: target/x86_64-unknown-linux-gnu/release/nettest
-
-  # RHEL 8 aarch64
-  build-rhel-8-aarch64:
-    runs-on: ubuntu-24.04-arm
-    container:
-      image: redhat/ubi8
-    permissions:
-      contents: write
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
-
-    - name: Install system dependencies
-      run: |
-        dnf update -y
-        dnf install -y curl gcc gcc-c++ make pkgconfig openssl-devel fontconfig-devel perl
-        
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-        
-    - name: Add Rust target
-      run: |
-        . $HOME/.cargo/env
-        rustup target add aarch64-unknown-linux-gnu
-        
-    - name: Cache dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-rhel-8-cargo-aarch64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
-        
-    - name: Build for RHEL 8 ARM64
-      run: |
-        . $HOME/.cargo/env
-        cargo build --release --target aarch64-unknown-linux-gnu
-        
-    - name: Upload binary for release
-      uses: actions/upload-artifact@v4
-      with:
-        name: nettest-rhel-8-aarch64-binary
-        path: target/aarch64-unknown-linux-gnu/release/nettest
-
-  # RHEL 9 x86_64
-  build-rhel-9-x86_64:
-    runs-on: ubuntu-latest
-    container:
-      image: redhat/ubi9
-    permissions:
-      contents: write
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
-
-    - name: Install system dependencies
-      run: |
-        dnf update -y
-        dnf install -y --allowerasing curl gcc make pkgconfig openssl-devel fontconfig-devel perl
-        
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-        
-    - name: Add Rust target
-      run: |
-        . $HOME/.cargo/env
-        rustup target add x86_64-unknown-linux-gnu
-        
-    - name: Cache dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-rhel-9-cargo-x86_64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
-        
-    - name: Build for RHEL 9 x86_64
-      run: |
-        . $HOME/.cargo/env
-        cargo build --release --target x86_64-unknown-linux-gnu
-        
-    - name: Upload binary for release
-      uses: actions/upload-artifact@v4
-      with:
-        name: nettest-rhel-9-x86_64-binary
-        path: target/x86_64-unknown-linux-gnu/release/nettest
-
-  # RHEL 9 aarch64
-  build-rhel-9-aarch64:
-    runs-on: ubuntu-24.04-arm
-    container:
-      image: redhat/ubi9
-    permissions:
-      contents: write
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set version in Cargo.toml
-      run: sed -i "s/^version = .*/version = \"${{ github.event.inputs.version }}\"/" Cargo.toml
-
-    - name: Install system dependencies
-      run: |
-        dnf update -y
-        dnf install -y --allowerasing curl gcc make pkgconfig openssl-devel fontconfig-devel perl
-        
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-        
-    - name: Add Rust target
-      run: |
-        . $HOME/.cargo/env
-        rustup target add aarch64-unknown-linux-gnu
-        
-    - name: Cache dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-rhel-9-cargo-aarch64-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
-        
-    - name: Build for RHEL 9 ARM64
-      run: |
-        . $HOME/.cargo/env
-        cargo build --release --target aarch64-unknown-linux-gnu
-        
-    - name: Upload binary for release
-      uses: actions/upload-artifact@v4
-      with:
-        name: nettest-rhel-9-aarch64-binary
-        path: target/aarch64-unknown-linux-gnu/release/nettest
-
   # Create releases for all platforms
   create-all-releases:
     needs: [
+      determine-version,
       build-linux-x86_64,
       build-linux-aarch64,
       build-windows-x86_64,
       build-windows-aarch64,
       build-macos-x86_64,
-      build-macos-aarch64,
-      build-debian-12-x86_64,
-      build-debian-12-aarch64,
-      build-debian-13-x86_64,
-      build-debian-13-aarch64,
-      build-ubuntu-22-x86_64,
-      build-ubuntu-22-aarch64,
-      build-ubuntu-25-x86_64,
-      build-ubuntu-25-aarch64,
-      build-centos-stream-9-x86_64,
-      build-centos-stream-9-aarch64,
-      build-rhel-8-x86_64,
-      build-rhel-8-aarch64,
-      build-rhel-9-x86_64,
-      build-rhel-9-aarch64
+      build-macos-aarch64
     ]
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
     - name: Download all binaries
       uses: actions/download-artifact@v4
-      
+
     - name: List downloaded files
       run: |
         echo "Listing downloaded files:"
         find . -name "nettest*" -type f | head -20
-        
+
     - name: Create archives with binaries
       run: |
         # Create Linux x86_64 archive
@@ -1021,7 +337,7 @@ jobs:
           tar -czf nettest-linux-x86_64.tar.gz nettest
           rm nettest
         fi
-        
+
         # Create Linux aarch64 archive
         if [ -f "nettest-linux-aarch64-binary/nettest" ]; then
           cp nettest-linux-aarch64-binary/nettest nettest
@@ -1029,21 +345,21 @@ jobs:
           tar -czf nettest-linux-aarch64.tar.gz nettest
           rm nettest
         fi
-        
+
         # Create Windows x86_64 archive
         if [ -f "nettest-windows-x86_64-binary/nettest.exe" ]; then
           cp nettest-windows-x86_64-binary/nettest.exe nettest.exe
           zip nettest-windows-x86_64.zip nettest.exe
           rm nettest.exe
         fi
-        
+
         # Create Windows aarch64 archive
         if [ -f "nettest-windows-aarch64-binary/nettest.exe" ]; then
           cp nettest-windows-aarch64-binary/nettest.exe nettest.exe
           zip nettest-windows-aarch64.zip nettest.exe
           rm nettest.exe
         fi
-        
+
         # Create macOS x86_64 archive
         if [ -f "nettest-macos-x86_64-binary/nettest" ]; then
           cp nettest-macos-x86_64-binary/nettest nettest
@@ -1051,7 +367,7 @@ jobs:
           tar -czf nettest-macos-x86_64.tar.gz nettest
           rm nettest
         fi
-        
+
         # Create macOS aarch64 archive
         if [ -f "nettest-macos-aarch64-binary/nettest" ]; then
           cp nettest-macos-aarch64-binary/nettest nettest
@@ -1059,178 +375,49 @@ jobs:
           tar -czf nettest-macos-aarch64.tar.gz nettest
           rm nettest
         fi
-        
-        # Create Debian 12 x86_64 archive
-        if [ -f "nettest-debian-12-x86_64-binary/nettest" ]; then
-          cp nettest-debian-12-x86_64-binary/nettest nettest
-          chmod +x nettest
-          tar -czf nettest-debian-12-x86_64.tar.gz nettest
-          rm nettest
-        fi
-        
-        # Create Debian 12 aarch64 archive
-        if [ -f "nettest-debian-12-aarch64-binary/nettest" ]; then
-          cp nettest-debian-12-aarch64-binary/nettest nettest
-          chmod +x nettest
-          tar -czf nettest-debian-12-aarch64.tar.gz nettest
-          rm nettest
-        fi
-        
-        # Create Debian 13 x86_64 archive
-        if [ -f "nettest-debian-13-x86_64-binary/nettest" ]; then
-          cp nettest-debian-13-x86_64-binary/nettest nettest
-          chmod +x nettest
-          tar -czf nettest-debian-13-x86_64.tar.gz nettest
-          rm nettest
-        fi
-        
-        # Create Debian 13 aarch64 archive
-        if [ -f "nettest-debian-13-aarch64-binary/nettest" ]; then
-          cp nettest-debian-13-aarch64-binary/nettest nettest
-          chmod +x nettest
-          tar -czf nettest-debian-13-aarch64.tar.gz nettest
-          rm nettest
-        fi
-        
-        # Create Ubuntu 22.04 x86_64 archive
-        if [ -f "nettest-ubuntu-22-x86_64-binary/nettest" ]; then
-          cp nettest-ubuntu-22-x86_64-binary/nettest nettest
-          chmod +x nettest
-          tar -czf nettest-ubuntu-22-x86_64.tar.gz nettest
-          rm nettest
-        fi
-        
-        # Create Ubuntu 22.04 aarch64 archive
-        if [ -f "nettest-ubuntu-22-aarch64-binary/nettest" ]; then
-          cp nettest-ubuntu-22-aarch64-binary/nettest nettest
-          chmod +x nettest
-          tar -czf nettest-ubuntu-22-aarch64.tar.gz nettest
-          rm nettest
-        fi
-        
-        # Create Ubuntu 25.04 x86_64 archive
-        if [ -f "nettest-ubuntu-25-x86_64-binary/nettest" ]; then
-          cp nettest-ubuntu-25-x86_64-binary/nettest nettest
-          chmod +x nettest
-          tar -czf nettest-ubuntu-25-x86_64.tar.gz nettest
-          rm nettest
-        fi
-        
-        # Create Ubuntu 25.04 aarch64 archive
-        if [ -f "nettest-ubuntu-25-aarch64-binary/nettest" ]; then
-          cp nettest-ubuntu-25-aarch64-binary/nettest nettest
-          chmod +x nettest
-          tar -czf nettest-ubuntu-25-aarch64.tar.gz nettest
-          rm nettest
-        fi
-        
-        # Create CentOS Stream 9 x86_64 archive
-        if [ -f "nettest-centos-stream-9-x86_64-binary/nettest" ]; then
-          cp nettest-centos-stream-9-x86_64-binary/nettest nettest
-          chmod +x nettest
-          tar -czf nettest-centos-stream-9-x86_64.tar.gz nettest
-          rm nettest
-        fi
-        
-        # Create CentOS Stream 9 aarch64 archive
-        if [ -f "nettest-centos-stream-9-aarch64-binary/nettest" ]; then
-          cp nettest-centos-stream-9-aarch64-binary/nettest nettest
-          chmod +x nettest
-          tar -czf nettest-centos-stream-9-aarch64.tar.gz nettest
-          rm nettest
-        fi
-        
-        # Create RHEL 8 x86_64 archive
-        if [ -f "nettest-rhel-8-x86_64-binary/nettest" ]; then
-          cp nettest-rhel-8-x86_64-binary/nettest nettest
-          chmod +x nettest
-          tar -czf nettest-rhel-8-x86_64.tar.gz nettest
-          rm nettest
-        fi
-        
-        # Create RHEL 8 aarch64 archive
-        if [ -f "nettest-rhel-8-aarch64-binary/nettest" ]; then
-          cp nettest-rhel-8-aarch64-binary/nettest nettest
-          chmod +x nettest
-          tar -czf nettest-rhel-8-aarch64.tar.gz nettest
-          rm nettest
-        fi
-        
-        # Create RHEL 9 x86_64 archive
-        if [ -f "nettest-rhel-9-x86_64-binary/nettest" ]; then
-          cp nettest-rhel-9-x86_64-binary/nettest nettest
-          chmod +x nettest
-          tar -czf nettest-rhel-9-x86_64.tar.gz nettest
-          rm nettest
-        fi
-        
-        # Create RHEL 9 aarch64 archive
-        if [ -f "nettest-rhel-9-aarch64-binary/nettest" ]; then
-          cp nettest-rhel-9-aarch64-binary/nettest nettest
-          chmod +x nettest
-          tar -czf nettest-rhel-9-aarch64.tar.gz nettest
-          rm nettest
-        fi
-        
+
     - name: Create versioned release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: v${{ github.event.inputs.version }}
-        name: Release v${{ github.event.inputs.version }}
+        tag_name: v${{ needs.determine-version.outputs.version }}
+        name: Release v${{ needs.determine-version.outputs.version }}
         body: |
-          ## Release v${{ github.event.inputs.version }}
-          
+          ## Release v${{ needs.determine-version.outputs.version }}
+
           ### Downloads
-          
+
           #### Linux
-          - **Ubuntu 25.04 x86_64**: [nettest-ubuntu-25-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-ubuntu-25-x86_64.tar.gz)
-          - **Ubuntu 25.04 ARM64**: [nettest-ubuntu-25-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-ubuntu-25-aarch64.tar.gz)
-          - **Ubuntu 24.04 x86_64**: [nettest-linux-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-linux-x86_64.tar.gz)
-          - **Ubuntu 24.04 ARM64**: [nettest-linux-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-linux-aarch64.tar.gz)
-          - **Ubuntu 22.04 x86_64**: [nettest-ubuntu-22-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-ubuntu-22-x86_64.tar.gz)
-          - **Ubuntu 22.04 ARM64**: [nettest-ubuntu-22-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-ubuntu-22-aarch64.tar.gz)
-          
-          #### Debian
-          - **Debian 13 x86_64**: [nettest-debian-13-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-debian-13-x86_64.tar.gz)
-          - **Debian 13 ARM64**: [nettest-debian-13-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-debian-13-aarch64.tar.gz)
-          - **Debian 12 x86_64**: [nettest-debian-12-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-debian-12-x86_64.tar.gz)
-          - **Debian 12 ARM64**: [nettest-debian-12-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-debian-12-aarch64.tar.gz)
-          
-          #### RedHat / CentOS
-          - **RHEL 9 x86_64**: [nettest-rhel-9-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-rhel-9-x86_64.tar.gz)
-          - **RHEL 9 ARM64**: [nettest-rhel-9-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-rhel-9-aarch64.tar.gz)
-          - **RHEL 8 x86_64**: [nettest-rhel-8-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-rhel-8-x86_64.tar.gz)
-          - **RHEL 8 ARM64**: [nettest-rhel-8-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-rhel-8-aarch64.tar.gz)
-          - **CentOS Stream 9 x86_64**: [nettest-centos-stream-9-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-centos-stream-9-x86_64.tar.gz)
-          - **CentOS Stream 9 ARM64**: [nettest-centos-stream-9-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-centos-stream-9-aarch64.tar.gz)
-          
+          Built on Debian 11 (Bullseye) with glibc 2.31 — compatible with Debian 11+, Ubuntu 22.04+, RHEL 8+, CentOS Stream 9+, and other distributions with glibc >= 2.31.
+          - **Linux x86_64**: [nettest-linux-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ needs.determine-version.outputs.version }}/nettest-linux-x86_64.tar.gz)
+          - **Linux ARM64**: [nettest-linux-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ needs.determine-version.outputs.version }}/nettest-linux-aarch64.tar.gz)
+
           #### macOS
-          - **macOS Apple Silicon**: [nettest-macos-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-macos-aarch64.tar.gz)
-          - **macOS Intel**: [nettest-macos-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-macos-x86_64.tar.gz)
-          
+          - **macOS Apple Silicon**: [nettest-macos-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ needs.determine-version.outputs.version }}/nettest-macos-aarch64.tar.gz)
+          - **macOS Intel**: [nettest-macos-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ needs.determine-version.outputs.version }}/nettest-macos-x86_64.tar.gz)
+
           #### Windows
-          - **Windows x86_64**: [nettest-windows-x86_64.zip](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-windows-x86_64.zip)
-          - **Windows ARM64**: [nettest-windows-aarch64.zip](https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-windows-aarch64.zip)
-          
+          - **Windows x86_64**: [nettest-windows-x86_64.zip](https://github.com/${{ github.repository }}/releases/download/v${{ needs.determine-version.outputs.version }}/nettest-windows-x86_64.zip)
+          - **Windows ARM64**: [nettest-windows-aarch64.zip](https://github.com/${{ github.repository }}/releases/download/v${{ needs.determine-version.outputs.version }}/nettest-windows-aarch64.zip)
+
           ### Installation
-          
+
           #### Linux/macOS
           ```bash
           # Download and extract
-          wget https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-<distribution>-<arch>.tar.gz
-          tar -xzf nettest-<distribution>-<arch>.tar.gz
-          
+          wget https://github.com/${{ github.repository }}/releases/download/v${{ needs.determine-version.outputs.version }}/nettest-linux-x86_64.tar.gz
+          tar -xzf nettest-linux-x86_64.tar.gz
+
           # Run
           ./nettest -s  # Server
           ./nettest -c <address>  # Client
           ```
-          
+
           #### Windows
           ```powershell
           # Download and extract
-          Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/nettest-windows-x86_64.zip" -OutFile "nettest-windows-x86_64.zip"
+          Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/download/v${{ needs.determine-version.outputs.version }}/nettest-windows-x86_64.zip" -OutFile "nettest-windows-x86_64.zip"
           Expand-Archive -Path "nettest-windows-x86_64.zip" -DestinationPath "."
-          
+
           # Run
           .\nettest.exe -s  # Server
           .\nettest.exe -c <address>  # Client
@@ -1242,20 +429,6 @@ jobs:
           nettest-windows-aarch64.zip
           nettest-macos-x86_64.tar.gz
           nettest-macos-aarch64.tar.gz
-          nettest-debian-12-x86_64.tar.gz
-          nettest-debian-12-aarch64.tar.gz
-          nettest-debian-13-x86_64.tar.gz
-          nettest-debian-13-aarch64.tar.gz
-          nettest-ubuntu-22-x86_64.tar.gz
-          nettest-ubuntu-22-aarch64.tar.gz
-          nettest-ubuntu-25-x86_64.tar.gz
-          nettest-ubuntu-25-aarch64.tar.gz
-          nettest-centos-stream-9-x86_64.tar.gz
-          nettest-centos-stream-9-aarch64.tar.gz
-          nettest-rhel-8-x86_64.tar.gz
-          nettest-rhel-8-aarch64.tar.gz
-          nettest-rhel-9-x86_64.tar.gz
-          nettest-rhel-9-aarch64.tar.gz
         token: ${{ secrets.GITHUB_TOKEN }}
         overwrite: true
         draft: false

@@ -159,24 +159,18 @@ jobs:
           
           echo "Deploying Nettest Server..."
           
-          # Determine Debian version and select corresponding release
+          # Check minimum Debian version
           DEBIAN_VERSION=$(cat /etc/debian_version 2>/dev/null | cut -d. -f1 || echo "0")
           echo "Detected Debian version: $DEBIAN_VERSION"
-          
-          # Check version support
+
           if [ "$DEBIAN_VERSION" -lt 11 ]; then
             echo "ERROR: Debian version $DEBIAN_VERSION is not supported. Minimum required version is 11."
             echo "Please upgrade to Debian 11 or higher."
             exit 1
-          elif [ "$DEBIAN_VERSION" -eq 11 ]; then
-            NETTEST_URL="https://github.com/specure/nettest/releases/download/$DEPLOY_VERSION/nettest-debian-11-x86_64.tar.gz"
-          elif [ "$DEBIAN_VERSION" -ge 12 ]; then
-            # For versions 12 and above use Debian 12
-            NETTEST_URL="https://github.com/specure/nettest/releases/download/$DEPLOY_VERSION/nettest-debian-12-x86_64.tar.gz"
-          else
-            echo "ERROR: Unable to determine Debian version or unsupported version: $DEBIAN_VERSION"
-            exit 1
           fi
+
+          # Universal Linux binary (built on Debian 11, compatible with all supported distros)
+          NETTEST_URL="https://github.com/specure/nettest/releases/download/$DEPLOY_VERSION/nettest-linux-x86_64.tar.gz"
           
           echo "Using URL: $NETTEST_URL"
           
@@ -208,7 +202,7 @@ jobs:
           mkdir -p $NEW_BUILD_DIR $OLD_BUILD_DIR
           cd $NEW_BUILD_DIR
           
-          echo "Downloading build for Debian $DEBIAN_VERSION..."
+          echo "Downloading Linux x86_64 build..."
           wget -q --timeout=30 --tries=3 "$NETTEST_URL" -O nettest.tar.gz
           
           if [ $? -eq 0 ] && [ -f nettest.tar.gz ]; then
