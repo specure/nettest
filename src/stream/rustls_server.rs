@@ -151,12 +151,6 @@ impl RustlsServerStream {
         }
 
         trace!("No data to copy");
-        // If we need to read more data, try again
-        if self.conn.wants_read() {
-            trace!("Wants read");
-            return self.read(buf);
-        }
-
         // Force send data to clear buffer
         if self.conn.wants_write() {
             trace!("Wants write");
@@ -169,7 +163,8 @@ impl RustlsServerStream {
             return Ok(0);
         }
 
-        Ok(0)
+        // TLS processed an internal record (handshake/alert) with no app data — signal caller to retry
+        Err(io::Error::new(io::ErrorKind::WouldBlock, "no plaintext data yet"))
     }
 
     pub fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
