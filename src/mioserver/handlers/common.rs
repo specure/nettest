@@ -210,6 +210,11 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
                     state.chunk_size = MIN_CHUNK_SIZE;
                 }
                 state.read_pos = 0;
+                state.write_pos = 0;
+                state.total_bytes_received = 0;
+                state.clock = None;
+                state.sent_time_ns = None;
+                state.bytes_received.clear();
                 state.measurement_state = ServerTestPhase::PutSendOk;
                 state
                     .stream

@@ -12,9 +12,6 @@ pub fn handle_put_send_ok(poll: &Poll, state: &mut TestState) -> io::Result<usiz
         state.write_buffer[0..command.len()].copy_from_slice(command);
         state.write_pos = 0;
     }
-    if state.clock.is_none() {
-        state.clock = Some(Instant::now());
-    }
     loop {
         let n = state.stream.write(&state.write_buffer[state.write_pos..command.len()])?;
         if n == 0 {
@@ -27,6 +24,7 @@ pub fn handle_put_send_ok(poll: &Poll, state: &mut TestState) -> io::Result<usiz
             state.read_pos = 0;
             //TODO: remove this
             state.chunk_buffer = vec![0u8; state.chunk_size as usize];
+            state.clock = Some(Instant::now());
 
             state
                 .stream
