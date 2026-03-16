@@ -171,9 +171,7 @@ impl RustlsServerStream {
             return Ok(0);
         }
 
-        // TLS processed an internal record (session ticket / key update) with no app data.
-        // Signal the caller to wait for the next readable event.
-        Err(io::Error::new(io::ErrorKind::WouldBlock, "no plaintext data yet"))
+        Ok(0)
     }
 
     pub fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
