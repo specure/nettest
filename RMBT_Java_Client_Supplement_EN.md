@@ -36,16 +36,15 @@ Java's `SSLSocket` wraps `SSLEngine`, which adds an extra stateful layer on top 
 
 The Java CLI client supports a `--token` flag intended to skip the control-server round-trip and run standalone. In the version under test (`RMBTClient` from the `open-rmbt` repository), **this path is broken**: passing `--token` results in a `NullPointerException` at runtime.
 
-The relevant code path that fails:
+
+### Workaround: Hardcoded Control-Server Response
+
+To proceed without a live control server, we patched the client to return a static JSON string in place of the HTTP request:
 
 ```java
 // Intended bypass — does NOT work; throws NPE on subsequent JSONObject access
 // final JSONObject response = JSONParser.sendJSONToUrl(hostUrl, regData);
 ```
-
-### Workaround: Hardcoded Control-Server Response
-
-To proceed without a live control server, we patched the client to return a static JSON string in place of the HTTP request:
 
 ```java
 final String jsonString = "{\n" +
