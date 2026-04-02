@@ -14,7 +14,7 @@ This test was conducted to validate the correctness of the Rust RMBT server impl
 
 ### 2.1 Server Installation
 
-The test server (`ai-framework`, Ubuntu 24.04.3 LTS, kernel 6.14) was configured to run both the C and Rust RMBT servers locally. To enable remote browser access to the server GUI, a noVNC setup was deployed:
+The test server (`framework-desktop`, Ubuntu 24.04.3 LTS, kernel 6.14) was configured to run both the C and Rust RMBT servers locally. To enable remote browser access to the server GUI, a noVNC setup was deployed:
 
 1. Xvfb virtual display server launched on display `:2`
 2. x11vnc attached to the virtual display
