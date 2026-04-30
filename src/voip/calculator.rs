@@ -52,9 +52,8 @@ impl RtpQoSResult {
     }
 }
 
-/// Equivalent to RtpUtil.calculateQoS() in Java.
-///
-/// Java reference: RMBTUtil/src/main/java/at/rtr/rmbt/util/net/rtp/RtpUtil.java
+/// Jitter calculation per RFC 3550 Appendix A.8.
+/// See Nettest_Voip_Jitter_EN.md for algorithm details.
 pub fn calculate_qos(
     packets:     &PacketMap,
     initial_seq: u16,
@@ -66,7 +65,6 @@ pub fn calculate_qos(
     }
 
     // --- Pass 1: jitter, skew, stalls (sorted by sequence_number) ---
-    // Java: TreeSet<Integer> sequenceNumberSet = new TreeSet<>(rtpControlDataMap.keySet())
     let mut by_seq: Vec<_> = packets.values().collect();
     by_seq.sort_by_key(|p| p.sequence_number);
 
@@ -82,23 +80,18 @@ pub fn calculate_qos(
     for cur in &by_seq {
         match prev {
             None => {
-                // Java: jitterMap.put(x, 0f) for the first packet
+                // first packet: running estimate starts at zero
                 jitter = 0.0;
             }
             Some(i) => {
-                // Java: tsDiff = j.receivedNs - i.receivedNs
                 let real_diff_ns = cur.received_ns as i64 - i.received_ns as i64;
 
-                // Java: buffer < tsDiff → stall
                 if real_diff_ns > buffer_ns as i64 {
                     stalls += 1;
                     stall_time += real_diff_ns - buffer_ns as i64;
                 }
 
-                // Java: calculateDelta(i, j, sampleRate)
-                //   msDiff  = j.receivedNs - i.receivedNs
-                //   tsDiff  = NANOSECONDS.convert((long)(((float)(j.ts - i.ts) / sampleRate) * 1000f), MILLISECONDS)
-                //   return msDiff - tsDiff   (signed; |abs| taken by caller)
+                // Truncate to whole ms before converting to ns — matches RTP timer resolution
                 let ts_diff_ms = (cur.rtp_timestamp.wrapping_sub(i.rtp_timestamp) as f32
                     / sample_rate as f32
                     * 1000.0) as i64;
@@ -106,41 +99,33 @@ pub fn calculate_qos(
 
                 let delta = (real_diff_ns - expected_diff_ns).unsigned_abs() as i64;
 
-                // Java: jitter = prevJitter + ((float)delta - prevJitter) / 16f
+                // RFC 3550: J(i) = J(i-1) + (|D(i-1,i)| - J(i-1)) / 16
                 jitter += (delta as f32 - jitter) / 16.0;
 
-                // Java: maxJitter = Math.max((long)jitter, maxJitter)  — truncation
-                max_jitter = max_jitter.max(jitter as i64);
-                // Java: meanJitter += jitter  — accumulated, divided by jitterMap.size() at the end
+                // truncation via `as i64`, not rounding
+                max_jitter  = max_jitter.max(jitter as i64);
                 mean_jitter += jitter as i64;
-
-                max_delta = max_delta.max(delta);
-
-                // Java: skew += NANOSECONDS.convert(...ts diff...) - tsDiff
-                //   where tsDiff = j.receivedNs - i.receivedNs (real diff)
-                skew += expected_diff_ns - real_diff_ns;
+                max_delta   = max_delta.max(delta);
+                skew        += expected_diff_ns - real_diff_ns;
             }
         }
         prev = Some(cur);
     }
 
-    // Java: meanJitter / jitterMap.size()
-    // jitterMap has one entry per received packet (first = 0.0, rest = computed)
-    // so jitterMap.size() == total received packets == by_seq.len()
+    // Divide by n (total packets), not n-1 (pairs).
+    // The first packet contributes 0.0 to the sum but is included in the count.
     let n = by_seq.len() as i64;
     if n > 0 {
         mean_jitter /= n;
     }
 
-    // Java: stalls == 0 ? 0 : MILLISECONDS.convert(stallTime, NANOSECONDS) / stalls
     let avg_stall_time: i64 = if stalls > 0 {
-        stall_time / 1_000_000 / stalls as i64
+        stall_time / 1_000_000 / stalls as i64  // ns → ms, then average
     } else {
         0
     };
 
     // --- Pass 2: out-of-order analysis (sorted by received_ns) ---
-    // Java: TreeSet<RtpSequence> with comparator on timestampNs
     let mut by_time: Vec<_> = packets.values().collect();
     by_time.sort_by_key(|p| p.received_ns);
 
@@ -148,7 +133,7 @@ pub fn calculate_qos(
     let mut out_of_order:   i32 = 0;
     let mut cur_sequential: i32 = 0;
     let mut max_sequential: i32 = 0;
-    let mut min_sequential: i32 = 0; // 0 = "not yet observed"
+    let mut min_sequential: i32 = 0; // 0 = not yet observed
 
     for pkt in &by_time {
         if pkt.sequence_number != next_expected {
@@ -161,11 +146,9 @@ pub fn calculate_qos(
         } else {
             cur_sequential += 1;
         }
-        // Java: nextSeq++ (long, but sequence numbers are 16-bit in practice)
         next_expected = next_expected.wrapping_add(1);
     }
 
-    // Java: final update after the loop
     max_sequential = max_sequential.max(cur_sequential);
     if cur_sequential > 1 {
         min_sequential = update_min(cur_sequential, min_sequential);
@@ -174,7 +157,7 @@ pub fn calculate_qos(
         min_sequential = max_sequential;
     }
 
-    // Java constructor: minSequential > receivedPackets ? receivedPackets : minSequential
+    // Cap sequential counts at total received
     let received = packets.len() as i32;
     RtpQoSResult {
         received_packets: packets.len(),
@@ -190,7 +173,6 @@ pub fn calculate_qos(
     }
 }
 
-/// Java: curSequential < minSequential ? curSequential : (minSequential == 0 ? curSequential : minSequential)
 fn update_min(cur: i32, min: i32) -> i32 {
     if cur < min { cur } else if min == 0 { cur } else { min }
 }
@@ -226,30 +208,25 @@ mod tests {
 
     #[test]
     fn test_mean_jitter_divides_by_total_packets_not_pairs() {
-        // Java: meanJitter / jitterMap.size() where jitterMap.size() == n (all packets)
-        // Not n-1 (pairs). Verify with a simple case: 3 packets, jitter on pair (1,2) only.
+        // mean_jitter = sum of jitter estimates / n (total packets), not / n-1 (pairs)
         let sample_rate = 8000u32;
         let ts_increment = 160u32;
 
         let mut packets = HashMap::new();
-        // packet 0: arrives at 0ms (perfect)
         packets.insert(0u16, RtpControlData { sequence_number: 0, rtp_timestamp: 0, received_ns: 0 });
-        // packet 1: arrives 5ms late → delta = 5_000_000 ns
+        // packet 1 arrives 5ms late
         packets.insert(1u16, RtpControlData { sequence_number: 1, rtp_timestamp: ts_increment, received_ns: 25_000_000 });
-        // packet 2: arrives on time
         packets.insert(2u16, RtpControlData { sequence_number: 2, rtp_timestamp: ts_increment * 2, received_ns: 40_000_000 });
 
         let result = calculate_qos(&packets, 0, sample_rate, 100_000_000);
-        // mean is sum of jitter values / 3 (total packets), not / 2 (pairs)
         assert!(result.mean_jitter < result.max_jitter, "mean must be < max when divided by n");
     }
 
     #[test]
-    fn test_update_min_matches_java() {
-        // Java: curSequential < minSequential ? cur : (min == 0 ? cur : min)
-        assert_eq!(update_min(3, 0), 3);  // min==0 → cur
-        assert_eq!(update_min(3, 5), 3);  // cur < min → cur
-        assert_eq!(update_min(5, 3), 3);  // cur > min, min != 0 → min
-        assert_eq!(update_min(3, 3), 3);  // cur == min → min (not cur < min)
+    fn test_update_min() {
+        assert_eq!(update_min(3, 0), 3);  // min not yet observed → take cur
+        assert_eq!(update_min(3, 5), 3);  // cur < min → take cur
+        assert_eq!(update_min(5, 3), 3);  // cur > min → keep min
+        assert_eq!(update_min(3, 3), 3);  // equal → keep min
     }
 }
