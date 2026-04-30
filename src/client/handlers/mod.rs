@@ -6,3 +6,4 @@ pub mod get_time;
 pub mod put;
 pub mod puttimeresult;
 pub mod signed_result;
+pub mod voip;

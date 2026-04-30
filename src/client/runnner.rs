@@ -96,6 +96,28 @@ pub async fn run_threads(
                 } else {
                     print_float_result("Ping Median", "ms", Some(ping_ms), false);
                 }
+
+                if let Err(e) = state.run_voip_test() {
+                    log::warn!("VoIP test failed: {}", e);
+                } else {
+                    let ms = state.measurement_state();
+                    if let Some(r) = &ms.voip_result_in {
+                        print_float_result(
+                            "Jitter (incoming)",
+                            "ms",
+                            Some(r.mean_jitter as f64 / 1_000_000.0),
+                            false,
+                        );
+                    }
+                    if let Some(r) = &ms.voip_result_out {
+                        print_float_result(
+                            "Jitter (outgoing)",
+                            "ms",
+                            Some(r.mean_jitter as f64 / 1_000_000.0),
+                            false,
+                        );
+                    }
+                }
             }
             barrier.wait();
 

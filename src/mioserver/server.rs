@@ -29,6 +29,7 @@ use crate::config::FileConfig;
 use crate::mioserver::worker::WorkerThread;
 use crate::mioserver::ServerTestPhase;
 use crate::stream::stream::Stream;
+use crate::voip::{RtpQoSResult, VoipParams};
 
 pub struct MioServer {
     tcp_listeners: Vec<TcpListener>,
@@ -67,6 +68,9 @@ pub struct TestState {
     pub bytes_received: VecDeque<(u64, u64)>,
     pub client_addr: Option<SocketAddr>,
     pub sig_key: Option<String>,
+    pub voip_ssrc: Option<u32>,
+    pub voip_params: Option<VoipParams>,
+    pub voip_result: Option<Arc<Mutex<Option<RtpQoSResult>>>>,
 }
 
 #[derive(Clone)]

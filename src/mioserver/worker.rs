@@ -172,6 +172,9 @@ impl Worker {
                                 client_addr: ip,
                                 sig_key: Some(self.server_config.secret_key.clone()),
                                 loop_iteration_count: 0,
+                                voip_ssrc: None,
+                                voip_params: None,
+                                voip_result: None,
                             },
                         );
                     }

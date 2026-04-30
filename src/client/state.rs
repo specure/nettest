@@ -11,6 +11,7 @@ use crate::client::handlers::basic_handler::{
 };
 use crate::client::constants::{MIN_CHUNK_SIZE};
 use crate::stream::stream::Stream;
+use crate::voip::{RtpQoSResult, VoipParams};
 
 pub const ONE_SECOND_NS: u128 = 1_000_000_000;
 
@@ -59,6 +60,12 @@ pub enum TestPhase {
     SignedResultReceive,
     SignedResultSendOk,
     SignedResultCompleted,
+
+    VoipSendCommand,
+    VoipReceiveOk,
+    VoipSendGetResult,
+    VoipReceiveResult,
+    VoipCompleted,
 }
 
 pub struct TestState {
@@ -95,6 +102,11 @@ pub struct MeasurementState {
     pub bytes_sent: u64,
     pub time_result_buffer: Vec<u8>,
     pub envelope: Option<String>,
+    pub server_addr: std::net::SocketAddr,
+    pub voip_ssrc: Option<u32>,
+    pub voip_params: Option<VoipParams>,
+    pub voip_result_in: Option<RtpQoSResult>,
+    pub voip_result_out: Option<RtpQoSResult>,
 }
 
 impl TestState {
@@ -157,6 +169,11 @@ impl TestState {
             bytes_sent: 0,
             time_result_buffer: Vec::new(),
             envelope: None,
+            server_addr: addr,
+            voip_ssrc: None,
+            voip_params: None,
+            voip_result_in: None,
+            voip_result_out: None,
         };
 
 
@@ -201,6 +218,17 @@ impl TestState {
             Interest::WRITABLE,
         )?;
         self.process_phase(TestPhase::PerfCompleted, ONE_SECOND_NS * 12)?;
+        Ok(())
+    }
+
+    pub fn run_voip_test(&mut self) -> Result<()> {
+        self.measurement_state.phase = TestPhase::VoipSendCommand;
+        self.measurement_state.stream.reregister(
+            &mut self.poll,
+            self.measurement_state.token,
+            Interest::WRITABLE,
+        )?;
+        self.process_phase(TestPhase::VoipCompleted, ONE_SECOND_NS * 10)?;
         Ok(())
     }
 

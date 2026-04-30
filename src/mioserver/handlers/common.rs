@@ -7,6 +7,8 @@ use crate::{
     mioserver::{server::TestState, ServerTestPhase},
 };
 use crate::mioserver::handlers::timeout_utils::check_timeout_periodic;
+use crate::mioserver::handlers::voip::start_voip_udp_thread;
+use crate::voip::VoipParams;
 
 pub fn handle_main_command_send(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
     info!("handle_get_put_ping_quit_send");
@@ -219,6 +221,37 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
                 state
                     .stream
                     .reregister(poll, state.token, Interest::WRITABLE)?;
+                return Ok(n);
+            }
+
+            if command_str.starts_with("VOIPTEST ") {
+                let args = &command_str["VOIPTEST ".len()..];
+                match VoipParams::from_command_args(args) {
+                    Some(params) => {
+                        let ssrc = fastrand::u32(..);
+                        let client_ip = state
+                            .client_addr
+                            .map(|a| a.ip())
+                            .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+                        let result_store = start_voip_udp_thread(params.clone(), ssrc, client_ip);
+                        state.voip_ssrc = Some(ssrc);
+                        state.voip_params = Some(params);
+                        state.voip_result = Some(result_store);
+                        state.read_pos = 0;
+                        state.measurement_state = ServerTestPhase::VoipSendOk;
+                        state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
+                        return Ok(n);
+                    }
+                    None => {
+                        return Err(io::Error::new(io::ErrorKind::Other, "Invalid VOIPTEST command"));
+                    }
+                }
+            }
+
+            if command_str.starts_with("GET VOIPRESULT ") {
+                state.read_pos = 0;
+                state.measurement_state = ServerTestPhase::VoipSendResult;
+                state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
                 return Ok(n);
             }
 
