@@ -76,9 +76,11 @@ pub fn handle_voip_receive_ok(
 
         if state.read_buffer[..state.read_pos].contains(&b'\n') {
             let response = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
-            let response = response.trim();
+            // Server may have buffered ACCEPT GETCHUNKS... before OK — find the OK line
+            let ok_line = response.lines().find(|l| l.trim().starts_with("OK "));
 
-            if let Some(rest) = response.strip_prefix("OK ") {
+            if let Some(line) = ok_line {
+                let rest = line.trim().strip_prefix("OK ").unwrap_or("");
                 let ssrc: u32 = rest.trim().parse().unwrap_or(0);
                 state.voip_ssrc = Some(ssrc);
                 state.read_pos = 0;
@@ -147,21 +149,27 @@ pub fn handle_voip_receive_result(
 
         if state.read_buffer[..state.read_pos].contains(&b'\n') {
             let response = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
-            let response = response.trim();
+            // Server may have buffered ACCEPT GETCHUNKS... before VOIPRESULT — find the right line
+            let voip_line = response.lines().find(|l| l.trim().starts_with("VOIPRESULT "));
 
-            if let Some(result) = crate::voip::calculator::RtpQoSResult::from_voip_result_string(response) {
-                info!(
-                    "VoIP outgoing result (server measured): received={} max_jitter={}ns",
-                    result.received_packets, result.max_jitter
-                );
-                state.voip_result_out = Some(result);
-                state.read_pos = 0;
-                state.phase = TestPhase::VoipCompleted;
-                state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
-                return Ok(n);
+            if let Some(line) = voip_line {
+                if let Some(result) = crate::voip::calculator::RtpQoSResult::from_voip_result_string(line.trim()) {
+                    info!(
+                        "VoIP outgoing result (server measured): received={} max_jitter={}ns",
+                        result.received_packets, result.max_jitter
+                    );
+                    state.voip_result_out = Some(result);
+                    state.read_pos = 0;
+                    state.phase = TestPhase::VoipCompleted;
+                    state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
+                    return Ok(n);
+                }
             }
 
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid VOIPRESULT"));
+            // No valid VOIPRESULT line yet — wait for more data
+            if response.lines().count() > 1 || response.contains("VOIPRESULT") {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid VOIPRESULT"));
+            }
         }
     }
 }

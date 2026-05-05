@@ -4,6 +4,26 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+// Hybrid sleep+spin for sub-millisecond precision.
+// macOS thread::sleep granularity is ~1-1.5ms, so we spin the last 3ms
+// to guarantee we always land in the spin phase regardless of sleep overshoot.
+// Uses an absolute deadline to prevent drift across packets.
+fn precise_sleep_until(deadline: Instant) {
+    // Must exceed the worst-case sleep overshoot on the target OS (~1.5ms on macOS).
+    const SPIN_THRESHOLD: Duration = Duration::from_millis(3);
+    let now = Instant::now();
+    if now >= deadline {
+        return;
+    }
+    let remaining = deadline - now;
+    if remaining > SPIN_THRESHOLD {
+        thread::sleep(remaining - SPIN_THRESHOLD);
+    }
+    while Instant::now() < deadline {
+        std::hint::spin_loop();
+    }
+}
+
 use crate::voip::calculator::{calculate_qos, RtpQoSResult};
 use crate::voip::rtp::{now_ns, PacketMap, RtpControlData, RtpPacket};
 use crate::voip::VoipParams;
@@ -43,6 +63,7 @@ pub fn run_server_udp(
 
     // Send RTP stream to client in a separate thread
     let send_thread = thread::spawn(move || {
+        let stream_start = Instant::now();
         let mut seq = params_send.initial_seq;
         let mut ts: u32 = 0;
         for i in 0..num_packets {
@@ -50,7 +71,7 @@ pub fn run_server_udp(
             send_socket.send_to(&pkt.to_bytes(), client_udp_addr).ok();
             seq = seq.wrapping_add(1);
             ts = ts.wrapping_add(ts_increment);
-            thread::sleep(delay);
+            precise_sleep_until(stream_start + delay * (i as u32 + 1));
         }
     });
 
@@ -117,6 +138,7 @@ pub fn run_client_udp(params: VoipParams, ssrc: u32, server_ip: IpAddr) -> RtpQo
     let params_send = params.clone();
 
     let send_thread = thread::spawn(move || {
+        let stream_start = Instant::now();
         let mut seq = params_send.initial_seq;
         let mut ts: u32 = 0;
         for i in 0..num_packets {
@@ -124,7 +146,7 @@ pub fn run_client_udp(params: VoipParams, ssrc: u32, server_ip: IpAddr) -> RtpQo
             send_socket.send_to(&pkt.to_bytes(), server_udp_addr).ok();
             seq = seq.wrapping_add(1);
             ts = ts.wrapping_add(ts_increment);
-            thread::sleep(delay);
+            precise_sleep_until(stream_start + delay * (i as u32 + 1));
         }
     });
 

@@ -38,7 +38,13 @@ fn print_row(phase: &str, result: &str, is_last: bool) {
 
 pub fn print_test_result(phase: &str, status: &str, speed: Option<(f64, f64, f64)>, is_last: bool) {
     let result = match speed {
-        Some((_, gbps, mbps)) => format!("{:.2} Gbit/s ({:.2} Mbit/s)", gbps, mbps),
+        Some((_, gbps, mbps)) => {
+            if gbps >= 10.0 {
+                format!("{:.2} Gbit/s", gbps)
+            } else {
+                format!("{:.2} Mbit/s", mbps)
+            }
+        }
         None => status.to_string(),
     };
     print_row(phase, &result, is_last);

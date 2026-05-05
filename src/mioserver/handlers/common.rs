@@ -8,6 +8,7 @@ use crate::{
 };
 use crate::mioserver::handlers::timeout_utils::check_timeout_periodic;
 use crate::mioserver::handlers::voip::start_voip_udp_thread;
+use crate::mioserver::handlers::udp::handle_udp_start_in;
 use crate::voip::VoipParams;
 
 pub fn handle_main_command_send(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
@@ -263,6 +264,58 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
                 state
                     .stream
                     .reregister(poll, state.token, Interest::WRITABLE)?;
+                return Ok(n);
+            }
+
+            if command_str.starts_with("GET UDPPORT") {
+                state.read_pos = 0;
+                state.measurement_state = ServerTestPhase::UdpSendPort;
+                state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
+                return Ok(n);
+            }
+
+            if command_str.starts_with("UDPTEST OUT ") {
+                let parts: Vec<&str> = command_str.trim().split_whitespace().collect();
+                // UDPTEST OUT <port> <count>
+                if parts.len() >= 4 {
+                    let _port: u16 = parts[2].parse().unwrap_or(0);
+                    let count: u32 = parts[3].parse().unwrap_or(50);
+                    state.udp_out_num_packets = Some(count);
+                }
+                state.read_pos = 0;
+                state.measurement_state = ServerTestPhase::UdpSendOkOut;
+                state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
+                return Ok(n);
+            }
+
+            if command_str.starts_with("UDPTEST IN ") {
+                let parts: Vec<&str> = command_str.trim().split_whitespace().collect();
+                // UDPTEST IN <in_port> <count>
+                if parts.len() >= 4 {
+                    let in_port: u16 = parts[2].parse().unwrap_or(0);
+                    let count: u32 = parts[3].parse().unwrap_or(50);
+                    state.udp_in_client_port = Some(in_port);
+                    state.udp_in_num_packets = Some(count);
+                }
+                state.read_pos = 0;
+                // No TCP response — start UDP thread immediately
+                handle_udp_start_in(state);
+                state.measurement_state = ServerTestPhase::AcceptCommandReceive;
+                state.stream.reregister(poll, state.token, Interest::READABLE)?;
+                return Ok(n);
+            }
+
+            if command_str.starts_with("GET UDPRESULT OUT ") {
+                state.read_pos = 0;
+                state.measurement_state = ServerTestPhase::UdpSendResultOut;
+                state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
+                return Ok(n);
+            }
+
+            if command_str.starts_with("GET UDPRESULT IN ") {
+                state.read_pos = 0;
+                state.measurement_state = ServerTestPhase::UdpSendResultIn;
+                state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
                 return Ok(n);
             }
 

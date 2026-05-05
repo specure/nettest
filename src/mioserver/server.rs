@@ -30,6 +30,7 @@ use crate::mioserver::worker::WorkerThread;
 use crate::mioserver::ServerTestPhase;
 use crate::stream::stream::Stream;
 use crate::voip::{RtpQoSResult, VoipParams};
+use crate::udp::result::{UdpServerOutResult, UdpServerInResult};
 
 pub struct MioServer {
     tcp_listeners: Vec<TcpListener>,
@@ -71,6 +72,13 @@ pub struct TestState {
     pub voip_ssrc: Option<u32>,
     pub voip_params: Option<VoipParams>,
     pub voip_result: Option<Arc<Mutex<Option<RtpQoSResult>>>>,
+    pub udp_out_port: Option<u16>,
+    pub udp_out_socket: Option<std::net::UdpSocket>,
+    pub udp_out_num_packets: Option<u32>,
+    pub udp_in_client_port: Option<u16>,
+    pub udp_in_num_packets: Option<u32>,
+    pub udp_out_result: Option<Arc<Mutex<Option<UdpServerOutResult>>>>,
+    pub udp_in_result: Option<Arc<Mutex<Option<UdpServerInResult>>>>,
 }
 
 #[derive(Clone)]

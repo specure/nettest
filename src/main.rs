@@ -11,6 +11,7 @@ pub mod mioserver;
 pub mod stream;
 pub mod tokio_server;
 pub mod voip;
+pub mod udp;
 
 pub mod client;
 

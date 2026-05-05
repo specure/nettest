@@ -175,6 +175,13 @@ impl Worker {
                                 voip_ssrc: None,
                                 voip_params: None,
                                 voip_result: None,
+                                udp_out_port: None,
+                                udp_out_socket: None,
+                                udp_out_num_packets: None,
+                                udp_in_client_port: None,
+                                udp_in_num_packets: None,
+                                udp_out_result: None,
+                                udp_in_result: None,
                             },
                         );
                     }
