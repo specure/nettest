@@ -302,15 +302,17 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
 
             if command_str.starts_with("UDPTEST IN ") {
                 let parts: Vec<&str> = command_str.trim().split_whitespace().collect();
-                // UDPTEST IN <in_port> <count>
+                // UDPTEST IN <in_port> <count> <uuid_hex>
                 if parts.len() >= 4 {
                     let in_port: u16 = parts[2].parse().unwrap_or(0);
-                    let count: u32 = parts[3].parse().unwrap_or(50);
+                    let count: u32 = parts[3].parse().unwrap_or(10);
                     state.udp_in_client_port = Some(in_port);
                     state.udp_in_num_packets = Some(count);
                 }
+                if parts.len() >= 5 {
+                    state.udp_in_uuid = hex_to_uuid(parts[4]);
+                }
                 state.read_pos = 0;
-                // No TCP response — start UDP thread immediately
                 handle_udp_start_in(state);
                 state.measurement_state = ServerTestPhase::AcceptCommandReceive;
                 state.stream.reregister(poll, state.token, Interest::READABLE)?;

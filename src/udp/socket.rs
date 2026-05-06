@@ -77,17 +77,22 @@ pub fn run_client_udp_out(
     loop {
         if Instant::now() >= loop_deadline { break; }
         match socket.recv_from(&mut buf) {
-            Ok((n, _)) => {
+            Ok((n, src)) => {
                 let return_time = now_ns(&epoch);
+                log::debug!("UDP OUT client: received {} bytes from {}", n, src);
                 if let Some(p) = UdpPayload::from_bytes(&buf[..n]) {
+                    log::debug!("UDP OUT client: flag={} pkt#{}", p.communication_flag, p.packet_number);
                     if p.communication_flag != FLAG_RESPONSE { continue; }
                     let mut map = records.lock().unwrap();
                     if let Some(rec) = map.get_mut(&p.packet_number) {
                         if rec.return_time.is_none() {
                             rec.return_time = Some(return_time);
+                            log::debug!("UDP OUT client: echo pkt#{} matched", p.packet_number);
                         } else {
                             duplicates.lock().unwrap().insert(p.packet_number);
                         }
+                    } else {
+                        log::debug!("UDP OUT client: echo pkt#{} — no record found", p.packet_number);
                     }
                 }
             }
@@ -215,15 +220,20 @@ pub fn start_server_udp_out(
 // Server — IN: sends packets via shared socket, receives echoes via channel
 // ---------------------------------------------------------------------------
 pub fn start_server_udp_in(
-    client_ip:   IpAddr,
-    client_port: u16,
-    num_packets: u32,
-    udp_server:  Arc<SharedUdpServer>,
+    client_ip:      IpAddr,
+    client_port:    u16,
+    num_packets:    u32,
+    udp_server:     Arc<SharedUdpServer>,
+    client_nat_addr: Option<SocketAddr>,
 ) -> Arc<Mutex<Option<UdpServerInResult>>> {
     let result_store = Arc::new(Mutex::new(None));
     let store_clone  = result_store.clone();
-    let client_addr  = SocketAddr::new(client_ip, client_port);
-    let rx           = udp_server.register_udp_in(client_addr);
+    let client_addr  = client_nat_addr.unwrap_or(SocketAddr::new(client_ip, client_port));
+    log::info!("UDP server IN: target addr {} ({})",
+        client_addr,
+        if client_nat_addr.is_some() { "NAT hole punch" } else { "TCP addr" }
+    );
+    let rx = udp_server.register_udp_in(client_addr);
     let socket       = udp_server.socket.clone();
 
     thread::spawn(move || {

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use crate::udp::payload::{UdpPayload, FLAG_AWAIT_RESPONSE, FLAG_RESPONSE, UDP_PAYLOAD_SIZE};
+use crate::udp::payload::{UdpPayload, FLAG_AWAIT_RESPONSE, FLAG_HOLE_PUNCH, FLAG_RESPONSE, UDP_PAYLOAD_SIZE};
 
 const RTP_MIN_SIZE: usize = 12;
 
@@ -20,6 +20,8 @@ pub struct SharedUdpServer {
     udp_out: Arc<Mutex<HashMap<[u8; 16], Sender<(UdpPayload, SocketAddr, u64)>>>>,
     // UDP loss IN echoes (client→server, RESPONSE): client addr → (payload, src, recv_ns)
     udp_in: Arc<Mutex<HashMap<SocketAddr, Sender<(UdpPayload, SocketAddr, u64)>>>>,
+    // Hole punch: UUID → real NAT address of client
+    hole_punch: Arc<Mutex<HashMap<[u8; 16], SocketAddr>>>,
 }
 
 impl SharedUdpServer {
@@ -29,10 +31,11 @@ impl SharedUdpServer {
         log::info!("Shared UDP server bound to 0.0.0.0:{}", port);
 
         let srv = Arc::new(Self {
-            socket: Arc::new(socket),
-            rtp:     Arc::new(Mutex::new(HashMap::new())),
-            udp_out: Arc::new(Mutex::new(HashMap::new())),
-            udp_in:  Arc::new(Mutex::new(HashMap::new())),
+            socket:     Arc::new(socket),
+            rtp:        Arc::new(Mutex::new(HashMap::new())),
+            udp_out:    Arc::new(Mutex::new(HashMap::new())),
+            udp_in:     Arc::new(Mutex::new(HashMap::new())),
+            hole_punch: Arc::new(Mutex::new(HashMap::new())),
         });
 
         let srv_clone = srv.clone();
@@ -74,6 +77,15 @@ impl SharedUdpServer {
         self.udp_in.lock().unwrap().remove(client_addr);
     }
 
+    // ---- Hole punch ----------------------------------------------------------
+
+    pub fn get_hole_punch_addr(&self, uuid: &[u8; 16]) -> Option<SocketAddr> {
+        self.hole_punch.lock().unwrap().get(uuid).copied()
+    }
+    pub fn remove_hole_punch(&self, uuid: &[u8; 16]) {
+        self.hole_punch.lock().unwrap().remove(uuid);
+    }
+
     // ---- Dispatch loop -------------------------------------------------------
 
     fn dispatch_loop(&self) {
@@ -96,6 +108,12 @@ impl SharedUdpServer {
 
     fn dispatch(&self, buf: &[u8], src: SocketAddr, recv_ns: u64) {
         match buf[0] {
+            FLAG_HOLE_PUNCH if buf.len() >= UDP_PAYLOAD_SIZE => {
+                if let Some(p) = UdpPayload::from_bytes(buf) {
+                    log::debug!("UDP dispatch: hole punch from {} — recording NAT addr", src);
+                    self.hole_punch.lock().unwrap().insert(p.uuid, src);
+                }
+            }
             b if b >= 0x80 && buf.len() >= RTP_MIN_SIZE => {
                 let ssrc = u32::from_be_bytes([buf[8], buf[9], buf[10], buf[11]]);
                 let tx = self.rtp.lock().unwrap().get(&ssrc).cloned();

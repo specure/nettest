@@ -178,6 +178,7 @@ impl Worker {
                                 udp_server: self.server_config.udp_server.clone(),
                                 udp_port: self.server_config.udp_port,
                                 udp_uuid: None,
+                                udp_in_uuid: None,
                                 udp_out_port: None,
                                 udp_out_num_packets: None,
                                 udp_in_client_port: None,

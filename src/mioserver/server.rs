@@ -76,6 +76,7 @@ pub struct TestState {
     pub udp_server: Option<Arc<SharedUdpServer>>,
     pub udp_port: u16,
     pub udp_uuid: Option<[u8; 16]>,
+    pub udp_in_uuid: Option<[u8; 16]>,
     pub udp_out_port: Option<u16>,
     pub udp_out_num_packets: Option<u32>,
     pub udp_in_client_port: Option<u16>,

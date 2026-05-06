@@ -4,7 +4,7 @@ use std::io;
 use std::net::UdpSocket;
 
 use crate::client::state::{MeasurementState, TestPhase};
-use crate::udp::payload::rtts_from_json;
+use crate::udp::payload::{rtts_from_json, UdpPayload, FLAG_HOLE_PUNCH};
 use crate::udp::socket::{run_client_udp_in, run_client_udp_out};
 use crate::udp::{
     DEFAULT_UDP_IN_NUM_PACKETS, DEFAULT_UDP_OUT_NUM_PACKETS, DEFAULT_UDP_DELAY_NS,
@@ -197,7 +197,7 @@ pub fn handle_udp_receive_result_out(
     }
 }
 
-// → UDPTEST IN <in_port> <n>\n  + run UDP IN receive synchronously
+// → UDPTEST IN <in_port> <n> <uuid_hex>\n  + hole punch + run UDP IN receive
 pub fn handle_udp_send_test_in(poll: &Poll, state: &mut MeasurementState) -> io::Result<usize> {
     debug!("handle_udp_send_test_in");
 
@@ -209,11 +209,34 @@ pub fn handle_udp_send_test_in(poll: &Poll, state: &mut MeasurementState) -> io:
         sock.set_read_timeout(Some(std::time::Duration::from_millis(100))).ok();
         let port = sock.local_addr()?.port();
         state.udp_in_port = Some(port);
+
+        // Generate UUID for this IN test (used for hole punch routing on server)
+        let mut in_uuid = [0u8; 16];
+        for b in in_uuid.iter_mut() { *b = fastrand::u8(..); }
+
+        // Hole punch: send from in_socket to server's UDP port to open NAT mapping
+        let server_addr = std::net::SocketAddr::new(
+            state.server_addr.ip(),
+            state.server_udp_port,
+        );
+        let hole_punch = UdpPayload {
+            communication_flag: FLAG_HOLE_PUNCH,
+            packet_number:      0,
+            uuid:               in_uuid,
+            timestamp_ns:       0,
+        };
+        sock.send_to(&hole_punch.to_bytes(), server_addr).ok();
+        info!("UDP IN: hole punch sent to {} from port {}", server_addr, port);
+
+        // Store UUID in socket slot (reuse existing field)
+        state.udp_in_uuid   = Some(in_uuid);
         state.udp_in_socket = Some(sock);
     }
 
-    let in_port = state.udp_in_port.unwrap_or(0);
-    let command = format!("UDPTEST IN {} {}\n", in_port, DEFAULT_UDP_IN_NUM_PACKETS);
+    let in_port  = state.udp_in_port.unwrap_or(0);
+    let in_uuid  = state.udp_in_uuid.unwrap_or([0u8; 16]);
+    let uuid_hex = uuid_to_hex(&in_uuid);
+    let command  = format!("UDPTEST IN {} {} {}\n", in_port, DEFAULT_UDP_IN_NUM_PACKETS, uuid_hex);
 
     if state.write_pos == 0 {
         let bytes = command.as_bytes();

@@ -2,7 +2,7 @@ use log::{info, warn};
 use mio::{Interest, Poll};
 use std::io;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::mioserver::{server::TestState, ServerTestPhase};
 use crate::udp::payload::rtts_to_json;
@@ -83,22 +83,41 @@ pub fn handle_udp_send_result_out(poll: &Poll, state: &mut TestState) -> io::Res
     write_response(poll, state, &response, ServerTestPhase::AcceptCommandReceive)
 }
 
-// UDPTEST IN — start send+echo thread via shared socket (no TCP response)
+// UDPTEST IN — wait for hole punch, then start send+echo thread
 pub fn handle_udp_start_in(state: &mut TestState) {
     let client_ip = state.client_addr
         .map(|a| a.ip())
         .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
     let client_port = state.udp_in_client_port.unwrap_or(0);
-    let count = state.udp_in_num_packets.unwrap_or(10);
+    let count       = state.udp_in_num_packets.unwrap_or(10);
+    let uuid        = state.udp_in_uuid;
 
-    match &state.udp_server {
-        Some(srv) => {
-            let result = start_server_udp_in(client_ip, client_port, count, srv.clone());
-            state.udp_in_result = Some(result);
-            info!("UDP IN: started → {}:{}", client_ip, client_port);
+    let srv = match &state.udp_server {
+        Some(s) => s.clone(),
+        None => { warn!("UDP IN: shared server not available"); return; }
+    };
+
+    // Wait up to 500ms for the hole punch packet to arrive (NAT traversal)
+    let client_nat_addr = uuid.and_then(|u| {
+        let deadline = Instant::now() + Duration::from_millis(500);
+        loop {
+            if let Some(addr) = srv.get_hole_punch_addr(&u) {
+                srv.remove_hole_punch(&u);
+                return Some(addr);
+            }
+            if Instant::now() >= deadline { return None; }
+            thread::sleep(Duration::from_millis(10));
         }
-        None => warn!("UDP IN: shared server not available"),
+    });
+
+    if let Some(addr) = client_nat_addr {
+        info!("UDP IN: hole punch received — using NAT addr {}", addr);
+    } else {
+        warn!("UDP IN: no hole punch — using TCP addr {}:{} (may fail behind NAT)", client_ip, client_port);
     }
+
+    let result = start_server_udp_in(client_ip, client_port, count, srv, client_nat_addr);
+    state.udp_in_result = Some(result);
 }
 
 // GET UDPRESULT IN — wait for thread, respond RCV <n> <port> <json_rtts>

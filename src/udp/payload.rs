@@ -1,5 +1,6 @@
 pub const UDP_PAYLOAD_SIZE: usize = 29;
 
+pub const FLAG_HOLE_PUNCH:     u8 = 0; // client→server before IN test to open NAT mapping
 pub const FLAG_ONE_DIRECTION:  u8 = 1;
 pub const FLAG_RESPONSE:       u8 = 2;
 pub const FLAG_AWAIT_RESPONSE: u8 = 3;
