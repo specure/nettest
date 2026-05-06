@@ -30,6 +30,7 @@ pub fn parse_args(
         registration_token: default_config.registration_token,
         server_name: default_config.server_name,
         enable_mdns: false,
+        udp_server: None,
     };
 
     let mut i = 1;

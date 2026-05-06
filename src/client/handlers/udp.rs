@@ -60,11 +60,22 @@ pub fn handle_udp_receive_port(poll: &Poll, state: &mut MeasurementState) -> io:
     }
 }
 
-// → UDPTEST OUT <port> <n>\n
+fn uuid_to_hex(uuid: &[u8; 16]) -> String {
+    uuid.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+// → UDPTEST OUT <port> <n> <uuid_hex>\n
 pub fn handle_udp_send_test_out(poll: &Poll, state: &mut MeasurementState) -> io::Result<usize> {
     debug!("handle_udp_send_test_out");
+    // Generate UUID once and store — used both in the TCP command and the UDP packets
+    if state.udp_out_uuid.is_none() {
+        let mut uuid = [0u8; 16];
+        for b in uuid.iter_mut() { *b = fastrand::u8(..); }
+        state.udp_out_uuid = Some(uuid);
+    }
     let port = state.udp_out_port.unwrap_or(0);
-    let command = format!("UDPTEST OUT {} {}\n", port, DEFAULT_UDP_OUT_NUM_PACKETS);
+    let uuid_hex = uuid_to_hex(state.udp_out_uuid.as_ref().unwrap());
+    let command = format!("UDPTEST OUT {} {} {}\n", port, DEFAULT_UDP_OUT_NUM_PACKETS, uuid_hex);
     if state.write_pos == 0 {
         let bytes = command.as_bytes();
         state.write_buffer[..bytes.len()].copy_from_slice(bytes);
@@ -100,11 +111,10 @@ pub fn handle_udp_receive_ok_out(poll: &Poll, state: &mut MeasurementState) -> i
             }
             state.read_pos = 0;
 
-            // Run UDP OUT exchange synchronously
+            // Run UDP OUT exchange synchronously, using the UUID already sent in UDPTEST OUT
             let server_ip = state.server_addr.ip();
             let port = state.udp_out_port.unwrap_or(0);
-            let mut uuid = [0u8; 16];
-            for b in uuid.iter_mut() { *b = fastrand::u8(..); }
+            let uuid = state.udp_out_uuid.unwrap_or([0u8; 16]);
 
             info!("Starting UDP OUT: {} packets → {}:{}", DEFAULT_UDP_OUT_NUM_PACKETS, server_ip, port);
             let result = run_client_udp_out(

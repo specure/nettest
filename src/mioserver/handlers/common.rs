@@ -11,6 +11,14 @@ use crate::mioserver::handlers::voip::start_voip_udp_thread;
 use crate::mioserver::handlers::udp::handle_udp_start_in;
 use crate::voip::VoipParams;
 
+fn hex_to_uuid(s: &str) -> Option<[u8; 16]> {
+    if s.len() != 32 { return None; }
+    let bytes: Vec<u8> = (0..32).step_by(2)
+        .filter_map(|i| u8::from_str_radix(&s[i..i+2], 16).ok())
+        .collect();
+    bytes.try_into().ok()
+}
+
 pub fn handle_main_command_send(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
     info!("handle_get_put_ping_quit_send");
     let command = b"ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n";
@@ -234,10 +242,12 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
                             .client_addr
                             .map(|a| a.ip())
                             .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
-                        let result_store = start_voip_udp_thread(params.clone(), ssrc, client_ip);
-                        state.voip_ssrc = Some(ssrc);
-                        state.voip_params = Some(params);
-                        state.voip_result = Some(result_store);
+                        if let Some(udp_server) = state.udp_server.clone() {
+                            let result_store = start_voip_udp_thread(params.clone(), ssrc, client_ip, udp_server);
+                            state.voip_ssrc = Some(ssrc);
+                            state.voip_params = Some(params);
+                            state.voip_result = Some(result_store);
+                        }
                         state.read_pos = 0;
                         state.measurement_state = ServerTestPhase::VoipSendOk;
                         state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
@@ -276,11 +286,13 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
 
             if command_str.starts_with("UDPTEST OUT ") {
                 let parts: Vec<&str> = command_str.trim().split_whitespace().collect();
-                // UDPTEST OUT <port> <count>
+                // UDPTEST OUT <port> <count> <uuid_hex>
                 if parts.len() >= 4 {
-                    let _port: u16 = parts[2].parse().unwrap_or(0);
                     let count: u32 = parts[3].parse().unwrap_or(50);
                     state.udp_out_num_packets = Some(count);
+                }
+                if parts.len() >= 5 {
+                    state.udp_uuid = hex_to_uuid(parts[4]);
                 }
                 state.read_pos = 0;
                 state.measurement_state = ServerTestPhase::UdpSendOkOut;

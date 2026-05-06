@@ -91,12 +91,13 @@ pub fn start_voip_udp_thread(
     params: VoipParams,
     ssrc: u32,
     client_ip: std::net::IpAddr,
+    udp_server: std::sync::Arc<crate::udp::SharedUdpServer>,
 ) -> Arc<Mutex<Option<crate::voip::RtpQoSResult>>> {
     let result_store = Arc::new(Mutex::new(None));
     let store_clone = result_store.clone();
 
     thread::spawn(move || {
-        run_server_udp(params, ssrc, client_ip, store_clone);
+        run_server_udp(params, ssrc, client_ip, store_clone, udp_server);
     });
 
     result_store

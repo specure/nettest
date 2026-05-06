@@ -31,6 +31,7 @@ use crate::mioserver::ServerTestPhase;
 use crate::stream::stream::Stream;
 use crate::voip::{RtpQoSResult, VoipParams};
 use crate::udp::result::{UdpServerOutResult, UdpServerInResult};
+use crate::udp::SharedUdpServer;
 
 pub struct MioServer {
     tcp_listeners: Vec<TcpListener>,
@@ -72,8 +73,9 @@ pub struct TestState {
     pub voip_ssrc: Option<u32>,
     pub voip_params: Option<VoipParams>,
     pub voip_result: Option<Arc<Mutex<Option<RtpQoSResult>>>>,
+    pub udp_server: Option<Arc<SharedUdpServer>>,
+    pub udp_uuid: Option<[u8; 16]>,
     pub udp_out_port: Option<u16>,
-    pub udp_out_socket: Option<std::net::UdpSocket>,
     pub udp_out_num_packets: Option<u32>,
     pub udp_in_client_port: Option<u16>,
     pub udp_in_num_packets: Option<u32>,
@@ -100,11 +102,12 @@ pub struct ServerConfig {
     pub registration_token: Option<String>,
     pub server_name: Option<String>,
     pub enable_mdns: bool,
+    pub udp_server: Option<Arc<SharedUdpServer>>,
 }
 
 impl MioServer {
     pub fn new(args: Vec<String>, config: FileConfig) -> io::Result<Self> {
-        let server_config = crate::mioserver::parser::parse_args(args, config.clone())
+        let mut server_config = crate::mioserver::parser::parse_args(args, config.clone())
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
         let mut tcp_listeners = Vec::new();
@@ -160,6 +163,19 @@ impl MioServer {
         };
 
         let logical = server_config.num_workers.unwrap_or(30);
+
+        // One shared UDP socket for all connections (VoIP + packet loss)
+        let udp_server = match SharedUdpServer::new(crate::udp::DEFAULT_UDP_SERVER_PORT) {
+            Ok(s) => {
+                info!("Shared UDP server started on port {}", crate::udp::DEFAULT_UDP_SERVER_PORT);
+                Some(s)
+            }
+            Err(e) => {
+                info!("Shared UDP server failed to start: {} — VoIP/packet loss disabled", e);
+                None
+            }
+        };
+        server_config.udp_server = udp_server;
 
         let worker_connection_counts = Arc::new(Mutex::new(vec![0; logical]));
         let global_queue = Arc::new(Mutex::new(VecDeque::new()));
