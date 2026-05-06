@@ -15,6 +15,7 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
         server: None,
         port: default_config.server_tcp_port.parse().unwrap_or(5005),
         tls_port: default_config.server_tls_port.unwrap_or("443".to_string()).parse().unwrap(),
+        udp_port: default_config.server_udp_port,
         x_nettest_client: default_config.x_nettest_client,
         control_server: default_config.control_server,
         save_results: false,
@@ -93,6 +94,12 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
                     config.tls_port = args[i].parse()?;
                 }
             }
+            "-udp" => {
+                i += 1;
+                if i < args.len() {
+                    config.udp_port = args[i].parse()?;
+                }
+            }
             "--help" | "-h" => {
                 print_help();
                 std::process::exit(0);
@@ -151,7 +158,8 @@ pub fn print_help() {
     println!("    nettest -c example.com -tls -ws  Connect using TLS over WebSocket\n");
     println!("OPTIONS:");
     println!("    -c [SERVER]     Run as client, optionally specify server address");
-    println!("    -p PORT         Server port (default: 5005 for TCP, 443 for TLS)");
+    println!("    -p PORT         Server port for TCP and TLS (default: 5005 / 443)");
+    println!("    -udp PORT       Server UDP port for VoIP/packet loss (default: 5004)");
     println!("    -t THREADS      Number of parallel threads (default: from config)");
     println!("    -tls            Use TLS encryption");
     println!("    -ws             Use WebSocket protocol");

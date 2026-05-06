@@ -70,6 +70,7 @@ pub async fn run_threads(
                         return Err(e);
                     }
                 };
+            state.set_udp_port(config.udp_port);
 
             let greeting = state.process_greeting();
             match greeting {

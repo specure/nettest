@@ -49,6 +49,7 @@ pub fn handle_udp_receive_port(poll: &Poll, state: &mut MeasurementState) -> io:
                 .find(|&p| p > 0);
             if let Some(port) = port {
                 state.udp_out_port = Some(port);
+                state.server_udp_port = port; // update in case server returned different port
                 state.read_pos = 0;
                 info!("UDP OUT port: {}", port);
                 state.phase = TestPhase::UdpSendTestOut;

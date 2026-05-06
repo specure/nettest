@@ -43,6 +43,7 @@ pub struct ClientConfig {
     pub server: Option<String>,
     pub port: u16,
     pub tls_port: u16,
+    pub udp_port: u16,
     pub x_nettest_client: String,
     pub control_server: String,
     pub save_results: bool,

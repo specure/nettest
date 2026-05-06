@@ -26,7 +26,7 @@ pub fn handle_voip_send_command(
         let initial_seq = fastrand::u16(..10000);
 
         let params = VoipParams {
-            out_port: DEFAULT_VOIP_UDP_PORT,
+            out_port: state.server_udp_port,
             in_port,
             sample_rate: DEFAULT_SAMPLE_RATE,
             bits_per_sample: DEFAULT_BITS_PER_SAMPLE,

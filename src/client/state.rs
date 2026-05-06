@@ -119,6 +119,7 @@ pub struct MeasurementState {
     pub voip_params: Option<VoipParams>,
     pub voip_result_in: Option<RtpQoSResult>,
     pub voip_result_out: Option<RtpQoSResult>,
+    pub server_udp_port: u16,
     pub udp_out_port: Option<u16>,
     pub udp_out_uuid: Option<[u8; 16]>,
     pub udp_in_port: Option<u16>,
@@ -193,6 +194,7 @@ impl TestState {
             voip_params: None,
             voip_result_in: None,
             voip_result_out: None,
+            server_udp_port: crate::udp::DEFAULT_UDP_SERVER_PORT,
             udp_out_port: None,
             udp_out_uuid: None,
             udp_in_port: None,
@@ -381,6 +383,10 @@ impl TestState {
         }
 
         Ok(())
+    }
+
+    pub fn set_udp_port(&mut self, port: u16) {
+        self.measurement_state.server_udp_port = port;
     }
 
     pub fn measurement_state(&self) -> &MeasurementState {
