@@ -1,0 +1,307 @@
+use log::{debug, info};
+use mio::{Interest, Poll};
+use std::io;
+use std::net::UdpSocket;
+
+use crate::client::state::{MeasurementState, TestPhase};
+use crate::udp::payload::rtts_from_json;
+use crate::udp::socket::{run_client_udp_in, run_client_udp_out};
+use crate::udp::{
+    DEFAULT_UDP_IN_NUM_PACKETS, DEFAULT_UDP_OUT_NUM_PACKETS, DEFAULT_UDP_DELAY_NS,
+    DEFAULT_UDP_TMAX_NS,
+};
+
+// → GET UDPPORT\n
+pub fn handle_udp_send_get_port(poll: &Poll, state: &mut MeasurementState) -> io::Result<usize> {
+    debug!("handle_udp_send_get_port");
+    let command = b"GET UDPPORT\n";
+    if state.write_pos == 0 {
+        state.write_buffer[..command.len()].copy_from_slice(command);
+    }
+    let len = command.len();
+    loop {
+        let n = state.stream.write(&state.write_buffer[state.write_pos..len])?;
+        state.write_pos += n;
+        if state.write_pos == len {
+            state.write_pos = 0;
+            state.read_pos = 0;
+            state.phase = TestPhase::UdpReceivePort;
+            state.stream.reregister(poll, state.token, Interest::READABLE)?;
+            return Ok(n);
+        }
+    }
+}
+
+// ← <port>\n
+pub fn handle_udp_receive_port(poll: &Poll, state: &mut MeasurementState) -> io::Result<usize> {
+    debug!("handle_udp_receive_port");
+    loop {
+        let n = state.stream.read(&mut state.read_buffer[state.read_pos..])?;
+        if n == 0 {
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "EOF"));
+        }
+        state.read_pos += n;
+        if state.read_buffer[..state.read_pos].contains(&b'\n') {
+            let s = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
+            let port: u16 = s.trim().parse().unwrap_or(0);
+            if port == 0 {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid UDP port"));
+            }
+            state.udp_out_port = Some(port);
+            state.read_pos = 0;
+            info!("UDP OUT port: {}", port);
+            state.phase = TestPhase::UdpSendTestOut;
+            state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
+            return Ok(n);
+        }
+    }
+}
+
+// → UDPTEST OUT <port> <n>\n
+pub fn handle_udp_send_test_out(poll: &Poll, state: &mut MeasurementState) -> io::Result<usize> {
+    debug!("handle_udp_send_test_out");
+    let port = state.udp_out_port.unwrap_or(0);
+    let command = format!("UDPTEST OUT {} {}\n", port, DEFAULT_UDP_OUT_NUM_PACKETS);
+    if state.write_pos == 0 {
+        let bytes = command.as_bytes();
+        state.write_buffer[..bytes.len()].copy_from_slice(bytes);
+    }
+    let len = command.len();
+    loop {
+        let n = state.stream.write(&state.write_buffer[state.write_pos..len])?;
+        state.write_pos += n;
+        if state.write_pos == len {
+            state.write_pos = 0;
+            state.read_pos = 0;
+            state.phase = TestPhase::UdpReceiveOkOut;
+            state.stream.reregister(poll, state.token, Interest::READABLE)?;
+            return Ok(n);
+        }
+    }
+}
+
+// ← OK\n  → run UDP OUT exchange synchronously
+pub fn handle_udp_receive_ok_out(poll: &Poll, state: &mut MeasurementState) -> io::Result<usize> {
+    debug!("handle_udp_receive_ok_out");
+    loop {
+        let n = state.stream.read(&mut state.read_buffer[state.read_pos..])?;
+        if n == 0 {
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "EOF"));
+        }
+        state.read_pos += n;
+        if state.read_buffer[..state.read_pos].contains(&b'\n') {
+            let s = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
+            if !s.trim().starts_with("OK") {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "Expected OK for UDPTEST OUT"));
+            }
+            state.read_pos = 0;
+
+            // Run UDP OUT exchange synchronously
+            let server_ip = state.server_addr.ip();
+            let port = state.udp_out_port.unwrap_or(0);
+            let mut uuid = [0u8; 16];
+            for b in uuid.iter_mut() { *b = fastrand::u8(..); }
+
+            info!("Starting UDP OUT: {} packets → {}:{}", DEFAULT_UDP_OUT_NUM_PACKETS, server_ip, port);
+            let result = run_client_udp_out(
+                server_ip,
+                port,
+                DEFAULT_UDP_OUT_NUM_PACKETS,
+                DEFAULT_UDP_DELAY_NS,
+                DEFAULT_UDP_TMAX_NS,
+                uuid,
+            );
+            info!(
+                "UDP OUT done: received={} loss={}% burst={}",
+                result.received_packets, result.packet_loss_rate, result.max_burst_loss
+            );
+            state.udp_result_out = Some(result);
+
+            state.phase = TestPhase::UdpSendGetResultOut;
+            state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
+            return Ok(n);
+        }
+    }
+}
+
+// → GET UDPRESULT OUT <port>\n
+pub fn handle_udp_send_get_result_out(
+    poll: &Poll,
+    state: &mut MeasurementState,
+) -> io::Result<usize> {
+    debug!("handle_udp_send_get_result_out");
+    let port = state.udp_out_port.unwrap_or(0);
+    let command = format!("GET UDPRESULT OUT {}\n", port);
+    if state.write_pos == 0 {
+        let bytes = command.as_bytes();
+        state.write_buffer[..bytes.len()].copy_from_slice(bytes);
+    }
+    let len = command.len();
+    loop {
+        let n = state.stream.write(&state.write_buffer[state.write_pos..len])?;
+        state.write_pos += n;
+        if state.write_pos == len {
+            state.write_pos = 0;
+            state.read_pos = 0;
+            state.phase = TestPhase::UdpReceiveResultOut;
+            state.stream.reregister(poll, state.token, Interest::READABLE)?;
+            return Ok(n);
+        }
+    }
+}
+
+// ← RCV <received> <port>\n
+pub fn handle_udp_receive_result_out(
+    poll: &Poll,
+    state: &mut MeasurementState,
+) -> io::Result<usize> {
+    debug!("handle_udp_receive_result_out");
+    loop {
+        let n = state.stream.read(&mut state.read_buffer[state.read_pos..])?;
+        if n == 0 {
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "EOF"));
+        }
+        state.read_pos += n;
+        if state.read_buffer[..state.read_pos].contains(&b'\n') {
+            let s = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
+            let s = s.trim();
+            // Parse "RCV <received> <port>"
+            if let Some(rest) = s.strip_prefix("RCV ") {
+                let parts: Vec<&str> = rest.split_whitespace().collect();
+                if parts.len() >= 1 {
+                    let server_received: u32 = parts[0].parse().unwrap_or(0);
+                    state.udp_server_received_out = Some(server_received);
+                    info!("UDP OUT server received: {}", server_received);
+                }
+            }
+            state.read_pos = 0;
+            state.phase = TestPhase::UdpSendTestIn;
+            state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
+            return Ok(n);
+        }
+    }
+}
+
+// → UDPTEST IN <in_port> <n>\n  + run UDP IN receive synchronously
+pub fn handle_udp_send_test_in(poll: &Poll, state: &mut MeasurementState) -> io::Result<usize> {
+    debug!("handle_udp_send_test_in");
+
+    // Bind local socket first so we know the port before sending the command
+    if state.udp_in_socket.is_none() {
+        let sock = UdpSocket::bind("0.0.0.0:0").map_err(|e| {
+            io::Error::new(io::ErrorKind::Other, format!("UDP IN bind: {}", e))
+        })?;
+        sock.set_read_timeout(Some(std::time::Duration::from_millis(100))).ok();
+        let port = sock.local_addr()?.port();
+        state.udp_in_port = Some(port);
+        state.udp_in_socket = Some(sock);
+    }
+
+    let in_port = state.udp_in_port.unwrap_or(0);
+    let command = format!("UDPTEST IN {} {}\n", in_port, DEFAULT_UDP_IN_NUM_PACKETS);
+
+    if state.write_pos == 0 {
+        let bytes = command.as_bytes();
+        state.write_buffer[..bytes.len()].copy_from_slice(bytes);
+    }
+
+    let len = command.len();
+    loop {
+        let n = state.stream.write(&state.write_buffer[state.write_pos..len])?;
+        state.write_pos += n;
+        if state.write_pos == len {
+            state.write_pos = 0;
+            state.read_pos = 0;
+
+            // Run UDP IN receive loop synchronously
+            if let Some(sock) = state.udp_in_socket.take() {
+                info!(
+                    "Starting UDP IN: expecting {} packets on port {}",
+                    DEFAULT_UDP_IN_NUM_PACKETS, in_port
+                );
+                let result = run_client_udp_in(&sock, DEFAULT_UDP_IN_NUM_PACKETS, DEFAULT_UDP_TMAX_NS);
+                info!(
+                    "UDP IN done: received={} loss={}%",
+                    result.received_packets, result.packet_loss_rate
+                );
+                state.udp_result_in = Some(result);
+            }
+
+            state.phase = TestPhase::UdpSendGetResultIn;
+            state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
+            return Ok(n);
+        }
+    }
+}
+
+// → GET UDPRESULT IN <in_port>\n
+pub fn handle_udp_send_get_result_in(
+    poll: &Poll,
+    state: &mut MeasurementState,
+) -> io::Result<usize> {
+    debug!("handle_udp_send_get_result_in");
+    let port = state.udp_in_port.unwrap_or(0);
+    let command = format!("GET UDPRESULT IN {}\n", port);
+    if state.write_pos == 0 {
+        let bytes = command.as_bytes();
+        state.write_buffer[..bytes.len()].copy_from_slice(bytes);
+    }
+    let len = command.len();
+    loop {
+        let n = state.stream.write(&state.write_buffer[state.write_pos..len])?;
+        state.write_pos += n;
+        if state.write_pos == len {
+            state.write_pos = 0;
+            state.read_pos = 0;
+            state.phase = TestPhase::UdpReceiveResultIn;
+            state.stream.reregister(poll, state.token, Interest::READABLE)?;
+            return Ok(n);
+        }
+    }
+}
+
+// ← RCV <received> <port> <json_rtts>\n
+pub fn handle_udp_receive_result_in(
+    poll: &Poll,
+    state: &mut MeasurementState,
+) -> io::Result<usize> {
+    debug!("handle_udp_receive_result_in");
+    loop {
+        let n = state.stream.read(&mut state.read_buffer[state.read_pos..])?;
+        if n == 0 {
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "EOF"));
+        }
+        state.read_pos += n;
+        if state.read_buffer[..state.read_pos].contains(&b'\n') {
+            let s = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
+            let s = s.trim();
+            // Parse "RCV <received> <port> [<json>]"
+            if let Some(rest) = s.strip_prefix("RCV ") {
+                let parts: Vec<&str> = rest.splitn(3, ' ').collect();
+                if parts.len() >= 1 {
+                    let server_received: u32 = parts[0].parse().unwrap_or(0);
+                    info!("UDP IN server echoes: {}", server_received);
+                }
+                // RTTs from server (parts[2] is optional JSON)
+                if parts.len() >= 3 {
+                    let rtts = rtts_from_json(parts[2]);
+                    if !rtts.is_empty() {
+                        if let Some(ref mut res) = state.udp_result_in {
+                            let avg = rtts.values().sum::<u64>() / rtts.len() as u64;
+                            let min = rtts.values().copied().min();
+                            let max = rtts.values().copied().max();
+                            res.rtt_avg_ns = Some(avg);
+                            res.rtt_min_ns = min;
+                            res.rtt_max_ns = max;
+                            res.rtts_ns = rtts;
+                        }
+                    }
+                }
+            }
+            state.read_pos = 0;
+            state.phase = TestPhase::UdpCompleted;
+            state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
+            return Ok(n);
+        }
+    }
+}
