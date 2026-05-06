@@ -43,16 +43,19 @@ pub fn handle_udp_receive_port(poll: &Poll, state: &mut MeasurementState) -> io:
         state.read_pos += n;
         if state.read_buffer[..state.read_pos].contains(&b'\n') {
             let s = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
-            let port: u16 = s.trim().parse().unwrap_or(0);
-            if port == 0 {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid UDP port"));
+            // Server may have buffered ACCEPT GETCHUNKS... before the port — find the port line
+            let port = s.lines()
+                .filter_map(|l| l.trim().parse::<u16>().ok())
+                .find(|&p| p > 0);
+            if let Some(port) = port {
+                state.udp_out_port = Some(port);
+                state.read_pos = 0;
+                info!("UDP OUT port: {}", port);
+                state.phase = TestPhase::UdpSendTestOut;
+                state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
+                return Ok(n);
             }
-            state.udp_out_port = Some(port);
-            state.read_pos = 0;
-            info!("UDP OUT port: {}", port);
-            state.phase = TestPhase::UdpSendTestOut;
-            state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
-            return Ok(n);
+            // No valid port yet — wait for more data
         }
     }
 }
@@ -91,7 +94,8 @@ pub fn handle_udp_receive_ok_out(poll: &Poll, state: &mut MeasurementState) -> i
         state.read_pos += n;
         if state.read_buffer[..state.read_pos].contains(&b'\n') {
             let s = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
-            if !s.trim().starts_with("OK") {
+            // Server may have buffered ACCEPT GETCHUNKS... before OK — find the OK line
+            if s.lines().find(|l| l.trim().starts_with("OK")).is_none() {
                 return Err(io::Error::new(io::ErrorKind::InvalidData, "Expected OK for UDPTEST OUT"));
             }
             state.read_pos = 0;
