@@ -159,6 +159,11 @@ fn parse_config_content(content: &str) -> Result<FileConfig, anyhow::Error> {
                         config.enable_mdns = false;
                     }
                 }
+                "server_udp_port" => {
+                    if let Ok(port) = value.parse::<u16>() {
+                        config.server_udp_port = port;
+                    }
+                }
                 "max_chunk_size" => {
                     if let Ok(size) = value.parse::<u32>() {
                         config.max_chunk_size = Some(size);

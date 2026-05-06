@@ -176,6 +176,7 @@ impl Worker {
                                 voip_params: None,
                                 voip_result: None,
                                 udp_server: self.server_config.udp_server.clone(),
+                                udp_port: self.server_config.udp_port,
                                 udp_uuid: None,
                                 udp_out_port: None,
                                 udp_out_num_packets: None,

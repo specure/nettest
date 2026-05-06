@@ -8,12 +8,11 @@ use crate::mioserver::{server::TestState, ServerTestPhase};
 use crate::udp::payload::rtts_to_json;
 use crate::udp::result::{UdpServerInResult, UdpServerOutResult};
 use crate::udp::socket::{start_server_udp_in, start_server_udp_out};
-use crate::udp::DEFAULT_UDP_SERVER_PORT;
-
-// GET UDPPORT — respond with fixed port (shared socket, no per-connection bind)
+// GET UDPPORT — respond with configured UDP port
 pub fn handle_udp_send_port(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
-    state.udp_out_port = Some(DEFAULT_UDP_SERVER_PORT);
-    let response = format!("{}\n", DEFAULT_UDP_SERVER_PORT);
+    let port = state.udp_port;
+    state.udp_out_port = Some(port);
+    let response = format!("{}\n", port);
 
     if state.write_pos == 0 {
         let bytes = response.as_bytes();
@@ -24,7 +23,7 @@ pub fn handle_udp_send_port(poll: &Poll, state: &mut TestState) -> io::Result<us
         let n = state.stream.write(&state.write_buffer[state.write_pos..len])?;
         state.write_pos += n;
         if state.write_pos == len {
-            info!("UDP port: {}", DEFAULT_UDP_SERVER_PORT);
+            info!("UDP port: {}", port);
             state.write_pos = 0;
             state.read_pos = 0;
             state.measurement_state = ServerTestPhase::AcceptCommandReceive;
@@ -68,7 +67,7 @@ pub fn handle_udp_send_result_out(poll: &Poll, state: &mut TestState) -> io::Res
         Some(a) => a.clone(),
         None => {
             warn!("UDP OUT result missing");
-            let r = format!("RCV 0 {}\n", DEFAULT_UDP_SERVER_PORT);
+            let r = format!("RCV 0 {}\n", state.udp_port);
             return write_response(poll, state, &r, ServerTestPhase::AcceptCommandReceive);
         }
     };
@@ -78,8 +77,8 @@ pub fn handle_udp_send_result_out(poll: &Poll, state: &mut TestState) -> io::Res
         drop(guard);
         thread::sleep(Duration::from_millis(10));
     };
-    let response = format!("RCV {} {}\n", result.received, result.port);
-    info!("UDP OUT result: received={} port={}", result.received, result.port);
+    let response = format!("RCV {} {}\n", result.received, state.udp_port);
+    info!("UDP OUT result: received={} port={}", result.received, state.udp_port);
     state.udp_out_result = None;
     write_response(poll, state, &response, ServerTestPhase::AcceptCommandReceive)
 }
@@ -118,8 +117,8 @@ pub fn handle_udp_send_result_in(poll: &Poll, state: &mut TestState) -> io::Resu
         thread::sleep(Duration::from_millis(10));
     };
     let json = rtts_to_json(&result.rtts);
-    let response = format!("RCV {} {} {}\n", result.received, result.port, json);
-    info!("UDP IN result: received={} port={}", result.received, result.port);
+    let response = format!("RCV {} {} {}\n", result.received, state.udp_port, json);
+    info!("UDP IN result: received={} port={}", result.received, state.udp_port);
     state.udp_in_result = None;
     write_response(poll, state, &response, ServerTestPhase::AcceptCommandReceive)
 }

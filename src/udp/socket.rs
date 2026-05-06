@@ -202,7 +202,7 @@ pub fn start_server_udp_out(
         log::info!("UDP server OUT: received={}/{}", received.len(), num_packets);
         *store_clone.lock().unwrap() = Some(UdpServerOutResult {
             received: received.len() as u32,
-            port:     DEFAULT_UDP_SERVER_PORT,
+            port:     0, // filled in by handler from state.udp_port
         });
     });
 
@@ -267,7 +267,7 @@ pub fn start_server_udp_in(
         log::info!("UDP server IN: echoes={}/{} rtts={}", rtts.len(), num_packets, rtts_to_json(&rtts));
         *store_clone.lock().unwrap() = Some(UdpServerInResult {
             received: rtts.len() as u32,
-            port:     DEFAULT_UDP_SERVER_PORT,
+            port:     0, // filled in by handler from state.udp_port
             rtts,
         });
     });

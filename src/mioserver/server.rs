@@ -74,6 +74,7 @@ pub struct TestState {
     pub voip_params: Option<VoipParams>,
     pub voip_result: Option<Arc<Mutex<Option<RtpQoSResult>>>>,
     pub udp_server: Option<Arc<SharedUdpServer>>,
+    pub udp_port: u16,
     pub udp_uuid: Option<[u8; 16]>,
     pub udp_out_port: Option<u16>,
     pub udp_out_num_packets: Option<u32>,
@@ -102,6 +103,7 @@ pub struct ServerConfig {
     pub registration_token: Option<String>,
     pub server_name: Option<String>,
     pub enable_mdns: bool,
+    pub udp_port: u16,
     pub udp_server: Option<Arc<SharedUdpServer>>,
 }
 
@@ -165,7 +167,7 @@ impl MioServer {
         let logical = server_config.num_workers.unwrap_or(30);
 
         // One shared UDP socket for all connections (VoIP + packet loss)
-        let udp_server = match SharedUdpServer::new(crate::udp::DEFAULT_UDP_SERVER_PORT) {
+        let udp_server = match SharedUdpServer::new(server_config.udp_port) {
             Ok(s) => {
                 info!("Shared UDP server started on port {}", crate::udp::DEFAULT_UDP_SERVER_PORT);
                 Some(s)
