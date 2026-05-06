@@ -14,7 +14,7 @@ use crate::udp::result::{
     UdpServerOutResult,
 };
 use crate::udp::server::SharedUdpServer;
-use crate::udp::{DEFAULT_UDP_DELAY_NS, DEFAULT_UDP_SERVER_PORT, DEFAULT_UDP_TMAX_NS};
+use crate::udp::{DEFAULT_UDP_DELAY_NS, DEFAULT_UDP_TMAX_NS};
 
 fn now_ns(epoch: &Instant) -> u64 {
     epoch.elapsed().as_nanos() as u64
@@ -175,6 +175,8 @@ pub fn start_server_udp_out(
     let store_clone  = result_store.clone();
     let rx           = udp_server.register_udp_out(uuid);
     let socket       = udp_server.socket.clone();
+    let udp_port = socket.local_addr().map(|a| a.port()).unwrap_or(0);
+    log::debug!("UDP server OUT: registered uuid on port {}, expecting {} packets", udp_port, num_packets);
 
     thread::spawn(move || {
         let deadline = Instant::now()

@@ -117,7 +117,7 @@ pub fn handle_udp_receive_ok_out(poll: &Poll, state: &mut MeasurementState) -> i
             let port = state.udp_out_port.unwrap_or(0);
             let uuid = state.udp_out_uuid.unwrap_or([0u8; 16]);
 
-            info!("Starting UDP OUT: {} packets → {}:{}", DEFAULT_UDP_OUT_NUM_PACKETS, server_ip, port);
+            info!("Starting UDP OUT: {} packets → {}:{} uuid={}", DEFAULT_UDP_OUT_NUM_PACKETS, server_ip, port, uuid_to_hex(&uuid));
             let result = run_client_udp_out(
                 server_ip,
                 port,

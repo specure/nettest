@@ -96,27 +96,41 @@ impl SharedUdpServer {
 
     fn dispatch(&self, buf: &[u8], src: SocketAddr, recv_ns: u64) {
         match buf[0] {
-            // RTP packet (V=2 means top 2 bits = 10, i.e. byte >= 0x80)
             b if b >= 0x80 && buf.len() >= RTP_MIN_SIZE => {
                 let ssrc = u32::from_be_bytes([buf[8], buf[9], buf[10], buf[11]]);
                 let tx = self.rtp.lock().unwrap().get(&ssrc).cloned();
-                if let Some(tx) = tx { tx.send((buf.to_vec(), src, recv_ns)).ok(); }
+                if let Some(tx) = tx {
+                    log::debug!("UDP dispatch: RTP from {} ssrc={}", src, ssrc);
+                    tx.send((buf.to_vec(), src, recv_ns)).ok();
+                } else {
+                    log::debug!("UDP dispatch: RTP from {} ssrc={} — no handler registered", src, ssrc);
+                }
             }
-            // UDP loss OUT: new packet from client
             FLAG_AWAIT_RESPONSE if buf.len() >= UDP_PAYLOAD_SIZE => {
                 if let Some(p) = UdpPayload::from_bytes(buf) {
                     let tx = self.udp_out.lock().unwrap().get(&p.uuid).cloned();
-                    if let Some(tx) = tx { tx.send((p, src, recv_ns)).ok(); }
+                    if let Some(tx) = tx {
+                        log::debug!("UDP dispatch: OUT pkt#{} from {}", p.packet_number, src);
+                        tx.send((p, src, recv_ns)).ok();
+                    } else {
+                        log::debug!("UDP dispatch: OUT pkt#{} from {} — no handler for uuid", p.packet_number, src);
+                    }
                 }
             }
-            // UDP loss IN: echo from client
             FLAG_RESPONSE if buf.len() >= UDP_PAYLOAD_SIZE => {
                 if let Some(p) = UdpPayload::from_bytes(buf) {
                     let tx = self.udp_in.lock().unwrap().get(&src).cloned();
-                    if let Some(tx) = tx { tx.send((p, src, recv_ns)).ok(); }
+                    if let Some(tx) = tx {
+                        log::debug!("UDP dispatch: IN echo pkt#{} from {}", p.packet_number, src);
+                        tx.send((p, src, recv_ns)).ok();
+                    } else {
+                        log::debug!("UDP dispatch: IN echo pkt#{} from {} — no handler", p.packet_number, src);
+                    }
                 }
             }
-            _ => {}
+            other => {
+                log::debug!("UDP dispatch: unknown packet flag={:#x} len={} from {}", other, buf.len(), src);
+            }
         }
     }
 }

@@ -7,7 +7,7 @@ use crate::client::state::{MeasurementState, TestPhase};
 use crate::voip::udp::run_client_udp;
 use crate::voip::{
     VoipParams, DEFAULT_BITS_PER_SAMPLE, DEFAULT_BUFFER_NS, DEFAULT_DELAY_MS,
-    DEFAULT_DURATION_MS, DEFAULT_PAYLOAD_TYPE, DEFAULT_SAMPLE_RATE, DEFAULT_VOIP_UDP_PORT,
+    DEFAULT_DURATION_MS, DEFAULT_PAYLOAD_TYPE, DEFAULT_SAMPLE_RATE,
 };
 
 pub fn handle_voip_send_command(
@@ -89,7 +89,10 @@ pub fn handle_voip_receive_ok(
                 // (client threads are already separate per run_threads())
                 if let Some(params) = state.voip_params.clone() {
                     let server_ip = state.server_addr.ip();
-                    info!("Starting VoIP UDP exchange: {} packets, {}ms delay", params.num_packets(), params.delay_ms);
+                    info!(
+                        "Starting VoIP UDP: {} packets → {}:{} (server_udp_port={})",
+                        params.num_packets(), server_ip, params.out_port, state.server_udp_port
+                    );
                     let result_in = run_client_udp(params, ssrc, server_ip);
                     info!(
                         "VoIP incoming result: received={} max_jitter={}ns mean_jitter={}ns",

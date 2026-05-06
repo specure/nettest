@@ -33,6 +33,12 @@ pub fn run_server_udp(
 ) {
     let rx = udp_server.register_rtp(ssrc);
     let socket = udp_server.socket.clone();
+    log::debug!(
+        "VoIP server: registered ssrc={} on UDP :{}, sending to {}:{}",
+        ssrc,
+        socket.local_addr().map(|a| a.port()).unwrap_or(0),
+        client_ip, params.in_port
+    );
 
     let client_udp_addr = SocketAddr::new(client_ip, params.in_port);
     let num_packets = params.num_packets();
