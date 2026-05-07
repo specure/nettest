@@ -81,12 +81,25 @@ pub fn handle_voip_receive_ok(
 
             if let Some(line) = ok_line {
                 let rest = line.trim().strip_prefix("OK ").unwrap_or("");
-                let ssrc: u32 = rest.trim().parse().unwrap_or(0);
+                let mut parts = rest.split_whitespace();
+                let ssrc: u32 = parts.next().unwrap_or("0").parse().unwrap_or(0);
+                // Server sends UDP port alongside SSRC: "OK <ssrc> <udp_port>"
+                if let Some(port_str) = parts.next() {
+                    if let Ok(port) = port_str.parse::<u16>() {
+                        if port > 0 {
+                            state.server_udp_port = port;
+                            state.udp_out_port = Some(port);
+                            info!("Server UDP port from VoIP handshake: {}", port);
+                        }
+                    }
+                }
                 state.voip_ssrc = Some(ssrc);
+                // Update voip_params with the real server UDP port from OK response
+                if let Some(ref mut p) = state.voip_params {
+                    p.out_port = state.server_udp_port;
+                }
                 state.read_pos = 0;
 
-                // Run UDP RTP exchange synchronously in this thread
-                // (client threads are already separate per run_threads())
                 if let Some(params) = state.voip_params.clone() {
                     let server_ip = state.server_addr.ip();
                     info!(

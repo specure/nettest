@@ -11,7 +11,7 @@ use crate::voip::VoipParams;
 
 pub fn handle_voip_send_ok(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
     let ssrc = state.voip_ssrc.unwrap_or(0);
-    let response = format!("OK {}\n", ssrc);
+    let response = format!("OK {} {}\n", ssrc, state.udp_port);
 
     if state.write_pos == 0 {
         let bytes = response.as_bytes();

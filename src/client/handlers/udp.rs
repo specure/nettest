@@ -11,9 +11,17 @@ use crate::udp::{
     DEFAULT_UDP_TMAX_NS,
 };
 
-// → GET UDPPORT\n
+// → GET UDPPORT\n  (skip if port already known from VoIP handshake)
 pub fn handle_udp_send_get_port(poll: &Poll, state: &mut MeasurementState) -> io::Result<usize> {
     debug!("handle_udp_send_get_port");
+
+    // Port already known from run_fetch_udp_port() — skip network roundtrip
+    if state.udp_out_port.is_some() {
+        state.phase = TestPhase::UdpSendTestOut;
+        state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
+        return Ok(1);
+    }
+
     let command = b"GET UDPPORT\n";
     if state.write_pos == 0 {
         state.write_buffer[..command.len()].copy_from_slice(command);

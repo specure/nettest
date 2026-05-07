@@ -94,12 +94,6 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
                     config.tls_port = args[i].parse()?;
                 }
             }
-            "-udp" => {
-                i += 1;
-                if i < args.len() {
-                    config.udp_port = args[i].parse()?;
-                }
-            }
             "--help" | "-h" => {
                 print_help();
                 std::process::exit(0);
@@ -159,7 +153,6 @@ pub fn print_help() {
     println!("OPTIONS:");
     println!("    -c [SERVER]     Run as client, optionally specify server address");
     println!("    -p PORT         Server port for TCP and TLS (default: 5005 / 443)");
-    println!("    -udp PORT       Server UDP port for VoIP/packet loss (default: 5004)");
     println!("    -t THREADS      Number of parallel threads (default: from config)");
     println!("    -tls            Use TLS encryption");
     println!("    -ws             Use WebSocket protocol");
