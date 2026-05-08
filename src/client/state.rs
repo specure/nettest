@@ -68,8 +68,6 @@ pub enum TestPhase {
     VoipReceiveResult,
     VoipCompleted,
 
-    UdpSendGetPort,
-    UdpReceivePort,
     UdpSendTestOut,
     UdpReceiveOkOut,
     UdpSendGetResultOut,
@@ -252,7 +250,7 @@ impl TestState {
     }
 
     pub fn run_udp_test(&mut self) -> Result<()> {
-        self.measurement_state.phase = TestPhase::UdpSendGetPort;
+        self.measurement_state.phase = TestPhase::UdpSendTestOut;
         self.measurement_state.stream.reregister(
             &mut self.poll,
             self.measurement_state.token,

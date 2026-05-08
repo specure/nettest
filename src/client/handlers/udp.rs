@@ -11,63 +11,7 @@ use crate::udp::{
     DEFAULT_UDP_TMAX_NS,
 };
 
-// → GET UDPPORT\n  (skip if port already known from VoIP handshake)
-pub fn handle_udp_send_get_port(poll: &Poll, state: &mut MeasurementState) -> io::Result<usize> {
-    debug!("handle_udp_send_get_port");
-
-    // Port already known from run_fetch_udp_port() — skip network roundtrip
-    if state.udp_out_port.is_some() {
-        state.phase = TestPhase::UdpSendTestOut;
-        state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
-        return Ok(1);
-    }
-
-    let command = b"GET UDPPORT\n";
-    if state.write_pos == 0 {
-        state.write_buffer[..command.len()].copy_from_slice(command);
-    }
-    let len = command.len();
-    loop {
-        let n = state.stream.write(&state.write_buffer[state.write_pos..len])?;
-        state.write_pos += n;
-        if state.write_pos == len {
-            state.write_pos = 0;
-            state.read_pos = 0;
-            state.phase = TestPhase::UdpReceivePort;
-            state.stream.reregister(poll, state.token, Interest::READABLE)?;
-            return Ok(n);
-        }
-    }
-}
-
-// ← <port>\n
-pub fn handle_udp_receive_port(poll: &Poll, state: &mut MeasurementState) -> io::Result<usize> {
-    debug!("handle_udp_receive_port");
-    loop {
-        let n = state.stream.read(&mut state.read_buffer[state.read_pos..])?;
-        if n == 0 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "EOF"));
-        }
-        state.read_pos += n;
-        if state.read_buffer[..state.read_pos].contains(&b'\n') {
-            let s = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
-            // Server may have buffered ACCEPT GETCHUNKS... before the port — find the port line
-            let port = s.lines()
-                .filter_map(|l| l.trim().parse::<u16>().ok())
-                .find(|&p| p > 0);
-            if let Some(port) = port {
-                state.udp_out_port = Some(port);
-                state.server_udp_port = port; // update in case server returned different port
-                state.read_pos = 0;
-                info!("UDP OUT port: {}", port);
-                state.phase = TestPhase::UdpSendTestOut;
-                state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
-                return Ok(n);
-            }
-            // No valid port yet — wait for more data
-        }
-    }
-}
+// GET UDPPORT removed — port comes from VoIP OK <ssrc> <udp_port> response
 
 fn uuid_to_hex(uuid: &[u8; 16]) -> String {
     uuid.iter().map(|b| format!("{:02x}", b)).collect()
