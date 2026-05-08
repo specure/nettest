@@ -112,20 +112,23 @@ nettest -c <SERVER_ADDRESS> -tls
 | `-L` | TLS listen address and port | `443` |
 | `-c` | Path to SSL certificate (PEM format) | - |
 | `-k` | Path to SSL key file (PEM format) | - |
+| `-udp` | UDP port for VoIP/packet loss tests | `5004` |
 | `-u` | Drop privileges to specified user | - |
 | `-d` | Run as daemon in background | `false` |
+| `-t` | Number of worker threads | - |
 | `-log` | Log level (info, debug, trace) | - |
 
 ### Client Parameters
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `-c` | Server address | `127.0.0.1` |
+| `-c` | Server address | auto-discover |
 | `-tls` | Use TLS connection | `false` |
 | `-ws` | Use WebSocket connection | `false` |
 | `-t` | Number of threads | `3` |
-| `-p` | Port number | `8080` |
+| `-p` | TCP/TLS port | `5005` |
 | `-g` | Generate graphs | `false` |
+| `-legacy` | Use legacy PUT command (skip VoIP/packet loss) | `false` |
 | `-log` | Log level (info, debug, trace) | - |
 
 ## 🔌 Protocols
@@ -167,7 +170,12 @@ Nettest is optimized for high performance:
 ### Metrics
 - **Download speed** - Real-time download performance
 - **Upload speed** - Real-time upload performance
-- **Latency** - Network response time
+- **Ping** - Network round-trip time (median)
+- **Jitter** - VoIP quality metric (RFC 3550), requires server v2.0+
+- **Packet Loss** - UDP packet loss rate (RFC 6673), requires server v2.0+
+
+> **Note**: Jitter and Packet Loss tests use UDP port `5004` by default.  
+> Open this port on the server firewall: `iptables -A INPUT -p udp --dport 5004 -j ACCEPT`
 
 ## 📋 Requirements
 
