@@ -86,13 +86,15 @@ pub async fn run_threads(
 
             if i == 0 {
                 state.run_ping().unwrap();
-                let median = state.measurement_state().ping_median.unwrap();
-                let ping_ms = median as f64 / 1_000_000.0;
-                *ping_median_clone.lock().unwrap() = Some(median);
+                let ping_ms = state.measurement_state().ping_median
+                    .map(|m| m as f64 / 1_000_000.0);
+                if let Some(median) = state.measurement_state().ping_median {
+                    *ping_median_clone.lock().unwrap() = Some(median);
+                }
                 if config.raw_output {
-                    print!("{:.2}", ping_ms);
+                    if let Some(p) = ping_ms { print!("{:.2}", p); }
                 } else {
-                    print_float_result("Ping Median", "ms", Some(ping_ms), false);
+                    print_float_result("Ping Median", "ms", ping_ms, false);
                 }
 
                 if !config.legacy {
@@ -109,16 +111,22 @@ pub async fn run_threads(
                         print_float_result("Jitter", "ms", jitter, false);
                     }
 
+                    let pre_udp_failed = state.measurement_state().failed;
                     if let Err(e) = state.run_udp_test() {
                         log::warn!("UDP packet loss test failed: {}", e);
-                    } else {
-                        let ms = state.measurement_state();
-                        let loss = match (&ms.udp_result_out, &ms.udp_result_in) {
-                            (Some(o), Some(i)) => Some(o.packet_loss_rate.max(i.packet_loss_rate) as f64),
-                            (Some(o), None)    => Some(o.packet_loss_rate as f64),
-                            (None,    Some(i)) => Some(i.packet_loss_rate as f64),
-                            (None,    None)    => None,
-                        };
+                    }
+                    // UDP failure is non-critical — don't mark thread as failed
+                    if !pre_udp_failed {
+                        state.reset_failed();
+                    }
+                    let ms = state.measurement_state();
+                    let loss = match (&ms.udp_result_out, &ms.udp_result_in) {
+                        (Some(o), Some(i)) => Some(o.packet_loss_rate.max(i.packet_loss_rate) as f64),
+                        (Some(o), None)    => Some(o.packet_loss_rate as f64),
+                        (None,    Some(i)) => Some(i.packet_loss_rate as f64),
+                        (None,    None)    => None,
+                    };
+                    if loss.is_some() {
                         print_float_result("Packet Loss", "%", loss, false);
                     }
                 }

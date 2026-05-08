@@ -60,7 +60,8 @@ pub fn handle_udp_receive_ok_out(poll: &Poll, state: &mut MeasurementState) -> i
             let s = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
             // Server may have buffered ACCEPT GETCHUNKS... before OK — find the OK line
             if s.lines().find(|l| l.trim().starts_with("OK")).is_none() {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, "Expected OK for UDPTEST OUT"));
+                // No OK yet — keep reading (ACCEPT GETCHUNKS may have arrived first)
+                continue;
             }
             state.read_pos = 0;
 

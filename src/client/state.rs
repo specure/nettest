@@ -227,6 +227,10 @@ impl TestState {
         Ok(self)
     }
 
+    pub fn reset_failed(&mut self) {
+        self.measurement_state.failed = false;
+    }
+
     pub fn run_signed_result(&mut self) -> Result<()> {
         self.measurement_state.phase = TestPhase::SignedResultSend;
         self.measurement_state.stream.reregister(
