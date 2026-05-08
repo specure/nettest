@@ -182,10 +182,7 @@ pub fn handle_voip_receive_result(
                 }
             }
 
-            // No valid VOIPRESULT line yet — wait for more data
-            if response.lines().count() > 1 || response.contains("VOIPRESULT") {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid VOIPRESULT"));
-            }
+            // No VOIPRESULT line found yet — wait for more data
         }
     }
 }
