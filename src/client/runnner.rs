@@ -87,14 +87,40 @@ pub async fn run_threads(
             if i == 0 {
                 state.run_ping().unwrap();
                 let median = state.measurement_state().ping_median.unwrap();
-                let ping_ms = median as f64 / 1000000.0;
-
+                let ping_ms = median as f64 / 1_000_000.0;
                 *ping_median_clone.lock().unwrap() = Some(median);
-
                 if config.raw_output {
                     print!("{:.2}", ping_ms);
                 } else {
                     print_float_result("Ping Median", "ms", Some(ping_ms), false);
+                }
+
+                if !config.legacy {
+                    if let Err(e) = state.run_voip_test() {
+                        log::warn!("VoIP test failed: {}", e);
+                    } else {
+                        let ms = state.measurement_state();
+                        let jitter = match (&ms.voip_result_in, &ms.voip_result_out) {
+                            (Some(i), Some(o)) => Some(i.mean_jitter.max(o.mean_jitter) as f64 / 1_000_000.0),
+                            (Some(i), None)    => Some(i.mean_jitter as f64 / 1_000_000.0),
+                            (None,    Some(o)) => Some(o.mean_jitter as f64 / 1_000_000.0),
+                            (None,    None)    => None,
+                        };
+                        print_float_result("Jitter", "ms", jitter, false);
+                    }
+
+                    if let Err(e) = state.run_udp_test() {
+                        log::warn!("UDP packet loss test failed: {}", e);
+                    } else {
+                        let ms = state.measurement_state();
+                        let loss = match (&ms.udp_result_out, &ms.udp_result_in) {
+                            (Some(o), Some(i)) => Some(o.packet_loss_rate.max(i.packet_loss_rate) as f64),
+                            (Some(o), None)    => Some(o.packet_loss_rate as f64),
+                            (None,    Some(i)) => Some(i.packet_loss_rate as f64),
+                            (None,    None)    => None,
+                        };
+                        print_float_result("Packet Loss", "%", loss, false);
+                    }
                 }
             }
             barrier.wait();

@@ -30,6 +30,8 @@ pub fn parse_args(
         registration_token: default_config.registration_token,
         server_name: default_config.server_name,
         enable_mdns: false,
+        udp_port: default_config.server_udp_port,
+        udp_server: None,
     };
 
     let mut i = 1;
@@ -83,6 +85,12 @@ pub fn parse_args(
             }
             "-register" => {
                 config.server_registration = true;
+            }
+            "-udp" => {
+                i += 1;
+                if i < args.len() {
+                    config.udp_port = args[i].parse().unwrap_or(5004);
+                }
             }
             "-mdns" => {
                 config.enable_mdns = true;
@@ -167,6 +175,7 @@ fn print_help() {
     println!("    -d              Run as daemon in background");
     println!("    -log LEVEL      Set log level: info, debug, trace");
     println!("    -register       Enable server registration with control server");
+    println!("    -udp PORT       UDP port for VoIP/packet loss tests (default: 5004)");
     println!("    -mdns           Enable mDNS service discovery for local network");
     println!("    -h, --help      Show this help message");
     println!("    -v, --version   Print version and exit");

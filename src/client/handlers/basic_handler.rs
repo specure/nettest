@@ -9,6 +9,12 @@ use crate::client::handlers::ping::{handle_ping_receive_pong, handle_ping_receiv
 use crate::client::handlers::put::{handle_put_receive_final_time, handle_put_receive_ok, handle_put_receive_time_bytes, handle_put_send_chunks, handle_put_send_command, handle_put_send_last_chunk};
 use crate::client::handlers::puttimeresult::{handle_put_time_result_receive_ok, handle_put_time_result_receive_time, handle_put_time_result_send_chunks, handle_put_time_result_send_command, handle_put_time_result_send_last_chunk};
 use crate::client::handlers::signed_result::{handle_signed_result_command, handle_signed_result_receive, handle_signed_result_send_ok};
+use crate::client::handlers::voip::{handle_voip_receive_ok, handle_voip_receive_result, handle_voip_send_command, handle_voip_send_get_result};
+use crate::client::handlers::udp::{
+    handle_udp_send_test_out, handle_udp_receive_ok_out,
+    handle_udp_send_get_result_out, handle_udp_receive_result_out,
+    handle_udp_send_test_in, handle_udp_send_get_result_in, handle_udp_receive_result_in,
+};
 use crate::client::state::{MeasurementState, TestPhase};
 
 
@@ -26,6 +32,13 @@ pub fn handle_client_readable_data(state: &mut MeasurementState, poll: &Poll) ->
 
         TestPhase::PingReceivePong => handle_ping_receive_pong(poll, state),
         TestPhase::PingReceiveTime => handle_ping_receive_time(poll, state),
+
+        TestPhase::VoipReceiveOk => handle_voip_receive_ok(poll, state),
+        TestPhase::VoipReceiveResult => handle_voip_receive_result(poll, state),
+
+        TestPhase::UdpReceiveOkOut => handle_udp_receive_ok_out(poll, state),
+        TestPhase::UdpReceiveResultOut => handle_udp_receive_result_out(poll, state),
+        TestPhase::UdpReceiveResultIn => handle_udp_receive_result_in(poll, state),
 
         TestPhase::PerfReceiveOk => handle_put_time_result_receive_ok(poll, state),
         TestPhase::PerfReceiveTime => handle_put_time_result_receive_time(poll, state),
@@ -59,6 +72,14 @@ pub fn handle_client_writable_data(state: &mut MeasurementState, poll: &Poll) ->
 
         TestPhase::PingSendPing => handle_ping_send_ping(poll, state),
         TestPhase::PingSendOk => handle_ping_send_ok(poll, state),
+
+        TestPhase::VoipSendCommand => handle_voip_send_command(poll, state),
+        TestPhase::VoipSendGetResult => handle_voip_send_get_result(poll, state),
+
+        TestPhase::UdpSendTestOut => handle_udp_send_test_out(poll, state),
+        TestPhase::UdpSendGetResultOut => handle_udp_send_get_result_out(poll, state),
+        TestPhase::UdpSendTestIn => handle_udp_send_test_in(poll, state),
+        TestPhase::UdpSendGetResultIn => handle_udp_send_get_result_in(poll, state),
 
         TestPhase::GetTimeSendCommand => handle_get_time_send_command(poll, state),
         TestPhase::GetTimeSendOk => handle_get_time_send_ok(poll, state),

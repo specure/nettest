@@ -11,6 +11,8 @@ use crate::client::handlers::basic_handler::{
 };
 use crate::client::constants::{MIN_CHUNK_SIZE};
 use crate::stream::stream::Stream;
+use crate::voip::{RtpQoSResult, VoipParams};
+use crate::udp::UdpQoSResult;
 
 pub const ONE_SECOND_NS: u128 = 1_000_000_000;
 
@@ -59,6 +61,21 @@ pub enum TestPhase {
     SignedResultReceive,
     SignedResultSendOk,
     SignedResultCompleted,
+
+    VoipSendCommand,
+    VoipReceiveOk,
+    VoipSendGetResult,
+    VoipReceiveResult,
+    VoipCompleted,
+
+    UdpSendTestOut,
+    UdpReceiveOkOut,
+    UdpSendGetResultOut,
+    UdpReceiveResultOut,
+    UdpSendTestIn,
+    UdpSendGetResultIn,
+    UdpReceiveResultIn,
+    UdpCompleted,
 }
 
 pub struct TestState {
@@ -95,6 +112,20 @@ pub struct MeasurementState {
     pub bytes_sent: u64,
     pub time_result_buffer: Vec<u8>,
     pub envelope: Option<String>,
+    pub server_addr: std::net::SocketAddr,
+    pub voip_ssrc: Option<u32>,
+    pub voip_params: Option<VoipParams>,
+    pub voip_result_in: Option<RtpQoSResult>,
+    pub voip_result_out: Option<RtpQoSResult>,
+    pub server_udp_port: u16,
+    pub udp_out_port: Option<u16>,
+    pub udp_out_uuid: Option<[u8; 16]>,
+    pub udp_in_uuid: Option<[u8; 16]>,
+    pub udp_in_port: Option<u16>,
+    pub udp_in_socket: Option<std::net::UdpSocket>,
+    pub udp_result_out: Option<UdpQoSResult>,
+    pub udp_result_in: Option<UdpQoSResult>,
+    pub udp_server_received_out: Option<u32>,
 }
 
 impl TestState {
@@ -157,6 +188,20 @@ impl TestState {
             bytes_sent: 0,
             time_result_buffer: Vec::new(),
             envelope: None,
+            server_addr: addr,
+            voip_ssrc: None,
+            voip_params: None,
+            voip_result_in: None,
+            voip_result_out: None,
+            server_udp_port: crate::udp::DEFAULT_UDP_SERVER_PORT,
+            udp_out_port: None,
+            udp_out_uuid: None,
+            udp_in_uuid: None,
+            udp_in_port: None,
+            udp_in_socket: None,
+            udp_result_out: None,
+            udp_result_in: None,
+            udp_server_received_out: None,
         };
 
 
@@ -201,6 +246,29 @@ impl TestState {
             Interest::WRITABLE,
         )?;
         self.process_phase(TestPhase::PerfCompleted, ONE_SECOND_NS * 12)?;
+        Ok(())
+    }
+
+    pub fn run_udp_test(&mut self) -> Result<()> {
+        self.measurement_state.phase = TestPhase::UdpSendTestOut;
+        self.measurement_state.stream.reregister(
+            &mut self.poll,
+            self.measurement_state.token,
+            Interest::WRITABLE,
+        )?;
+        // OUT(10 × 200ms) + tmax(3s) + IN(10 × 200ms) + tmax(3s) + buffer
+        self.process_phase(TestPhase::UdpCompleted, ONE_SECOND_NS * 15)?;
+        Ok(())
+    }
+
+    pub fn run_voip_test(&mut self) -> Result<()> {
+        self.measurement_state.phase = TestPhase::VoipSendCommand;
+        self.measurement_state.stream.reregister(
+            &mut self.poll,
+            self.measurement_state.token,
+            Interest::WRITABLE,
+        )?;
+        self.process_phase(TestPhase::VoipCompleted, ONE_SECOND_NS * 10)?;
         Ok(())
     }
 
@@ -298,8 +366,8 @@ impl TestState {
                         if n == 0 {
                             info!("No data to read for token {:?} phase: {:?}", self.measurement_state.token, self.measurement_state.phase);
                             self.measurement_state.failed = true;
+                            return Ok(());
                         }
-                        // If n > 0, continue processing
                     }
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                         trace!("WouldBlock");
@@ -308,13 +376,17 @@ impl TestState {
                     Err(e) => {
                         info!("Error: {:?} for token {:?} phase: {:?}", e, self.measurement_state.token, self.measurement_state.phase);
                         self.measurement_state.failed = true;
-                        break;
+                        return Ok(());
                     }
                 }
             }
         }
 
         Ok(())
+    }
+
+    pub fn set_udp_port(&mut self, port: u16) {
+        self.measurement_state.server_udp_port = port;
     }
 
     pub fn measurement_state(&self) -> &MeasurementState {

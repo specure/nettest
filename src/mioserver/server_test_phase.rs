@@ -43,4 +43,12 @@ pub enum ServerTestPhase {
 
     SignedResultSend,
     SignedResultReceiveOk,
+
+    VoipSendOk,
+    VoipSendResult,
+
+    UdpSendPort,
+    UdpSendOkOut,
+    UdpSendResultOut,
+    UdpSendResultIn,
 }
