@@ -2,7 +2,7 @@ use crate::{
     config::FileConfig,
     logger,
     mioserver::{handlers::signed_result::generate_secret_key, server::ServerConfig},
-    tokio_server::{ utils::user},
+    utils::user,
     config::parser::parse_listen_address,
 };
 use log::LevelFilter;

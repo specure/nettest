@@ -10,7 +10,7 @@ use tungstenite::protocol::WebSocketConfig;
 use tungstenite::{protocol::WebSocket, Message};
 
 use crate::config::constants::CHUNK_SIZE;
-use crate::tokio_server::utils::websocket::{generate_handshake_response, Handshake};
+use crate::utils::websocket::{generate_handshake_response, Handshake};
 
 
 const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";

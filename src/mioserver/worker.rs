@@ -18,8 +18,8 @@ const CONNECTION_PROCESSING_TIMEOUT: u64 = 60;
 use crate::mioserver::server::{ConnectionType, ServerConfig, TestState};
 use crate::mioserver::ServerTestPhase;
 use crate::stream::stream::Stream;
-use crate::tokio_server::utils::use_http::RMBT_UPGRADE;
-use crate::tokio_server::utils::websocket::Handshake;
+use crate::utils::use_http::RMBT_UPGRADE;
+use crate::utils::websocket::Handshake;
 
 pub struct WorkerThread {
     _thread: thread::JoinHandle<()>,

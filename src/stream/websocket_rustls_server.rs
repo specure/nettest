@@ -5,7 +5,7 @@ use std::io::{self, Read, Write};
 use tungstenite::{Message, WebSocket};
 
 use crate::{
-    config::constants::CHUNK_SIZE, stream::rustls_server::RustlsServerStream, tokio_server::utils::websocket::{generate_handshake_response, Handshake}
+    config::constants::CHUNK_SIZE, stream::rustls_server::RustlsServerStream, utils::websocket::{generate_handshake_response, Handshake}
 };
 
 #[derive(Debug)]
