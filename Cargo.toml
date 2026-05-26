@@ -3,6 +3,14 @@ name = "nettest"
 version = "2.0.3"
 edition = "2021"
 
+[lib]
+name = "nettest"
+path = "src/lib.rs"
+
+[[bin]]
+name = "nettest"
+path = "src/main.rs"
+
 [dependencies]
 openssl = { version = "0.10.72", features = ["vendored"]}
 tokio = { version = "1.36.0", features = ["full"] }

@@ -1,19 +1,9 @@
 use log::{debug, info};
 use tokio::signal;
 
-use crate::config::parser::read_config_file;
-use crate::mioserver::MioServer;
+use nettest::config::parser::read_config_file;
+use nettest::mioserver::MioServer;
 use std::error::Error as StdError;
-
-pub mod config;
-pub mod logger;
-pub mod mioserver;
-pub mod stream;
-pub mod voip;
-pub mod udp;
-pub mod utils;
-
-pub mod client;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
@@ -26,7 +16,7 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
     let config = config_result.unwrap();
     if args.len() == 1 || args[1] == "-c" {
         args = args.iter().skip(1).map(|s| s.clone()).collect();
-        client::client::client_run(args, config).await?;
+        nettest::client::client::client_run(args, config).await?;
         return Ok(());
     } else if args[1] == "-s" {
         debug!("args: {:?}", args);
