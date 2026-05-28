@@ -206,23 +206,19 @@ pub async fn run_threads(
                 barrier.wait();
             }
 
+            let ms = state.measurement_state();
             let result: Measurement = Measurement {
                 thread_id: i,
-                failed: state.measurement_state().failed,
-                phase: state.measurement_state().phase.clone(),
-                measurements: state
-                    .measurement_state()
-                    .download_measurements
-                    .iter()
-                    .cloned()
-                    .collect(),
-                upload_measurements: state
-                    .measurement_state()
-                    .upload_measurements
-                    .iter()
-                    .cloned()
-                    .collect(),
-                envelope: state.measurement_state().envelope.clone(),
+                failed: ms.failed,
+                phase: ms.phase.clone(),
+                measurements: ms.download_measurements.iter().cloned().collect(),
+                upload_measurements: ms.upload_measurements.iter().cloned().collect(),
+                envelope: ms.envelope.clone(),
+                ping_median_ns: ms.ping_median,
+                voip_result_in: ms.voip_result_in.clone(),
+                voip_result_out: ms.voip_result_out.clone(),
+                udp_result_out: ms.udp_result_out.clone(),
+                udp_result_in: ms.udp_result_in.clone(),
             };
             Ok(result)
         }));

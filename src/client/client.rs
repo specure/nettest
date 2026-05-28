@@ -4,6 +4,8 @@ use crate::client::print::graph_service::GraphService;
 use crate::client::print::printer::print_test_header;
 use crate::client::runnner::run_threads;
 use crate::config::FileConfig;
+use crate::voip::RtpQoSResult;
+use crate::udp::UdpQoSResult;
 use log::{info, LevelFilter};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -24,6 +26,11 @@ pub struct Measurement {
     pub phase: TestPhase,
     pub upload_measurements: Vec<(u64, u64)>,
     pub envelope: Option<String>,
+    pub ping_median_ns: Option<u64>,
+    pub voip_result_in: Option<RtpQoSResult>,
+    pub voip_result_out: Option<RtpQoSResult>,
+    pub udp_result_out: Option<UdpQoSResult>,
+    pub udp_result_in: Option<UdpQoSResult>,
 }
 
 #[derive(Default)]
@@ -51,6 +58,30 @@ pub struct ClientConfig {
     pub client_uuid: Option<String>,
     pub git_hash: Option<String>,
     pub legacy: bool,
+}
+
+impl Default for ClientConfig {
+    fn default() -> Self {
+        Self {
+            use_tls: false,
+            use_websocket: false,
+            graphs: false,
+            raw_output: false,
+            thread_count: 3,
+            log: None,
+            server: None,
+            port: 5005,
+            tls_port: 443,
+            udp_port: 5004,
+            x_nettest_client: "nt".to_string(),
+            control_server: "https://api.nettest.org".to_string(),
+            save_results: false,
+            signed_result: false,
+            client_uuid: None,
+            git_hash: None,
+            legacy: false,
+        }
+    }
 }
 
 pub async fn client_run(args: Vec<String>, dafault_config: FileConfig) -> anyhow::Result<()> {
