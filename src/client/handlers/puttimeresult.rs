@@ -1,12 +1,94 @@
 use anyhow::Result;
 use log::{debug, info, trace};
 use mio::{Interest, Poll};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::client::globals::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE};
 use crate::client::state::{MeasurementState, TestPhase};
 
-const TEST_DURATION_NS: u64 = 7_000_000_000; 
+const TEST_DURATION_NS: u64 = 7_000_000_000;
+
+/// Parse every complete `\n`-terminated line currently in `time_result_buffer`.
+/// Pushes pairs from `TIMERESULT ...` lines into `upload_measurements`.
+/// Returns true if the terminal `ACCEPT ...` line was seen.
+fn process_timeresult_lines(measurement_state: &mut MeasurementState) -> bool {
+    loop {
+        let pos = match measurement_state
+            .time_result_buffer
+            .iter()
+            .position(|&b| b == b'\n')
+        {
+            Some(p) => p,
+            None => return false,
+        };
+        let line =
+            String::from_utf8_lossy(&measurement_state.time_result_buffer[..pos]).to_string();
+        measurement_state.time_result_buffer.drain(..pos + 1);
+
+        if line.starts_with("TIMERESULT ") {
+            let data_part = &line[11..];
+            let pairs: Vec<(u64, u64)> = data_part
+                .split("; ")
+                .filter_map(|pair| {
+                    let pair = pair.trim_start_matches('(').trim_end_matches(')');
+                    let parts: Vec<&str> = pair.split_whitespace().collect();
+                    if parts.len() == 2 {
+                        let time = parts[0].parse::<u64>().ok()?;
+                        let bytes = parts[1].parse::<u64>().ok()?;
+                        Some((time, bytes))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            for (time, bytes) in &pairs {
+                measurement_state.upload_measurements.push_back((*time, *bytes));
+            }
+            if let Some((last_time, last_bytes)) = pairs.last() {
+                measurement_state.upload_time = Some(*last_time);
+                measurement_state.upload_bytes = Some(*last_bytes);
+            }
+        } else if line.starts_with("ACCEPT ") {
+            return true;
+        }
+    }
+}
+
+/// During the upload (PUTTIMERESULT) phase the client is busy *sending* chunks,
+/// so interim TIMERESULT messages from the server pile up in the socket. This
+/// opportunistically drains them (non-blocking) and republishes the live upload
+/// samples, throttled to ~100 ms, so the upload graph can grow during the phase.
+fn drain_interim_upload(measurement_state: &mut MeasurementState) {
+    let now = Instant::now();
+    let due = match measurement_state.last_live_publish {
+        Some(t) => now.duration_since(t) >= Duration::from_millis(100),
+        None => true,
+    };
+    if !due {
+        return;
+    }
+
+    // Non-blocking drain of all interim data currently available.
+    let mut buf = [0u8; 65536];
+    loop {
+        match measurement_state.stream.read(&mut buf) {
+            Ok(n) if n > 0 => {
+                measurement_state.time_result_buffer.extend_from_slice(&buf[..n]);
+            }
+            _ => break, // WouldBlock / EOF / error: stop draining, keep sending
+        }
+    }
+    let _ = process_timeresult_lines(measurement_state);
+
+    // Publish current upload samples to the live sink.
+    if let Some(sink) = &measurement_state.live_sink {
+        if let Ok(mut g) = sink.upload.lock() {
+            g.clear();
+            g.extend(measurement_state.upload_measurements.iter().cloned());
+        }
+    }
+    measurement_state.last_live_publish = Some(now);
+}
 
 pub fn handle_put_time_result_receive_ok(
     poll: &Poll,
@@ -41,43 +123,9 @@ pub fn handle_put_time_result_receive_time(
             .read(&mut measurement_state.read_buffer[measurement_state.read_pos..])?;
         measurement_state.time_result_buffer.extend_from_slice(&measurement_state.read_buffer[..n]);
 
-        let time_line = String::from_utf8_lossy(&measurement_state.time_result_buffer);
-        
-        let end = "ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n";
-
-        if time_line.ends_with(end) {
-            // Check if this is a TIMERESULT message
-            if time_line.starts_with("TIMERESULT ") {
-                let data_part = &time_line[11..]; // Remove "TIMERESULT "
-                trace!("Parsing TIMERESULT data: {}", data_part.trim());
-                
-                // Parse (time bytes) pairs from TIMERESULT message
-                let pairs: Vec<(u64, u64)> = data_part
-                    .split("; ")
-                    .filter_map(|pair| {
-                        let pair = pair.trim_start_matches('(').trim_end_matches(')');
-                        let parts: Vec<&str> = pair.split_whitespace().collect();
-                        if parts.len() == 2 {
-                            let time = parts[0].parse::<u64>().ok()?;
-                            let bytes = parts[1].parse::<u64>().ok()?;
-                            Some((time, bytes))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                
-                trace!("Parsed {} time-bytes pairs: {:?}", pairs.len(), pairs);
-                
-                for (time, bytes) in &pairs {
-                    measurement_state.upload_measurements.push_back((*time, *bytes));
-                }
-                if let Some((last_time, last_bytes)) = pairs.last() {
-                    measurement_state.upload_time = Some(*last_time);
-                    measurement_state.upload_bytes = Some(*last_bytes);
-                }
-            } 
-            
+        // The server may send any number of interim `TIMERESULT ...` lines
+        // before the final one, which is followed by the `ACCEPT ...` line.
+        if process_timeresult_lines(measurement_state) {
             measurement_state.phase = TestPhase::PerfCompleted;
             measurement_state.stream.reregister(
                 &poll,
@@ -96,7 +144,14 @@ pub fn handle_put_time_result_send_command(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
-    let command = format!("PUTTIMERESULT {}\n", measurement_state.chunk_size);
+    let command = if measurement_state.puttimeresult_interval_ms > 0 {
+        format!(
+            "PUTTIMERESULT {} {}\n",
+            measurement_state.chunk_size, measurement_state.puttimeresult_interval_ms
+        )
+    } else {
+        format!("PUTTIMERESULT {}\n", measurement_state.chunk_size)
+    };
     if measurement_state.write_pos == 0 {
         measurement_state.write_buffer[..command.len()].copy_from_slice(command.as_bytes());
     }
@@ -158,6 +213,9 @@ pub fn handle_put_time_result_send_chunks(
                     return Ok(written);
                 } else {
                     measurement_state.write_pos = 0;
+                    // Consume interim TIMERESULT updates so the upload graph can
+                    // grow live during the send (throttled internally).
+                    drain_interim_upload(measurement_state);
                 }
             }
         }

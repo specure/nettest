@@ -10,6 +10,7 @@ use crate::client::handlers::basic_handler::{
     handle_client_readable_data, handle_client_writable_data,
 };
 use crate::client::constants::{MIN_CHUNK_SIZE};
+use crate::client::live::LiveSink;
 use crate::stream::stream::Stream;
 use crate::voip::{RtpQoSResult, VoipParams};
 use crate::udp::UdpQoSResult;
@@ -126,6 +127,12 @@ pub struct MeasurementState {
     pub udp_result_out: Option<UdpQoSResult>,
     pub udp_result_in: Option<UdpQoSResult>,
     pub udp_server_received_out: Option<u32>,
+    /// Optional sink for publishing live per-thread samples during a phase.
+    pub live_sink: Option<LiveSink>,
+    /// Throttle marker for live publishing.
+    pub last_live_publish: Option<Instant>,
+    /// PUTTIMERESULT interim reporting interval in ms (0 = only final result).
+    pub puttimeresult_interval_ms: u64,
 }
 
 impl TestState {
@@ -202,6 +209,9 @@ impl TestState {
             udp_result_out: None,
             udp_result_in: None,
             udp_server_received_out: None,
+            live_sink: None,
+            last_live_publish: None,
+            puttimeresult_interval_ms: 0,
         };
 
 
@@ -210,6 +220,45 @@ impl TestState {
             events,
             measurement_state,
         })
+    }
+
+    /// Attach a live sample sink so this thread publishes its samples while a
+    /// phase is running.
+    pub fn set_live_sink(&mut self, sink: LiveSink) {
+        self.measurement_state.live_sink = Some(sink);
+    }
+
+    /// Set the PUTTIMERESULT interim reporting interval (ms; 0 = final only).
+    pub fn set_puttimeresult_interval(&mut self, ms: u64) {
+        self.measurement_state.puttimeresult_interval_ms = ms;
+    }
+
+    /// Publish the current download/upload samples to the live sink so the
+    /// polling UI can redraw the graph during a phase. Throttled to ~100 ms
+    /// unless `force` is set (used to flush the final snapshot of a phase).
+    fn publish_live(&mut self, force: bool) {
+        let (dl_sink, ul_sink) = match &self.measurement_state.live_sink {
+            Some(s) => (s.download.clone(), s.upload.clone()),
+            None => return,
+        };
+        let now = Instant::now();
+        let due = force
+            || match self.measurement_state.last_live_publish {
+                Some(t) => now.duration_since(t) >= Duration::from_millis(100),
+                None => true,
+            };
+        if !due {
+            return;
+        }
+        if let Ok(mut g) = dl_sink.lock() {
+            g.clear();
+            g.extend(self.measurement_state.download_measurements.iter().cloned());
+        }
+        if let Ok(mut g) = ul_sink.lock() {
+            g.clear();
+            g.extend(self.measurement_state.upload_measurements.iter().cloned());
+        }
+        self.measurement_state.last_live_publish = Some(now);
     }
 
     pub fn process_greeting(&mut self) -> Result<&mut TestState> {
@@ -384,7 +433,14 @@ impl TestState {
                     }
                 }
             }
+
+            // Publish a live snapshot for the polling UI (throttled).
+            self.publish_live(false);
         }
+
+        // Flush the final snapshot of this phase (e.g. upload results that
+        // arrive in one burst right before the phase completes).
+        self.publish_live(true);
 
         Ok(())
     }

@@ -39,6 +39,7 @@ pub enum ServerTestPhase {
 
     PutTimeResultSendOk,
     PutTimeResultReceiveChunk,
+    PutTimeResultSendInterim,
     PutTimeResultSendTimeResult,
 
     SignedResultSend,

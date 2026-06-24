@@ -5,6 +5,7 @@ use crate::client::calculator::{
 };
 use crate::client::client::{ClientConfig, SharedStats};
 use crate::client::constants::init_max_chunk_size;
+use crate::client::live::SharedLive;
 use crate::client::runnner::run_threads;
 
 #[derive(Debug, Clone)]
@@ -21,12 +22,36 @@ pub struct MeasurementResult {
 }
 
 pub async fn run_measurement(config: ClientConfig) -> anyhow::Result<MeasurementResult> {
+    let stats: Arc<Mutex<SharedStats>> = Arc::new(Mutex::new(SharedStats::default()));
+    run_measurement_inner(config, stats, None).await
+}
+
+/// Like [`run_measurement`] but reports progress into the supplied shared
+/// `live` state and exposes the shared `stats` so a caller can derive live
+/// graphs from the raw per-thread measurements while the test runs.
+pub async fn run_measurement_with_progress(
+    config: ClientConfig,
+    stats: Arc<Mutex<SharedStats>>,
+    live: SharedLive,
+) -> anyhow::Result<MeasurementResult> {
+    let result = run_measurement_inner(config, stats, Some(live.clone())).await;
+    if let Ok(mut guard) = live.lock() {
+        guard.phase = "done".to_string();
+        guard.done = true;
+    }
+    result
+}
+
+async fn run_measurement_inner(
+    config: ClientConfig,
+    stats: Arc<Mutex<SharedStats>>,
+    live: Option<SharedLive>,
+) -> anyhow::Result<MeasurementResult> {
     init_max_chunk_size(None);
 
     let thread_count = config.thread_count;
-    let stats: Arc<Mutex<SharedStats>> = Arc::new(Mutex::new(SharedStats::default()));
 
-    let measurements = run_threads(config, stats.clone()).await?;
+    let measurements = run_threads(config, stats.clone(), live).await?;
 
     let stats_guard = stats.lock().unwrap();
     let (dl_bps, dl_gbps, _) =

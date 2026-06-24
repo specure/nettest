@@ -58,6 +58,8 @@ pub struct ClientConfig {
     pub client_uuid: Option<String>,
     pub git_hash: Option<String>,
     pub legacy: bool,
+    /// PUTTIMERESULT interim reporting interval in ms (0 = only final result).
+    pub put_time_result_interval_ms: u64,
 }
 
 impl Default for ClientConfig {
@@ -80,6 +82,7 @@ impl Default for ClientConfig {
             client_uuid: None,
             git_hash: None,
             legacy: false,
+            put_time_result_interval_ms: 0,
         }
     }
 }
@@ -105,7 +108,7 @@ pub async fn client_run(args: Vec<String>, dafault_config: FileConfig) -> anyhow
 
     info!("Config: {:?}", config);
 
-    let state_refs = run_threads(config.clone(), stats).await;
+    let state_refs = run_threads(config.clone(), stats, None).await;
 
     if config.graphs {
         GraphService::print_graph(&state_refs.unwrap());

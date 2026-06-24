@@ -6,6 +6,7 @@ pub mod print;
 pub mod runnner;
 pub mod state;
 pub mod calculator;
+pub mod live;
 pub mod args_parser;
 pub mod control_server;
 pub mod api;

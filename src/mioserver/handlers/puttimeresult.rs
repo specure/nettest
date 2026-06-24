@@ -73,49 +73,86 @@ pub fn handle_put_time_result_receive_chunk(
                     .stream
                     .reregister(poll, state.token, Interest::WRITABLE)?;
                 return Ok(n);
-            } else {
-                if state.chunk_buffer[state.read_pos - 1] != 0x00 {
-                    return Err(io::Error::new(io::ErrorKind::Other, "Invalid chunk"));
-                }
+            } else if state.chunk_buffer[state.read_pos - 1] != 0x00 {
+                return Err(io::Error::new(io::ErrorKind::Other, "Invalid chunk"));
             }
             state.read_pos = 0;
+
+            // Emit an interim TIMERESULT every `interval` ns so the client can
+            // draw the upload graph while the phase is still running.
+            if state.puttimeresult_interval_ns > 0
+                && tt - state.puttimeresult_last_emit_ns >= state.puttimeresult_interval_ns as u128
+                && state.puttimeresult_emit_index < state.bytes_received.len()
+            {
+                state.puttimeresult_last_emit_ns = tt;
+                state.write_pos = 0;
+                state.measurement_state = ServerTestPhase::PutTimeResultSendInterim;
+                state
+                    .stream
+                    .reregister(poll, state.token, Interest::WRITABLE)?;
+                return Ok(n);
+            }
         }
     }
 }
 
-pub fn handle_put_time_result_send_time(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
-    info!("handle_put_time_result_send_time");
-    let result = state.bytes_received.iter().map(|(t, b)| format!("({} {})", t, b)).collect::<Vec<String>>().join("; ");
-    let command = format!("TIMERESULT {}\n", result);
+/// Write a TIMERESULT message containing only the not-yet-sent samples
+/// (`bytes_received[emit_index..]`), then move to `next_phase`/`next_interest`.
+/// Shared by the interim and final senders.
+fn write_time_result(
+    poll: &Poll,
+    state: &mut TestState,
+    next_phase: ServerTestPhase,
+    next_interest: Interest,
+) -> io::Result<usize> {
     if state.write_pos == 0 {
-        if state.chunk_buffer.len() < command.len() {
-            state.chunk_buffer.resize(command.len(), 0);
-        }
-        state.chunk_buffer[0..command.len()].copy_from_slice(command.as_bytes());
+        let result = state
+            .bytes_received
+            .iter()
+            .skip(state.puttimeresult_emit_index)
+            .map(|(t, b)| format!("({} {})", t, b))
+            .collect::<Vec<String>>()
+            .join("; ");
+        let command = format!("TIMERESULT {}\n", result);
+        state.puttimeresult_send_buffer = command.into_bytes();
     }
+    let buf_len = state.puttimeresult_send_buffer.len();
     loop {
         let n = state
             .stream
-            .write(&state.chunk_buffer[state.write_pos..])?;
+            .write(&state.puttimeresult_send_buffer[state.write_pos..])?;
         if n == 0 {
             return Err(io::Error::new(io::ErrorKind::Other, "EOF"));
         }
         state.write_pos += n;
-        info!("write_pos: {}", state.write_pos);
-        if state.write_pos == state.chunk_buffer.len() {
-            let tt = state.clock.unwrap().elapsed().as_nanos();
-            state.total_bytes_received += state.chunk_buffer.len() as u64;
-            state
-                    .bytes_received
-                    .push_back((tt as u64, state.total_bytes_received));
-            debug!("command sent");
+        if state.write_pos == buf_len {
+            state.puttimeresult_emit_index = state.bytes_received.len();
             state.write_pos = 0;
             state.read_pos = 0;
-            state.measurement_state = ServerTestPhase::AcceptCommandSend;
-            state
-                .stream
-                .reregister(poll, state.token, Interest::WRITABLE)?;
+            state.measurement_state = next_phase;
+            state.stream.reregister(poll, state.token, next_interest)?;
             return Ok(n);
         }
     }
+}
+
+/// Send an interim TIMERESULT, then resume receiving chunks.
+pub fn handle_put_time_result_send_interim(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
+    write_time_result(
+        poll,
+        state,
+        ServerTestPhase::PutTimeResultReceiveChunk,
+        Interest::READABLE,
+    )
+}
+
+pub fn handle_put_time_result_send_time(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
+    info!("handle_put_time_result_send_time");
+    // Send the final (remaining) samples, then go back to accepting commands.
+    write_time_result(
+        poll,
+        state,
+        ServerTestPhase::AcceptCommandSend,
+        Interest::WRITABLE,
+    )
 }

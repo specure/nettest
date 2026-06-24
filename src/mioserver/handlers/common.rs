@@ -184,14 +184,20 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
                 let parts: Vec<&str> = command_str.split_whitespace().collect();
 
 
-                match parts[1].parse::<usize>() {
-                    Ok(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => {
+                match parts.get(1).and_then(|p| p.parse::<usize>().ok()) {
+                    Some(size) if size >= MIN_CHUNK_SIZE && size <= MAX_CHUNK_SIZE => {
                         state.chunk_size = size;
                     }
                     _ => {
                         state.chunk_size = MIN_CHUNK_SIZE;
                     }
                 }
+
+                // Optional 3rd arg: interim reporting interval in milliseconds.
+                let interval_ms = parts.get(2).and_then(|p| p.parse::<u64>().ok()).unwrap_or(0);
+                state.puttimeresult_interval_ns = interval_ms.saturating_mul(1_000_000);
+                state.puttimeresult_last_emit_ns = 0;
+                state.puttimeresult_emit_index = 0;
 
 
                 state

@@ -23,6 +23,7 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
         client_uuid: default_config.client_uuid,
         git_hash: None,
         legacy: false,
+        put_time_result_interval_ms: 0,
     };
 
 

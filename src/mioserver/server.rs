@@ -68,6 +68,14 @@ pub struct TestState {
     pub chunk: Option<BytesMut>,
     pub terminal_chunk: Option<BytesMut>,
     pub bytes_received: VecDeque<(u64, u64)>,
+    /// PUTTIMERESULT interim reporting interval in ns (0 = only final result).
+    pub puttimeresult_interval_ns: u64,
+    /// Timestamp (ns since clock start) of the last interim TIMERESULT emit.
+    pub puttimeresult_last_emit_ns: u128,
+    /// Index into `bytes_received` of the first not-yet-sent sample.
+    pub puttimeresult_emit_index: usize,
+    /// Dedicated buffer for writing TIMERESULT messages (interim and final).
+    pub puttimeresult_send_buffer: Vec<u8>,
     pub client_addr: Option<SocketAddr>,
     pub sig_key: Option<String>,
     pub voip_ssrc: Option<u32>,
