@@ -90,6 +90,37 @@ fn drain_interim_upload(measurement_state: &mut MeasurementState) {
     measurement_state.last_live_publish = Some(now);
 }
 
+/// Readable handler active during the upload SEND phases: when interim data
+/// arrives while writes are blocked (real networks), a READABLE event lets us
+/// drain it promptly instead of waiting for the next chunk boundary.
+pub fn handle_put_time_result_drain(
+    _poll: &Poll,
+    measurement_state: &mut MeasurementState,
+) -> Result<usize, std::io::Error> {
+    let mut buf = [0u8; 65536];
+    let mut total = 0usize;
+    loop {
+        match measurement_state.stream.read(&mut buf) {
+            Ok(n) if n > 0 => {
+                measurement_state.time_result_buffer.extend_from_slice(&buf[..n]);
+                total += n;
+            }
+            Ok(_) => break, // EOF
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+            Err(e) => return Err(e),
+        }
+    }
+    let _ = process_timeresult_lines(measurement_state);
+    if let Some(sink) = &measurement_state.live_sink {
+        if let Ok(mut g) = sink.upload.lock() {
+            g.clear();
+            g.extend(measurement_state.upload_measurements.iter().cloned());
+        }
+    }
+    // Never return 0: the phase loop treats 0 as a failed read.
+    Ok(total.max(1))
+}
+
 pub fn handle_put_time_result_receive_ok(
     poll: &Poll,
     measurement_state: &mut MeasurementState,
@@ -101,10 +132,11 @@ pub fn handle_put_time_result_receive_ok(
             .read(&mut measurement_state.read_buffer[measurement_state.read_pos..b"OK\n".len()])?;
         if n == b"OK\n".len() {
             measurement_state.phase = TestPhase::PerfSendChunks;
+            // READABLE too: drain interim TIMERESULT while sending.
             measurement_state.stream.reregister(
                 &poll,
                 measurement_state.token,
-                Interest::WRITABLE,
+                Interest::READABLE | Interest::WRITABLE,
             )?;
             measurement_state.read_pos = 0;
             return Ok(n);
@@ -207,7 +239,7 @@ pub fn handle_put_time_result_send_chunks(
                     measurement_state.stream.reregister(
                         &poll,
                         measurement_state.token,
-                        Interest::WRITABLE,
+                        Interest::READABLE | Interest::WRITABLE,
                     )?;
                     measurement_state.write_pos = 0;
                     return Ok(written);
