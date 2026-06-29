@@ -90,8 +90,8 @@ impl Default for ClientConfig {
             put_time_result_interval_ms: 0,
             download_duration_ms: 7000,
             upload_duration_ms: 7000,
-            jitter_duration_ms: 5000,
-            packetloss_duration_ms: 5000,
+            jitter_duration_ms: 4000,
+            packetloss_duration_ms: 4000,
         }
     }
 }

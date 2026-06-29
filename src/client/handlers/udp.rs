@@ -14,10 +14,13 @@ fn uuid_to_hex(uuid: &[u8; 16]) -> String {
     uuid.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
-/// Number of UDP packets for the packet-loss test for a given phase duration,
-/// derived from the per-packet delay (one packet every DEFAULT_UDP_DELAY_NS).
+/// Number of UDP packets PER DIRECTION for the packet-loss test.
+/// `duration_ms` is the total packet-loss phase budget; the test runs two
+/// directions (OUT + IN), so each direction gets half, at one packet every
+/// DEFAULT_UDP_DELAY_NS.
 fn udp_num_packets(duration_ms: u64) -> u32 {
-    ((duration_ms * 1_000_000 / DEFAULT_UDP_DELAY_NS).max(1)) as u32
+    let per_direction_ms = (duration_ms / 2).max(1);
+    ((per_direction_ms * 1_000_000 / DEFAULT_UDP_DELAY_NS).max(1)) as u32
 }
 
 // → UDPTEST OUT <port> <n> <uuid_hex>\n
