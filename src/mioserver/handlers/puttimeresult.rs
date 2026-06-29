@@ -91,22 +91,64 @@ pub fn handle_put_time_result_receive_chunk(
                 return Err(io::Error::new(io::ErrorKind::Other, "Invalid chunk"));
             }
             state.read_pos = 0;
+        }
 
-            // Emit accumulated samples as an interim TIMERESULT, but ONLY at a
-            // chunk boundary (read_pos == 0 here) — emitting mid-chunk requires
-            // resetting the write path and proved unstable on real networks.
-            if interval > 0
-                && tt - state.puttimeresult_last_emit_ns >= interval
-                && state.puttimeresult_emit_index < state.bytes_received.len()
-            {
+        // Emit accumulated samples as an interim TIMERESULT every `interval` ns,
+        // written INLINE on the same (READABLE) socket — TCP is full-duplex, so
+        // we can write without changing the mio interest. This avoids the
+        // READABLE<->WRITABLE reregister mid-chunk that proved unstable, while
+        // still delivering points every ~interval (not only at chunk boundaries).
+        if interval > 0
+            && tt - state.puttimeresult_last_emit_ns >= interval
+            && state.puttimeresult_emit_index < state.bytes_received.len()
+        {
+            if emit_interim_inline(state)? {
                 state.puttimeresult_last_emit_ns = tt;
-                state.write_pos = 0;
-                state.measurement_state = ServerTestPhase::PutTimeResultSendInterim;
-                state
-                    .stream
-                    .reregister(poll, state.token, Interest::WRITABLE)?;
-                return Ok(n);
             }
+        }
+    }
+}
+
+/// Write a TIMERESULT with the not-yet-sent samples directly on the socket,
+/// without touching the mio interest. Returns true if it was fully sent.
+/// If the socket buffer is full and nothing could be written, returns false
+/// (the interim is skipped and retried on the next cycle) — never leaves a
+/// partial line in the stream.
+fn emit_interim_inline(state: &mut TestState) -> io::Result<bool> {
+    let result = state
+        .bytes_received
+        .iter()
+        .skip(state.puttimeresult_emit_index)
+        .map(|(t, b)| format!("({} {})", t, b))
+        .collect::<Vec<String>>()
+        .join("; ");
+    let msg = format!("TIMERESULT {}\n", result).into_bytes();
+
+    let mut written = 0usize;
+    loop {
+        match state.stream.write(&msg[written..]) {
+            Ok(0) => {
+                // Can't write now. If nothing went out, skip cleanly.
+                if written == 0 {
+                    return Ok(false);
+                }
+            }
+            Ok(n) => {
+                written += n;
+                if written == msg.len() {
+                    state.puttimeresult_emit_index = state.bytes_received.len();
+                    return Ok(true);
+                }
+            }
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                // Buffer full. If nothing written yet, skip this interim cleanly.
+                // If partially written, we MUST finish to keep the stream intact;
+                // spin (the client is actively draining, so this clears quickly).
+                if written == 0 {
+                    return Ok(false);
+                }
+            }
+            Err(e) => return Err(e),
         }
     }
 }
