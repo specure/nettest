@@ -72,6 +72,8 @@ pub struct TestState {
     pub puttimeresult_interval_ns: u64,
     /// Timestamp (ns since clock start) of the last interim TIMERESULT emit.
     pub puttimeresult_last_emit_ns: u128,
+    /// Timestamp (ns) of the last recorded speed sample (for time-based sampling).
+    pub puttimeresult_last_sample_ns: u128,
     /// Index into `bytes_received` of the first not-yet-sent sample.
     pub puttimeresult_emit_index: usize,
     /// Dedicated buffer for writing TIMERESULT messages (interim and final).

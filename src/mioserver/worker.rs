@@ -171,6 +171,7 @@ impl Worker {
                                 bytes_received: VecDeque::new(),
                                 puttimeresult_interval_ns: 0,
                                 puttimeresult_last_emit_ns: 0,
+                                puttimeresult_last_sample_ns: 0,
                                 puttimeresult_emit_index: 0,
                                 puttimeresult_send_buffer: Vec::new(),
                                 client_addr: ip,

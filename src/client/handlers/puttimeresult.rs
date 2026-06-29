@@ -93,7 +93,7 @@ fn drain_interim_upload(measurement_state: &mut MeasurementState) {
 /// arrives while writes are blocked (real networks), a READABLE event lets us
 /// drain it promptly instead of waiting for the next chunk boundary.
 pub fn handle_put_time_result_drain(
-    _poll: &Poll,
+    poll: &Poll,
     measurement_state: &mut MeasurementState,
 ) -> Result<usize, std::io::Error> {
     let mut buf = [0u8; 65536];
@@ -109,12 +109,25 @@ pub fn handle_put_time_result_drain(
             Err(e) => return Err(e),
         }
     }
-    let _ = process_timeresult_lines(measurement_state);
+    let accept_seen = process_timeresult_lines(measurement_state);
     if let Some(sink) = &measurement_state.live_sink {
         if let Ok(mut g) = sink.upload.lock() {
             g.clear();
             g.extend(measurement_state.upload_measurements.iter().cloned());
         }
+    }
+    // Defense-in-depth: if the final ACCEPT arrived while draining, complete the
+    // phase here instead of dropping it (which would hang PerfReceiveTime).
+    if accept_seen {
+        measurement_state.phase = TestPhase::PerfCompleted;
+        measurement_state.stream.reregister(
+            &poll,
+            measurement_state.token,
+            Interest::READABLE,
+        )?;
+        measurement_state.read_pos = 0;
+        measurement_state.write_pos = 0;
+        measurement_state.time_result_buffer.clear();
     }
     // Never return 0: the phase loop treats 0 as a failed read.
     Ok(total.max(1))
@@ -236,21 +249,24 @@ pub fn handle_put_time_result_send_chunks(
 
                 if is_last {
                     measurement_state.phase = TestPhase::PerfSendLastChunk;
+                    // WRITABLE only: do NOT drain on READABLE during the last
+                    // chunk. The final TIMERESULT + ACCEPT must be consumed by
+                    // PerfReceiveTime; if the interim drainer (which ignores
+                    // ACCEPT) ate them here, the phase would hang.
                     measurement_state.stream.reregister(
                         &poll,
                         measurement_state.token,
-                        Interest::READABLE | Interest::WRITABLE,
+                        Interest::WRITABLE,
                     )?;
                     measurement_state.write_pos = 0;
                     return Ok(written);
                 } else {
                     measurement_state.write_pos = 0;
+                    // Consume interim TIMERESULT updates at the chunk boundary
+                    // (throttled internally) so the upload graph grows live.
+                    drain_interim_upload(measurement_state);
                 }
             }
-            // Consume interim TIMERESULT updates by time (throttled internally),
-            // independent of the chunk boundary, so the upload graph updates
-            // promptly even when the chunk is large (multi-MB).
-            drain_interim_upload(measurement_state);
         }
     } else {
         return Ok(0);
