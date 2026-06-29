@@ -3,6 +3,7 @@ use log::{debug, info, trace};
 use mio::{Interest, Poll};
 use std::time::{Duration, Instant};
 
+use crate::client::constants::ACCEPT_GETCHUNKS_STRING;
 use crate::client::globals::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE};
 use crate::client::state::{MeasurementState, TestPhase};
 
@@ -22,9 +23,9 @@ fn process_timeresult_lines(measurement_state: &mut MeasurementState) -> bool {
         };
         let line =
             String::from_utf8_lossy(&measurement_state.time_result_buffer[..pos]).to_string();
-        measurement_state.time_result_buffer.drain(..pos + 1);
 
         if line.starts_with("TIMERESULT ") {
+            measurement_state.time_result_buffer.drain(..pos + 1);
             let data_part = &line[11..];
             let pairs: Vec<(u64, u64)> = data_part
                 .split("; ")
@@ -48,7 +49,13 @@ fn process_timeresult_lines(measurement_state: &mut MeasurementState) -> bool {
                 measurement_state.upload_bytes = Some(*last_bytes);
             }
         } else if line.starts_with("ACCEPT ") {
+            measurement_state.time_result_buffer.drain(..pos + 1);
             return true;
+        } else {
+            // Unrecognized line (e.g. binary data from an older server whose
+            // reply ends with the ACCEPT terminal): do NOT consume it, so the
+            // caller's `ends_with(ACCEPT terminal)` check can detect completion.
+            return false;
         }
     }
 }
@@ -167,9 +174,14 @@ pub fn handle_put_time_result_receive_time(
             .read(&mut measurement_state.read_buffer[measurement_state.read_pos..])?;
         measurement_state.time_result_buffer.extend_from_slice(&measurement_state.read_buffer[..n]);
 
-        // The server may send any number of interim `TIMERESULT ...` lines
-        // before the final one, which is followed by the `ACCEPT ...` line.
-        if process_timeresult_lines(measurement_state) {
+        // The server may send any number of interim `TIMERESULT ...` lines for
+        // the live graph. Completion is detected by the buffer ending with the
+        // ACCEPT terminal — this also covers older servers whose PUTTIMERESULT
+        // reply is binary data followed by that terminal (no clean lines).
+        let completed = process_timeresult_lines(measurement_state)
+            || String::from_utf8_lossy(&measurement_state.time_result_buffer)
+                .ends_with(ACCEPT_GETCHUNKS_STRING);
+        if completed {
             measurement_state.phase = TestPhase::PerfCompleted;
             measurement_state.stream.reregister(
                 &poll,
