@@ -1,19 +1,19 @@
-# Сборка Rust под Flutter (FFI)
+# Building Rust for Flutter (FFI)
 
-Заметки по интеграции крейта `nettest` (этот репозиторий) в Flutter-приложение
-через FFI. Основано на разборе ветки `flutter` (коммиты `a9ad8de`, `edcd07d`,
-`5050956`, `43a4ae6`), где был рабочий пример `flutter-ex/`.
+Notes on integrating the `nettest` crate into a Flutter app via FFI. Based on a
+review of the `flutter` branch (commits `a9ad8de`, `edcd07d`, `5050956`,
+`43a4ae6`), which had a working `flutter-ex/` example.
 
-> Цель этих заметок — зафиксировать **как именно** собирать, чтобы не тратить
-> время повторно. В дальнейшем планируется отдельный репозиторий, который будет
-> собирать Flutter-библиотеку, используя текущий репозиторий как крейт.
+> The goal of these notes is to capture **exactly how** to build, so the time
+> isn't spent again. A separate repository (`nettest-flutter-lib`) builds the
+> Flutter library using this crate as a dependency.
 
 ---
 
-## 1. Что нужно изменить в крейте (`Cargo.toml`)
+## 1. Crate changes (`Cargo.toml`)
 
-Ключевое отличие от серверной сборки — крейт должен компилироваться как
-динамическая/статическая библиотека для FFI:
+The key difference from the server build — the crate must compile as a
+dynamic/static library for FFI:
 
 ```toml
 [lib]
@@ -22,13 +22,13 @@ crate-type = ["cdylib", "rlib", "staticlib"]
 ```
 
 - `cdylib` → `.so` (Android), `.dylib` (macOS), `.dll` (Windows)
-- `staticlib` → `.a` (iOS, линкуется статически)
-- `rlib` → чтобы крейт можно было использовать и как обычную Rust-зависимость
+- `staticlib` → `.a` (iOS, linked statically)
+- `rlib` → so the crate can also be used as a regular Rust dependency
 
-### Зависимости, ломающие мобильную сборку
+### Dependencies that break the mobile build
 
-`plotters` / `plotters-backend` / `textplots` тянут **fontconfig**, который не
-собирается под Android. Их нужно вынести из мобильных таргетов:
+`plotters` / `plotters-backend` / `textplots` pull in **fontconfig**, which does
+not build for Android. Move them out of the mobile targets:
 
 ```toml
 [target.'cfg(not(target_os = "android"))'.dependencies]
@@ -37,170 +37,162 @@ plotters-backend = "0.3.7"
 textplots = "0.8.7"
 ```
 
-В ветке `flutter` также были убраны `mdns-sd` и `include_dir` (не нужны клиенту).
+The `flutter` branch also dropped `mdns-sd` and `include_dir` (not needed by the
+client).
 
-## 2. Что изменить в коде (`src/lib.rs`)
+## 2. Code changes (`src/lib.rs`)
 
-### Условная компиляция серверной части
+### Conditional compilation of the server part
 
-Серверный модуль не нужен на Android и тянет лишние зависимости:
+The server module is not needed on Android and pulls in extra dependencies:
 
 ```rust
 #[cfg(not(target_os = "android"))]
 pub mod mioserver;
 ```
 
-### FFI-функции с `#[no_mangle] extern "C"`
+### FFI functions with `#[no_mangle] extern "C"`
 
-В `src/lib.rs` экспортируются C-совместимые функции. Главное:
+`src/lib.rs` exports C-compatible functions. The essentials:
 
-- `client_run_ffi(args_json, config_json) -> *mut c_char` — синхронный запуск.
-- `client_run_with_progress_ffi(...)` — запуск с прогрессом; прогресс
-  складывается в глобальный `lazy_static` `Mutex<Option<MeasurementProgress>>`,
-  Dart опрашивает его через `get_progress_ffi()`.
-- `free_string(ptr)` — освобождение строк, отданных в Dart (`CString::into_raw`).
+- `client_run_ffi(args_json, config_json) -> *mut c_char` — synchronous run.
+- `client_run_with_progress_ffi(...)` — run with progress; progress is stored in
+  a global `lazy_static` `Mutex<Option<MeasurementProgress>>`, polled by Dart via
+  `get_progress_ffi()`.
+- `free_string(ptr)` — frees strings handed to Dart (`CString::into_raw`).
 
-Аргументы передаются как **JSON-массив строк** (`["-c", "--server", "..."]`),
-результат — JSON (`{"success": true}` или `{"error": "..."}`).
-Внутри FFI создаётся свой `tokio::runtime::Runtime` и вызывает `block_on`.
+Arguments are passed as a **JSON array of strings** (`["-c", "--server", "..."]`),
+the result is JSON (`{"success": true}` or `{"error": "..."}`). The FFI creates
+its own `tokio::runtime::Runtime` and calls `block_on`.
 
-## 3. Сборка под Android
+> Note: the `nettest-flutter-lib` library uses a different, per-handle FFI surface
+> (`nettest_measurement_*`). The notes above describe the original
+> `flutter`-branch approach, but the build mechanics (crate-type, NDK targets,
+> linking) are identical.
 
-### Требования
-- Android NDK (через Android Studio: Tools → SDK Manager → SDK Tools → NDK).
+## 3. Building for Android
+
+### Requirements
+- Android NDK (via Android Studio: Tools → SDK Manager → SDK Tools → NDK).
 - `cargo install cargo-ndk`
-- `ANDROID_NDK_HOME` (опц.) — скрипт умеет искать NDK в
+- `ANDROID_NDK_HOME` (optional) — the script can find the NDK in
   `~/Library/Android/sdk/ndk/*`.
 
-### Таргеты
+### Targets
 ```bash
 rustup target add aarch64-linux-android      # arm64-v8a
 rustup target add armv7-linux-androideabi    # armeabi-v7a
 rustup target add x86_64-linux-android       # x86_64
-# i686-linux-android НЕ используем — устаревшая, проблемы с атомарными
-# операциями в OpenSSL.
+# i686-linux-android is NOT used — deprecated, atomic-operation issues in OpenSSL.
 ```
 
-### Переменные окружения (отключаем fontconfig)
+### Environment variables (disable fontconfig)
 ```bash
 export FONTCONFIG_NO_PKG_CONFIG=1
 export RUST_FONTCONFIG_DLOPEN=1
 export PKG_CONFIG_ALLOW_CROSS=1
 ```
 
-### Команда сборки (на каждый таргет)
+### Build command (per target)
 ```bash
 cargo ndk -t aarch64-linux-android build --release
 ```
 
-### Куда класть `.so`
-Flutter автоматически подхватывает нативные либы из `jniLibs/`:
+### Where to place the `.so`
+Flutter automatically picks up native libs from `jniLibs/`:
 ```
-flutter-ex/android/app/src/main/jniLibs/arm64-v8a/libnettest.so
-flutter-ex/android/app/src/main/jniLibs/armeabi-v7a/libnettest.so
-flutter-ex/android/app/src/main/jniLibs/x86_64/libnettest.so
+android/app/src/main/jniLibs/arm64-v8a/libnettest.so
+android/app/src/main/jniLibs/armeabi-v7a/libnettest.so
+android/app/src/main/jniLibs/x86_64/libnettest.so
 ```
-Копируем из `target/<rust_target>/release/libnettest.so`.
+Copy from `target/<rust_target>/release/libnettest.so`.
 
-Готовый скрипт делает всё это циклом: `build_android_simple.sh`.
+A ready script does this in a loop: `build_android_simple.sh`.
 
-### Загрузка в Dart
+### Loading in Dart
 ```dart
 DynamicLibrary.open('libnettest.so');
 ```
 
-## 4. Сборка под iOS
+## 4. Building for iOS
 
-### Таргет
+### Target
 ```bash
 rustup target add aarch64-apple-ios-sim
 cargo build --release --target aarch64-apple-ios-sim
 ```
 
-> На Apple Silicon **одна** библиотека `aarch64-apple-ios-sim` работает и для
-> симулятора, и для устройства. Для настоящего релиза под устройство отдельно
-> собирается `aarch64-apple-ios`.
+> On Apple Silicon a **single** `aarch64-apple-ios-sim` library works for both
+> the simulator and the device. For a real device release, build
+> `aarch64-apple-ios` separately.
 
-### Куда класть `.a`
+### Where to place the `.a`
 ```
-flutter-ex/ios/Rust/libnettest.a
+ios/Rust/libnettest.a
 ```
-Копируем из `target/aarch64-apple-ios-sim/release/libnettest.a`.
-Проверка архитектуры: `lipo -info flutter-ex/ios/Rust/libnettest.a`.
+Copy from `target/aarch64-apple-ios-sim/release/libnettest.a`.
+Check the architecture: `lipo -info ios/Rust/libnettest.a`.
 
-### Линковка (Xcode через .xcconfig)
-В `flutter-ex/ios/Flutter/Debug.xcconfig` и `Release.xcconfig`:
+### Linking (Xcode via .xcconfig)
+In `ios/Flutter/Debug.xcconfig` and `Release.xcconfig`:
 ```
 LIBRARY_SEARCH_PATHS = $(inherited) $(PROJECT_DIR)/Rust
 OTHER_LDFLAGS = $(inherited) -force_load $(PROJECT_DIR)/Rust/libnettest.a
 ```
-`-force_load` обязателен, иначе линкер выкинет «неиспользуемые» FFI-символы.
+`-force_load` is required, otherwise the linker drops the "unused" FFI symbols.
 
-### Загрузка в Dart
-Библиотека вшита статически в исполняемый файл, поэтому:
+### Loading in Dart
+The library is statically linked into the executable, so:
 ```dart
 DynamicLibrary.process();
 ```
 
-Готовый скрипт: `build_ios_simple.sh`.
+A ready script: `build_ios_simple.sh`.
 
-> ⚠️ В ветке `flutter` остались устаревшие проверочные скрипты
-> (`check_ios_lib.sh`, `check_xcode_setup.sh`, `test_symbols.sh`), которые
-> ссылаются на старый подход через `libnettest.xcframework` в
-> `flutter-ex/ios/Frameworks/`. Актуальный рабочий подход — статическая `.a` +
-> `-force_load` (см. выше), а не XCFramework.
+> ⚠️ The `flutter` branch still has stale check scripts (`check_ios_lib.sh`,
+> `check_xcode_setup.sh`, `test_symbols.sh`) referencing the old approach via
+> `libnettest.xcframework` in `ios/Frameworks/`. The current working approach is
+> the static `.a` + `-force_load` (see above), not an XCFramework.
 
-## 5. Сборка под macOS (desktop)
+## 5. Building for macOS (desktop)
 
 ```bash
 cargo build --release            # -> target/release/libnettest.dylib
 ```
-Динамическая либа кладётся в app bundle через build phase скрипт
-`flutter-ex/macos/copy_lib.sh`, который копирует
-`Runner/Frameworks/libnettest.dylib` в
-`<app>.app/Contents/Frameworks/` и правит install name:
+The dynamic lib is placed into the app bundle via a build-phase script
+(`macos/copy_lib.sh`) that copies `Runner/Frameworks/libnettest.dylib` into
+`<app>.app/Contents/Frameworks/` and fixes the install name:
 ```bash
 install_name_tool -id @rpath/libnettest.dylib "$LIB_DEST"
 ```
-Dart ищет `.dylib` рядом с исполняемым файлом / в `../Frameworks/` / в
-`target/release/` (см. `_loadLibrary()` в `flutter-ex/lib/main.dart`).
+Dart looks for the `.dylib` next to the executable / in `../Frameworks/` / in
+`target/release/`.
 
-## 6. Сборка под Linux / Windows (desktop)
+## 6. Building for Linux / Windows (desktop)
 
 - Linux: `cargo build --release` → `target/release/libnettest.so`,
-  Dart ищет в текущей папке и `../target/release/`.
+  Dart looks in the current folder and `../target/release/`.
 - Windows: `cargo build --release` → `target/release/nettest.dll`,
   `DynamicLibrary.open('nettest.dll')`.
 
-## 7. Сторона Flutter
+## 7. Quick "how to build" checklist
 
-- `flutter-ex/pubspec.yaml`: зависимости `ffi: ^2.1.0`, `convert: ^3.1.1`.
-- `flutter-ex/lib/ffi_bindings.dart`: класс `NettestFFI(DynamicLibrary lib)` с
-  `lookupFunction` на `client_run_ffi`, `client_run_with_progress_ffi`,
-  `get_progress_ffi`, `free_string`. Аргументы — JSON через `jsonEncode`,
-  строки конвертируются `toNativeUtf8()` / `toDartString()`, после вызова
-  обязательно `free_string` (Rust-память) и `malloc.free` (Dart-память).
-- `flutter-ex/lib/main.dart`: `_loadLibrary()` выбирает способ загрузки по
-  `Platform.isAndroid/isIOS/isMacOS/...`.
-
-## 8. Краткий чек-лист «как собрать»
-
-| Платформа | Артефакт | Куда | Загрузка в Dart |
-|-----------|----------|------|------------------|
+| Platform | Artifact | Where | Load in Dart |
+|----------|----------|-------|--------------|
 | Android | `libnettest.so` (per-ABI) | `android/app/src/main/jniLibs/<abi>/` | `DynamicLibrary.open('libnettest.so')` |
-| iOS | `libnettest.a` | `ios/Rust/` + `-force_load` в xcconfig | `DynamicLibrary.process()` |
+| iOS | `libnettest.a` | `ios/Rust/` + `-force_load` in xcconfig | `DynamicLibrary.process()` |
 | macOS | `libnettest.dylib` | app bundle `Contents/Frameworks/` | `DynamicLibrary.open(<path>)` |
-| Linux | `libnettest.so` | рядом / `target/release` | `DynamicLibrary.open(...)` |
-| Windows | `nettest.dll` | рядом | `DynamicLibrary.open('nettest.dll')` |
+| Linux | `libnettest.so` | next to exe / `target/release` | `DynamicLibrary.open(...)` |
+| Windows | `nettest.dll` | next to exe | `DynamicLibrary.open('nettest.dll')` |
 
-## 9. Главные грабли (на что ушло время)
+## 8. Main gotchas (where time was spent)
 
-1. **fontconfig/plotters не собираются под Android** → вынести в
-   `cfg(not(target_os = "android"))` + env-переменные `FONTCONFIG_*`.
-2. **i686-linux-android падает** на атомарных операциях OpenSSL → исключить.
-3. **iOS-символы выпиливаются линкером** без `-force_load`.
-4. **`crate-type`** обязан включать `cdylib` (so/dylib) и `staticlib` (iOS .a).
-5. **Серверный модуль `mioserver`** не нужен мобильному клиенту и тянет лишнее →
-   `#[cfg(not(target_os = "android"))]`.
-6. На **Apple Silicon** `aarch64-apple-ios-sim` универсален для sim+device при
-   разработке — не плодить таргеты раньше времени.
+1. **fontconfig/plotters don't build for Android** → move them under
+   `cfg(not(target_os = "android"))` + the `FONTCONFIG_*` env vars.
+2. **i686-linux-android fails** on OpenSSL atomic operations → exclude it.
+3. **iOS symbols are stripped by the linker** without `-force_load`.
+4. **`crate-type`** must include `cdylib` (so/dylib) and `staticlib` (iOS .a).
+5. **The `mioserver` server module** is not needed by the mobile client and pulls
+   in extra deps → `#[cfg(not(target_os = "android"))]`.
+6. On **Apple Silicon**, `aarch64-apple-ios-sim` is universal for sim+device
+   during development — don't multiply targets prematurely.
