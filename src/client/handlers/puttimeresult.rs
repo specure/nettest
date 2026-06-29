@@ -6,7 +6,6 @@ use std::time::{Duration, Instant};
 use crate::client::globals::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE};
 use crate::client::state::{MeasurementState, TestPhase};
 
-const TEST_DURATION_NS: u64 = 7_000_000_000;
 
 /// Parse every complete `\n`-terminated line currently in `time_result_buffer`.
 /// Pushes pairs from `TIMERESULT ...` lines into `upload_measurements`.
@@ -232,7 +231,8 @@ pub fn handle_put_time_result_send_chunks(
             // debug!("Sent {} bytes token {:?}", measurement_state.bytes_sent, measurement_state.token);
             if measurement_state.write_pos == measurement_state.chunk_size  {
                 let tt = start_time.elapsed().as_nanos();
-                let is_last = tt >= TEST_DURATION_NS as u128;
+                let duration_ns = measurement_state.upload_duration_ms as u128 * 1_000_000;
+                let is_last = tt >= duration_ns;
 
                 if is_last {
                     measurement_state.phase = TestPhase::PerfSendLastChunk;
@@ -245,11 +245,12 @@ pub fn handle_put_time_result_send_chunks(
                     return Ok(written);
                 } else {
                     measurement_state.write_pos = 0;
-                    // Consume interim TIMERESULT updates so the upload graph can
-                    // grow live during the send (throttled internally).
-                    drain_interim_upload(measurement_state);
                 }
             }
+            // Consume interim TIMERESULT updates by time (throttled internally),
+            // independent of the chunk boundary, so the upload graph updates
+            // promptly even when the chunk is large (multi-MB).
+            drain_interim_upload(measurement_state);
         }
     } else {
         return Ok(0);

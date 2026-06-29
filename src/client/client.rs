@@ -60,6 +60,11 @@ pub struct ClientConfig {
     pub legacy: bool,
     /// PUTTIMERESULT interim reporting interval in ms (0 = only final result).
     pub put_time_result_interval_ms: u64,
+    /// Per-phase durations in ms (configurable from the client).
+    pub download_duration_ms: u64,
+    pub upload_duration_ms: u64,
+    pub jitter_duration_ms: u64,
+    pub packetloss_duration_ms: u64,
 }
 
 impl Default for ClientConfig {
@@ -83,6 +88,10 @@ impl Default for ClientConfig {
             git_hash: None,
             legacy: false,
             put_time_result_interval_ms: 0,
+            download_duration_ms: 7000,
+            upload_duration_ms: 7000,
+            jitter_duration_ms: 5000,
+            packetloss_duration_ms: 5000,
         }
     }
 }

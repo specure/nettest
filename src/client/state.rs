@@ -133,6 +133,11 @@ pub struct MeasurementState {
     pub last_live_publish: Option<Instant>,
     /// PUTTIMERESULT interim reporting interval in ms (0 = only final result).
     pub puttimeresult_interval_ms: u64,
+    /// Per-phase durations in ms (configurable from the client).
+    pub download_duration_ms: u64,
+    pub upload_duration_ms: u64,
+    pub jitter_duration_ms: u64,
+    pub packetloss_duration_ms: u64,
 }
 
 impl TestState {
@@ -212,6 +217,10 @@ impl TestState {
             live_sink: None,
             last_live_publish: None,
             puttimeresult_interval_ms: 0,
+            download_duration_ms: 7000,
+            upload_duration_ms: 7000,
+            jitter_duration_ms: 5000,
+            packetloss_duration_ms: 5000,
         };
 
 
@@ -231,6 +240,14 @@ impl TestState {
     /// Set the PUTTIMERESULT interim reporting interval (ms; 0 = final only).
     pub fn set_puttimeresult_interval(&mut self, ms: u64) {
         self.measurement_state.puttimeresult_interval_ms = ms;
+    }
+
+    /// Set the per-phase durations (ms) from the client config.
+    pub fn set_durations(&mut self, download_ms: u64, upload_ms: u64, jitter_ms: u64, packetloss_ms: u64) {
+        self.measurement_state.download_duration_ms = download_ms;
+        self.measurement_state.upload_duration_ms = upload_ms;
+        self.measurement_state.jitter_duration_ms = jitter_ms;
+        self.measurement_state.packetloss_duration_ms = packetloss_ms;
     }
 
     /// Publish the current download/upload samples to the live sink so the
@@ -298,7 +315,9 @@ impl TestState {
             self.measurement_state.token,
             Interest::WRITABLE,
         )?;
-        self.process_phase(TestPhase::PerfCompleted, ONE_SECOND_NS * 12)?;
+        // upload duration + buffer for command/result round-trips
+        let perf_timeout = self.measurement_state.upload_duration_ms as u128 * 1_000_000 + ONE_SECOND_NS * 5;
+        self.process_phase(TestPhase::PerfCompleted, perf_timeout)?;
         Ok(())
     }
 
@@ -309,8 +328,10 @@ impl TestState {
             self.measurement_state.token,
             Interest::WRITABLE,
         )?;
-        // OUT(10 × 200ms) + tmax(3s) + IN(10 × 200ms) + tmax(3s) + buffer
-        self.process_phase(TestPhase::UdpCompleted, ONE_SECOND_NS * 15)?;
+        // OUT(duration) + tmax(3s) + IN(duration) + tmax(3s) + buffer
+        let dur = self.measurement_state.packetloss_duration_ms as u128 * 1_000_000;
+        let udp_timeout = 2 * (dur + ONE_SECOND_NS * 3) + ONE_SECOND_NS * 3;
+        self.process_phase(TestPhase::UdpCompleted, udp_timeout)?;
         Ok(())
     }
 
@@ -321,7 +342,9 @@ impl TestState {
             self.measurement_state.token,
             Interest::WRITABLE,
         )?;
-        self.process_phase(TestPhase::VoipCompleted, ONE_SECOND_NS * 10)?;
+        // jitter duration + buffer
+        let voip_timeout = self.measurement_state.jitter_duration_ms as u128 * 1_000_000 + ONE_SECOND_NS * 5;
+        self.process_phase(TestPhase::VoipCompleted, voip_timeout)?;
         Ok(())
     }
 
@@ -356,7 +379,8 @@ impl TestState {
             self.measurement_state.token,
             Interest::WRITABLE,
         )?;
-        self.process_phase(TestPhase::GetTimeCompleted, ONE_SECOND_NS * 12)?;
+        let get_time_timeout = self.measurement_state.download_duration_ms as u128 * 1_000_000 + ONE_SECOND_NS * 5;
+        self.process_phase(TestPhase::GetTimeCompleted, get_time_timeout)?;
         Ok(())
     }
 
@@ -367,7 +391,8 @@ impl TestState {
             self.measurement_state.token,
             Interest::WRITABLE,
         )?;
-        self.process_phase(TestPhase::PutCompleted, ONE_SECOND_NS * 10)?;
+        let put_timeout = self.measurement_state.upload_duration_ms as u128 * 1_000_000 + ONE_SECOND_NS * 5;
+        self.process_phase(TestPhase::PutCompleted, put_timeout)?;
         Ok(())
     }
 

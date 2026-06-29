@@ -89,6 +89,12 @@ pub async fn run_threads(
                 };
             state.set_live_sink(sink);
             state.set_puttimeresult_interval(config.put_time_result_interval_ms);
+            state.set_durations(
+                config.download_duration_ms,
+                config.upload_duration_ms,
+                config.jitter_duration_ms,
+                config.packetloss_duration_ms,
+            );
 
             let greeting = state.process_greeting();
             match greeting {

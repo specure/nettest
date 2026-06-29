@@ -59,8 +59,13 @@ pub fn handle_put_time_result_receive_chunk(
         state.read_pos += n;
         state.total_bytes_received += n as u64;
         trace!("Read {} bytes", state.read_pos);
+
+        let tt = state.clock.unwrap().elapsed().as_nanos();
+        let interval = state.puttimeresult_interval_ns as u128;
+        let due = interval > 0 && tt - state.puttimeresult_last_emit_ns >= interval;
+
         if state.read_pos == state.chunk_size {
-            let tt = state.clock.unwrap().elapsed().as_nanos();
+            // Full chunk received: record a sample and handle the terminator.
             state
                     .bytes_received
                     .push_back((tt as u64, state.total_bytes_received));
@@ -77,21 +82,25 @@ pub fn handle_put_time_result_receive_chunk(
                 return Err(io::Error::new(io::ErrorKind::Other, "Invalid chunk"));
             }
             state.read_pos = 0;
+        } else if due {
+            // Mid-chunk: record a time-based sample so the graph stays smooth
+            // regardless of chunk size (large chunks would otherwise yield very
+            // few, bursty points on the upload curve).
+            state
+                    .bytes_received
+                    .push_back((tt as u64, state.total_bytes_received));
+        }
 
-            // Emit an interim TIMERESULT every `interval` ns so the client can
-            // draw the upload graph while the phase is still running.
-            if state.puttimeresult_interval_ns > 0
-                && tt - state.puttimeresult_last_emit_ns >= state.puttimeresult_interval_ns as u128
-                && state.puttimeresult_emit_index < state.bytes_received.len()
-            {
-                state.puttimeresult_last_emit_ns = tt;
-                state.write_pos = 0;
-                state.measurement_state = ServerTestPhase::PutTimeResultSendInterim;
-                state
-                    .stream
-                    .reregister(poll, state.token, Interest::WRITABLE)?;
-                return Ok(n);
-            }
+        // Emit accumulated samples as an interim TIMERESULT every `interval` ns
+        // so the client can draw the upload graph while the phase runs.
+        if due && state.puttimeresult_emit_index < state.bytes_received.len() {
+            state.puttimeresult_last_emit_ns = tt;
+            state.write_pos = 0;
+            state.measurement_state = ServerTestPhase::PutTimeResultSendInterim;
+            state
+                .stream
+                .reregister(poll, state.token, Interest::WRITABLE)?;
+            return Ok(n);
         }
     }
 }
@@ -128,7 +137,9 @@ fn write_time_result(
         if state.write_pos == buf_len {
             state.puttimeresult_emit_index = state.bytes_received.len();
             state.write_pos = 0;
-            state.read_pos = 0;
+            // NOTE: do NOT reset read_pos here. Interim emits can happen
+            // mid-chunk (read_pos partial); resetting it would desync chunk
+            // parsing. The full-chunk / final paths reset read_pos themselves.
             state.measurement_state = next_phase;
             state.stream.reregister(poll, state.token, next_interest)?;
             return Ok(n);
