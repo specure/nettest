@@ -551,7 +551,7 @@ impl MioServer {
         let scope_id = addr_v6.scope_id();
         
         let sockaddr = {
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", target_os = "watchos"))]
             {
                 libc::sockaddr_in6 {
                     sin6_len: std::mem::size_of::<libc::sockaddr_in6>() as u8,
@@ -562,7 +562,7 @@ impl MioServer {
                     sin6_scope_id: scope_id,
                 }
             }
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "tvos", target_os = "watchos")))]
             {
                 libc::sockaddr_in6 {
                     sin6_family: libc::AF_INET6 as u16,
