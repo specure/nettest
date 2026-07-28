@@ -7,6 +7,11 @@ use std::sync::{Arc, Mutex};
 /// Per-thread `(time_ns, bytes)` samples, published live during a phase.
 pub type ThreadSamples = Arc<Mutex<Vec<(u64, u64)>>>;
 
+/// Per-thread ping-phase progress (0-100), published live while the (short,
+/// ~1s) ping phase is running so the UI can show an in-progress percentage
+/// instead of nothing until the phase's final result is ready.
+pub type PingProgress = Arc<Mutex<Option<f64>>>;
+
 /// Live sample sink handed to a single measurement thread. The thread copies
 /// its current download/upload samples here periodically so a caller can draw
 /// the graph while the test is still running.
@@ -14,6 +19,7 @@ pub type ThreadSamples = Arc<Mutex<Vec<(u64, u64)>>>;
 pub struct LiveSink {
     pub download: ThreadSamples,
     pub upload: ThreadSamples,
+    pub ping_progress: PingProgress,
 }
 
 impl LiveSink {
@@ -21,6 +27,7 @@ impl LiveSink {
         LiveSink {
             download: Arc::new(Mutex::new(Vec::new())),
             upload: Arc::new(Mutex::new(Vec::new())),
+            ping_progress: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -49,6 +56,9 @@ pub struct LiveState {
     pub download_threads: Vec<ThreadSamples>,
     /// Per-thread live upload samples (one entry per thread).
     pub upload_threads: Vec<ThreadSamples>,
+    /// Per-thread live ping-phase progress (one entry per thread; only the
+    /// thread actually running ping, normally thread 0, ever sets it).
+    pub ping_progress_threads: Vec<PingProgress>,
 }
 
 /// Thread-safe handle to the live state.
