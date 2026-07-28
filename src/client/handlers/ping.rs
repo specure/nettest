@@ -103,6 +103,19 @@ pub fn handle_ping_receive_time(
                         state.ping_times.push(time_ns);
                         let pings_sent = state.ping_times.len();
 
+                        // Publish within-phase progress (0-100) so the UI can
+                        // show it while the (short, ~1s) ping phase is still
+                        // running, instead of only once it's fully done.
+                        if let Some(sink) = &state.live_sink {
+                            let percent = (elapsed.as_nanos() as f64
+                                / PING_DURATION_NS as f64
+                                * 100.0)
+                                .min(100.0);
+                            if let Ok(mut g) = sink.ping_progress.lock() {
+                                *g = Some(percent);
+                            }
+                        }
+
                         if elapsed.as_nanos() < PING_DURATION_NS as u128
                             && pings_sent < MAX_PINGS as usize
                         {

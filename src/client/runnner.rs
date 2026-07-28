@@ -35,6 +35,7 @@ pub async fn run_threads(
         if let Ok(mut guard) = live.lock() {
             guard.download_threads = sinks.iter().map(|s| s.download.clone()).collect();
             guard.upload_threads = sinks.iter().map(|s| s.upload.clone()).collect();
+            guard.ping_progress_threads = sinks.iter().map(|s| s.ping_progress.clone()).collect();
         }
     }
     let ping_median = Arc::new(Mutex::new(None::<u64>));
