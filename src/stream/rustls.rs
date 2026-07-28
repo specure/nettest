@@ -216,7 +216,16 @@ impl RustlsStream {
             return Ok(0);
         }
 
-        Ok(0)
+        // No application data is available yet (e.g. only a partial TLS
+        // record / handshake message was processed), but the connection is
+        // still open. Returning Ok(0) here would be indistinguishable from a
+        // real EOF to callers, causing them to treat a live connection as
+        // closed. Signal WouldBlock instead so callers wait for the next
+        // readable event.
+        Err(io::Error::new(
+            io::ErrorKind::WouldBlock,
+            "no plaintext data available yet",
+        ))
     }
 
     fn write_inner(&mut self, buf: &[u8]) -> io::Result<usize> {

@@ -96,6 +96,15 @@ pub fn handle_greeting_receive_greeting(
         let n = state
             .stream
             .read(&mut state.read_buffer[state.read_pos..])?;
+        if n == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                format!(
+                    "connection closed while waiting for greeting (got {:?})",
+                    String::from_utf8_lossy(&state.read_buffer[..state.read_pos])
+                ),
+            ));
+        }
         state.read_pos += n;
         let end = b"ACCEPT TOKEN QUIT\n";
         if n > 0 && state.read_pos >= end.len() && state.read_buffer[state.read_pos - end.len()..state.read_pos] == *end {
@@ -118,6 +127,15 @@ pub fn handle_greeting_receive_response(
         let n = state
             .stream
             .read(&mut state.read_buffer[state.read_pos..])?;
+        if n == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                format!(
+                    "connection closed while waiting for capability response (got {:?})",
+                    String::from_utf8_lossy(&state.read_buffer[..state.read_pos])
+                ),
+            ));
+        }
         state.read_pos += n;
         let end = b"ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n";
         if n > 0

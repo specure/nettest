@@ -85,12 +85,34 @@ fn drain_interim_upload(measurement_state: &mut MeasurementState) {
         }
     }
     let _ = process_timeresult_lines(measurement_state);
+    debug!(
+        "drain_interim_upload: upload_measurements len={} buffered_bytes={}",
+        measurement_state.upload_measurements.len(),
+        measurement_state.time_result_buffer.len()
+    );
 
     // Publish current upload samples to the live sink.
     if let Some(sink) = &measurement_state.live_sink {
         if let Ok(mut g) = sink.upload.lock() {
             g.clear();
-            g.extend(measurement_state.upload_measurements.iter().cloned());
+            if measurement_state.upload_measurements.is_empty() {
+                // Some servers never emit interim TIMERESULT lines (only the
+                // final one), so upload_measurements stays empty for the
+                // whole phase. Fall back to a locally-estimated live sample
+                // (bytes_sent so far / elapsed time) purely for the live
+                // chart, so it visibly moves instead of staying flat at 0.
+                // This synthetic point is NOT stored in upload_measurements,
+                // so the authoritative post-test result/graph still reflects
+                // only the server's real final TIMERESULT.
+                if let Some(start_time) = measurement_state.phase_start_time {
+                    let elapsed_ns = start_time.elapsed().as_nanos() as u64;
+                    if elapsed_ns > 0 {
+                        g.push((elapsed_ns, measurement_state.bytes_sent));
+                    }
+                }
+            } else {
+                g.extend(measurement_state.upload_measurements.iter().cloned());
+            }
         }
     }
     measurement_state.last_live_publish = Some(now);
@@ -209,6 +231,10 @@ pub fn handle_put_time_result_send_command(
         format!("PUTTIMERESULT {}\n", measurement_state.chunk_size)
     };
     if measurement_state.write_pos == 0 {
+        debug!(
+            "handle_put_time_result_send_command: sending {:?} (interval_ms={})",
+            command, measurement_state.puttimeresult_interval_ms
+        );
         measurement_state.write_buffer[..command.len()].copy_from_slice(command.as_bytes());
     }
     loop {
@@ -274,11 +300,17 @@ pub fn handle_put_time_result_send_chunks(
                     return Ok(written);
                 } else {
                     measurement_state.write_pos = 0;
-                    // Consume interim TIMERESULT updates at the chunk boundary
-                    // (throttled internally) so the upload graph grows live.
-                    drain_interim_upload(measurement_state);
                 }
             }
+
+            // Drain interim TIMERESULT after every successful write (not just
+            // on a full chunk_size boundary): with a large chunk_size and a
+            // fast link, this inner loop can write the *entire* upload in one
+            // handler invocation without ever returning to the poll loop, so
+            // the chunk-boundary-only drain (and the READABLE-driven
+            // handle_put_time_result_drain) may never run before the last
+            // chunk. Throttled internally to ~100ms so this is cheap.
+            drain_interim_upload(measurement_state);
         }
     } else {
         return Ok(0);
