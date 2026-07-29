@@ -36,9 +36,6 @@ tokio-rustls = { version = "0.25.0" }
 rustls = { version = "0.22.0" }
 rustls-pemfile = "2.0.0"
 quanta = "0.11"
-plotters = "0.3.7"
-plotters-backend = "0.3.7"
-textplots = "0.8.7"
 reqwest = { version = "0.11.16", features = ["json"] }
 serde_json = "1.0"
 anyhow = "1.0"
@@ -49,11 +46,20 @@ rgb = "0.8.50"
 prettytable = "0.10.0"
 num_cpus = "1.13"
 rayon = "1.8"
-mdns-sd = "0.17.1"
-include_dir = "0.7"
 
 [target.'cfg(unix)'.dependencies]
 nix = "0.26"
+
+# plotters/textplots pull in fontconfig (native, requires pkg-config/system
+# headers not available when cross-compiling for Android), and mdns-sd/
+# include_dir are only used by the (server-only, also gated out for Android -
+# see src/lib.rs) mioserver module - keep all four host/iOS/desktop-only.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+plotters = "0.3.7"
+plotters-backend = "0.3.7"
+textplots = "0.8.7"
+mdns-sd = "0.17.1"
+include_dir = "0.7"
 
 [dev-dependencies]
 tokio-native-tls = "0.3"
