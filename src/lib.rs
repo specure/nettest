@@ -5,7 +5,11 @@
 pub mod config;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod logger;
-#[cfg(not(target_arch = "wasm32"))]
+// The server implementation is not needed by the mobile (Android/iOS) FFI
+// client and pulls in mdns-sd/include_dir/flate2/if-addrs/qrcode, which are
+// excluded from the Android dependency set (see Cargo.toml) - keep it
+// host/iOS/desktop-only.
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 pub mod mioserver;
 // `stream` compiles on both targets (Stream is cfg-split: native transports vs
 // the browser JsWss variant).
