@@ -24,6 +24,7 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
         client_uuid: default_config.client_uuid,
         git_hash: None,
         legacy: false,
+        run_jitter_and_packetloss: true,
         put_time_result_interval_ms: 0,
         download_duration_ms: 7000,
         upload_duration_ms: 7000,
@@ -79,6 +80,9 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
             }
             "-legacy" => {
                 config.legacy = true;
+            }
+            "-no-jitter-packetloss" => {
+                config.run_jitter_and_packetloss = false;
             }
             "-git-hash" => {
                 i += 1;
@@ -172,6 +176,7 @@ pub fn print_help() {
     println!("    -save           Save results to control server");
     println!("    -signed         Request signed result from server");
     println!("    -legacy         Use legacy PUT command instead of PUTTIMERESULT");
+    println!("    -no-jitter-packetloss  Skip the jitter and packet loss phases");
     println!("    -log LEVEL      Set log level: info, debug, trace");
     println!("    -h, --help      Show this help message");
     println!("    -v, --version   Print version and exit");

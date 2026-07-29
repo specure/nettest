@@ -149,7 +149,7 @@ pub async fn run_threads(
                 }
             }
             if i == 0 {
-                if !config.legacy && config.phases.qos {
+                if !config.legacy && config.phases.qos && config.run_jitter_and_packetloss {
                     set_phase(&live, "jitter");
                     if let Err(e) = state.run_voip_test() {
                         log::warn!("VoIP test failed: {}", e);
