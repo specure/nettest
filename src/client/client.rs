@@ -58,6 +58,8 @@ pub struct ClientConfig {
     pub client_uuid: Option<String>,
     pub git_hash: Option<String>,
     pub legacy: bool,
+    /// Whether to run the jitter (VoIP) and packet loss (UDP) phases at all.
+    pub run_jitter_and_packetloss: bool,
     /// PUTTIMERESULT interim reporting interval in ms (0 = only final result).
     pub put_time_result_interval_ms: u64,
     /// Per-phase durations in ms (configurable from the client).
@@ -87,6 +89,7 @@ impl Default for ClientConfig {
             client_uuid: None,
             git_hash: None,
             legacy: false,
+            run_jitter_and_packetloss: true,
             put_time_result_interval_ms: 0,
             download_duration_ms: 7000,
             upload_duration_ms: 7000,

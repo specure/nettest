@@ -23,6 +23,7 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
         client_uuid: default_config.client_uuid,
         git_hash: None,
         legacy: false,
+        run_jitter_and_packetloss: true,
         put_time_result_interval_ms: 0,
         download_duration_ms: 7000,
         upload_duration_ms: 7000,
@@ -74,6 +75,9 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
             }
             "-legacy" => {
                 config.legacy = true;
+            }
+            "-no-jitter-packetloss" => {
+                config.run_jitter_and_packetloss = false;
             }
             "-git-hash" => {
                 i += 1;

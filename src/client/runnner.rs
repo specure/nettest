@@ -128,7 +128,7 @@ pub async fn run_threads(
                     print_float_result("Ping Median", "ms", ping_ms, false);
                 }
 
-                if !config.legacy {
+                if config.run_jitter_and_packetloss {
                     set_phase(&live, "jitter");
                     if let Err(e) = state.run_voip_test() {
                         log::warn!("VoIP test failed: {}", e);
