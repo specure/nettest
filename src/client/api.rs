@@ -14,14 +14,41 @@ pub struct MeasurementResult {
     pub download_speed_gbps: f64,
     pub upload_speed_bps: f64,
     pub upload_speed_gbps: f64,
+    /// Total number of bytes received by all threads during the download phase.
+    pub download_bytes: u64,
+    /// Total number of bytes sent by all threads during the upload phase.
+    pub upload_bytes: u64,
     pub jitter_ns: Option<u64>,
     pub packet_loss_percent: Option<f32>,
     pub num_threads: usize,
     pub failed_threads: usize,
 }
 
+/// Sums the transferred bytes of every thread.
+///
+/// Each thread reports cumulative `(timestamp, bytes)` samples, so the last
+/// sample holds the total volume that the thread transferred.
+fn total_bytes(measurements: &[Vec<(u64, u64)>]) -> u64 {
+    measurements
+        .iter()
+        .filter_map(|thread| thread.last().map(|(_, bytes)| *bytes))
+        .sum()
+}
+
 pub async fn run_measurement(config: ClientConfig) -> anyhow::Result<MeasurementResult> {
-    init_max_chunk_size(None);
+    run_measurement_with_chunk_size(config, None).await
+}
+
+/// Runs a measurement while keeping an explicitly configured maximum chunk size.
+///
+/// `run_measurement` falls back to the built-in default, which discards a chunk
+/// size coming from the configuration file. Callers that already parsed a
+/// configuration file pass that value here.
+pub async fn run_measurement_with_chunk_size(
+    config: ClientConfig,
+    max_chunk_size: Option<u32>,
+) -> anyhow::Result<MeasurementResult> {
+    init_max_chunk_size(max_chunk_size);
 
     let thread_count = config.thread_count;
     let stats: Arc<Mutex<SharedStats>> = Arc::new(Mutex::new(SharedStats::default()));
@@ -33,6 +60,8 @@ pub async fn run_measurement(config: ClientConfig) -> anyhow::Result<Measurement
         calculate_download_speed_from_stats_silent(&stats_guard.download_measurements);
     let (ul_bps, ul_gbps, _) =
         calculate_upload_speed_from_stats_silent(&stats_guard.upload_measurements);
+    let download_bytes = total_bytes(&stats_guard.download_measurements);
+    let upload_bytes = total_bytes(&stats_guard.upload_measurements);
     drop(stats_guard);
 
     let failed_threads = thread_count - measurements.len();
@@ -65,6 +94,8 @@ pub async fn run_measurement(config: ClientConfig) -> anyhow::Result<Measurement
         download_speed_gbps: dl_gbps,
         upload_speed_bps: ul_bps,
         upload_speed_gbps: ul_gbps,
+        download_bytes,
+        upload_bytes,
         jitter_ns,
         packet_loss_percent,
         num_threads: thread_count,
