@@ -40,6 +40,11 @@ jobs:
       run: |
         cargo build --release --target x86_64-unknown-linux-gnu
         echo "Build completed successfully"
+
+    - name: Run unit tests
+      run: |
+        cargo test --lib --target x86_64-unknown-linux-gnu
+        echo "Unit tests completed successfully"
         
     - name: Prepare test environment
       run: |
@@ -225,6 +230,92 @@ jobs:
         
         echo "✅ Client WSS test completed successfully"
         
+    - name: Run nettest client JSON test
+      run: |
+        cd test-run
+
+        echo "Running nettest client test with -json..."
+        echo "Client command: ./nettest -c 127.0.0.1 -json"
+
+        # stdout has to carry the JSON document and nothing else,
+        # so diagnostics are separated into a different file.
+        timeout 60s ./nettest -c 127.0.0.1 -json > result.json 2> result.err
+        CLIENT_EXIT_CODE=$?
+
+        echo "Client exit code: $CLIENT_EXIT_CODE"
+        echo "=== stdout ==="
+        cat result.json
+        echo "=== stderr ==="
+        cat result.err
+
+        if [ $CLIENT_EXIT_CODE -ne 0 ]; then
+          echo "❌ Client JSON test failed"
+          exit 1
+        fi
+
+        if ! python3 -m json.tool result.json > /dev/null; then
+          echo "❌ Output on stdout is not valid JSON"
+          exit 1
+        fi
+
+        python3 - <<'PY'
+        import json
+        import sys
+
+        with open("result.json") as handle:
+            document = json.load(handle)
+
+        def require(condition, message):
+            if not condition:
+                print(f"❌ {message}")
+                sys.exit(1)
+
+        require(document["type"] == "measurement", "unexpected document type")
+        require(document["client"]["name"] == "nettest", "unexpected client name")
+        require(document["server"]["host"] == "127.0.0.1", "unexpected server host")
+        require(document["protocol"] == "tcp", "unexpected protocol")
+        require(document["ping"]["latency_ms"] >= 0, "missing ping latency")
+        require(document["download"]["speed_bps"] > 0, "missing download speed")
+        require(document["upload"]["speed_bps"] > 0, "missing upload speed")
+        require(document["download"]["bytes_transferred"] > 0, "missing download volume")
+        require(document["upload"]["bytes_transferred"] > 0, "missing upload volume")
+
+        print("✅ JSON document contains every expected value")
+        PY
+
+        echo "✅ Client JSON test completed successfully"
+
+    - name: Run nettest client raw test
+      run: |
+        cd test-run
+
+        echo "Running nettest client test with -raw..."
+
+        timeout 60s ./nettest -c 127.0.0.1 -raw > result.raw 2> raw.err
+        CLIENT_EXIT_CODE=$?
+
+        echo "Client exit code: $CLIENT_EXIT_CODE"
+        echo "=== stdout ==="
+        cat result.raw
+
+        if [ $CLIENT_EXIT_CODE -ne 0 ]; then
+          echo "❌ Client raw test failed"
+          exit 1
+        fi
+
+        # The raw format is a single line of three numbers: ping/download/upload.
+        if [ "$(wc -l < result.raw)" -ne 1 ]; then
+          echo "❌ Raw output is not a single line"
+          exit 1
+        fi
+
+        if ! grep -Eq '^[0-9]+\.[0-9]+/[0-9]+\.[0-9]+/[0-9]+\.[0-9]+$' result.raw; then
+          echo "❌ Raw output is not parseable"
+          exit 1
+        fi
+
+        echo "✅ Client raw test completed successfully"
+
     - name: Test completed
       run: |
         echo "✅ All tests completed successfully"
