@@ -274,11 +274,17 @@ pub fn handle_put_time_result_send_chunks(
                     return Ok(written);
                 } else {
                     measurement_state.write_pos = 0;
-                    // Consume interim TIMERESULT updates at the chunk boundary
-                    // (throttled internally) so the upload graph grows live.
-                    drain_interim_upload(measurement_state);
                 }
             }
+
+            // Drain interim TIMERESULT after every successful write (not just
+            // on a full chunk_size boundary): with a large chunk_size and a
+            // fast link, this inner loop can write the *entire* upload in one
+            // handler invocation without ever returning to the poll loop, so
+            // the chunk-boundary-only drain (and the READABLE-driven
+            // handle_put_time_result_drain) may never run before the last
+            // chunk. Throttled internally to ~100ms so this is cheap.
+            drain_interim_upload(measurement_state);
         }
     } else {
         return Ok(0);
