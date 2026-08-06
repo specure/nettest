@@ -1,5 +1,5 @@
 use log::debug;
-use mio::{Poll};
+use crate::reactor::{Poll};
 use std::io;
 
 use crate::client::handlers::get_chunks::{handle_get_chunks_receive_chunk, handle_get_chunks_receive_time, handle_get_chunks_send_chunks_command, handle_get_chunks_send_ok};

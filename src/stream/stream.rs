@@ -1,6 +1,6 @@
 use anyhow::{Ok, Result};
 use log::{debug, info};
-use mio::{net::TcpStream, Interest, Poll, Token};
+use crate::reactor::{Interest, Poll, TcpStream, Token};
 use std::io::{self, Read, Write};
 use std::net::SocketAddr;
 use std::path::Path;

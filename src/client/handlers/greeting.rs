@@ -2,7 +2,7 @@ use crate::client::{state::{MeasurementState, TestPhase}};
 use crate::stream::stream::Stream;
 use anyhow::Result;
 use log::{debug};
-use mio::{Interest, Poll};
+use crate::reactor::{Interest, Poll};
 
 
 pub fn handle_greeting_send_connection_type(

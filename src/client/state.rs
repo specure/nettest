@@ -1,6 +1,6 @@
 use anyhow::Result;
 use log::{debug, info, trace};
-use mio::{Events, Interest, Poll, Token};
+use crate::reactor::{Events, Interest, Poll, Token};
 use std::collections::VecDeque;
 use std::time::Instant;
 use std::{net::SocketAddr, path::Path, time::Duration};

@@ -45,3 +45,51 @@ mod native {
 }
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::*;
+
+// Browser stand-ins mirroring the slice of the mio surface the client uses, so
+// the shared handler code type-checks on wasm once `Stream` gains a JS variant.
+// There is no OS poll in the browser: `Poll` is inert and the JS event loop
+// drives a pump; `register`/`reregister` on a JS stream just record interest.
+#[cfg(target_arch = "wasm32")]
+mod wasm_shim {
+    #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+    pub struct Token(pub usize);
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct Interest(u8);
+    impl Interest {
+        pub const READABLE: Interest = Interest(0b01);
+        pub const WRITABLE: Interest = Interest(0b10);
+        pub fn is_readable(&self) -> bool {
+            self.0 & 0b01 != 0
+        }
+        pub fn is_writable(&self) -> bool {
+            self.0 & 0b10 != 0
+        }
+    }
+    impl std::ops::BitOr for Interest {
+        type Output = Interest;
+        fn bitor(self, rhs: Interest) -> Interest {
+            Interest(self.0 | rhs.0)
+        }
+    }
+
+    /// Inert stand-in for `mio::Poll`. Only exists so `&Poll` arguments in the
+    /// shared handlers type-check; the wasm driver never calls a real poll.
+    pub struct Poll;
+    impl Poll {
+        pub fn new() -> std::io::Result<Poll> {
+            Ok(Poll)
+        }
+    }
+
+    /// Placeholder for `mio::Events` (the wasm pump does not iterate events).
+    pub struct Events;
+    impl Events {
+        pub fn with_capacity(_capacity: usize) -> Events {
+            Events
+        }
+    }
+}
+#[cfg(target_arch = "wasm32")]
+pub use wasm_shim::{Events, Interest, Poll, Token};

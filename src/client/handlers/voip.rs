@@ -1,5 +1,5 @@
 use log::{debug, info};
-use mio::{Interest, Poll};
+use crate::reactor::{Interest, Poll};
 use std::io;
 use std::net::UdpSocket;
 

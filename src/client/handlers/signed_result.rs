@@ -1,5 +1,5 @@
 use log::debug;
-use mio::{Interest, Poll};
+use crate::reactor::{Interest, Poll};
 
 use crate::client::state::{MeasurementState, TestPhase};
 

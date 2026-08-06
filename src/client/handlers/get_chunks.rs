@@ -7,7 +7,7 @@ use crate::client::constants::{
 use crate::client::state::MeasurementState;
 use anyhow::Result;
 use log::debug;
-use mio::{Interest, Poll};
+use crate::reactor::{Interest, Poll};
 
 pub fn handle_get_chunks_receive_time(
     poll: &Poll,

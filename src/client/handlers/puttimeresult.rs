@@ -1,6 +1,6 @@
 use anyhow::Result;
 use log::{debug, info, trace};
-use mio::{Interest, Poll};
+use crate::reactor::{Interest, Poll};
 use std::time::{Duration, Instant};
 
 use crate::client::constants::ACCEPT_GETCHUNKS_STRING;

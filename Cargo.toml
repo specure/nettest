@@ -6,6 +6,9 @@ edition = "2021"
 [lib]
 name = "nettest"
 path = "src/lib.rs"
+# rlib for the native bin + the FFI/path deps; cdylib so the wasm target emits a
+# .wasm that wasm-bindgen can process.
+crate-type = ["cdylib", "rlib"]
 
 [[bin]]
 name = "nettest"
@@ -64,6 +67,7 @@ nix = "0.26"
 # getrandom's "js" backend so uuid v4 / fastrand work in the browser.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 getrandom = { version = "0.2", features = ["js"] }
 uuid = { version = "1.7.0", features = ["v4", "js"] }
@@ -76,6 +80,8 @@ web-sys = { version = "0.3", features = [
     "CloseEvent",
     "ErrorEvent",
     "Blob",
+    "Window",
+    "Performance",
 ] }
 
 [dev-dependencies]
