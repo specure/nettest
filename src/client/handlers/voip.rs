@@ -7,7 +7,7 @@ use crate::client::state::{MeasurementState, TestPhase};
 use crate::voip::udp::run_client_udp;
 use crate::voip::{
     VoipParams, DEFAULT_BITS_PER_SAMPLE, DEFAULT_BUFFER_NS, DEFAULT_DELAY_MS,
-    DEFAULT_DURATION_MS, DEFAULT_PAYLOAD_TYPE, DEFAULT_SAMPLE_RATE,
+    DEFAULT_PAYLOAD_TYPE, DEFAULT_SAMPLE_RATE,
 };
 
 pub fn handle_voip_send_command(
@@ -31,7 +31,7 @@ pub fn handle_voip_send_command(
             sample_rate: DEFAULT_SAMPLE_RATE,
             bits_per_sample: DEFAULT_BITS_PER_SAMPLE,
             delay_ms: DEFAULT_DELAY_MS,
-            duration_ms: DEFAULT_DURATION_MS,
+            duration_ms: state.jitter_duration_ms,
             initial_seq,
             payload_type: DEFAULT_PAYLOAD_TYPE,
             buffer_ns: DEFAULT_BUFFER_NS,

@@ -7,7 +7,7 @@ use crate::client::handlers::greeting::{handle_greeting_receive_greeting, handle
 use crate::client::handlers::get_time::{handle_get_time_receive_chunk, handle_get_time_receive_time, handle_get_time_send_command, handle_get_time_send_ok};
 use crate::client::handlers::ping::{handle_ping_receive_pong, handle_ping_receive_time, handle_ping_send_ok, handle_ping_send_ping};
 use crate::client::handlers::put::{handle_put_receive_final_time, handle_put_receive_ok, handle_put_receive_time_bytes, handle_put_send_chunks, handle_put_send_command, handle_put_send_last_chunk};
-use crate::client::handlers::puttimeresult::{handle_put_time_result_receive_ok, handle_put_time_result_receive_time, handle_put_time_result_send_chunks, handle_put_time_result_send_command, handle_put_time_result_send_last_chunk};
+use crate::client::handlers::puttimeresult::{handle_put_time_result_receive_ok, handle_put_time_result_receive_time, handle_put_time_result_send_chunks, handle_put_time_result_send_command, handle_put_time_result_send_last_chunk, handle_put_time_result_drain};
 use crate::client::handlers::signed_result::{handle_signed_result_command, handle_signed_result_receive, handle_signed_result_send_ok};
 use crate::client::handlers::voip::{handle_voip_receive_ok, handle_voip_receive_result, handle_voip_send_command, handle_voip_send_get_result};
 use crate::client::handlers::udp::{
@@ -42,6 +42,10 @@ pub fn handle_client_readable_data(state: &mut MeasurementState, poll: &Poll) ->
 
         TestPhase::PerfReceiveOk => handle_put_time_result_receive_ok(poll, state),
         TestPhase::PerfReceiveTime => handle_put_time_result_receive_time(poll, state),
+
+        // While sending upload chunks, drain interim TIMERESULT on read events.
+        TestPhase::PerfSendChunks => handle_put_time_result_drain(poll, state),
+        TestPhase::PerfSendLastChunk => handle_put_time_result_drain(poll, state),
 
         TestPhase::PutReceiveOk => handle_put_receive_ok(poll, state),
         TestPhase::PutReceiveTimeBytes => handle_put_receive_time_bytes(poll, state),

@@ -6,7 +6,6 @@ use std::time::Instant;
 use crate::client::constants::ACCEPT_GETCHUNKS_STRING;
 use crate::client::state::{MeasurementState, TestPhase};
 
-const TEST_DURATION_NS: u64 = 7_000_000_000; // 7 seconds
 
 pub fn handle_get_time_send_ok(
     poll: &Poll,
@@ -39,9 +38,10 @@ pub fn handle_get_time_send_command(
 ) -> Result<usize, std::io::Error> {
     debug!("handle_get_time_send_command token {:?}", state.token);
 
+    let duration_s = (state.download_duration_ms / 1000).max(1);
     let command = format!(
         "GETTIME {} {}\n",
-        TEST_DURATION_NS / 1_000_000_000,
+        duration_s,
         state.chunk_size
     );
     if state.write_pos == 0 {

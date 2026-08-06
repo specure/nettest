@@ -14,6 +14,7 @@ use crate::client::{
     },
     client::{ClientConfig, Measurement, SharedStats},
     control_server::MeasurementSaver,
+    live::{set_phase, update, LiveSink, SharedLive},
     print::printer::{print_float_result, print_test_result},
     state::TestState,
 };
@@ -38,10 +39,21 @@ fn print_measurement_row(
 pub async fn run_threads(
     config: ClientConfig,
     stats: Arc<Mutex<SharedStats>>,
+    live: Option<SharedLive>,
 ) -> Result<Vec<Measurement>, anyhow::Error> {
     let config_clone = config.clone();
     let barrier = Arc::new(Barrier::new(config.thread_count));
     let mut thread_handles = vec![];
+
+    // Per-thread live sample sinks, registered in `live` so the FFI/UI can draw
+    // the graph while a phase is still running.
+    let sinks: Vec<LiveSink> = (0..config.thread_count).map(|_| LiveSink::new()).collect();
+    if let Some(live) = &live {
+        if let Ok(mut guard) = live.lock() {
+            guard.download_threads = sinks.iter().map(|s| s.download.clone()).collect();
+            guard.upload_threads = sinks.iter().map(|s| s.upload.clone()).collect();
+        }
+    }
     let ping_median = Arc::new(Mutex::new(None::<u64>));
     let download_speed = Arc::new(Mutex::new(None::<f64>));
     let upload_speed = Arc::new(Mutex::new(None::<f64>));
@@ -78,7 +90,12 @@ pub async fn run_threads(
         let ping_median_clone = Arc::clone(&ping_median);
         let download_speed_clone = Arc::clone(&download_speed);
         let upload_speed_clone = Arc::clone(&upload_speed);
+        let live = live.clone();
+        let sink = sinks[i].clone();
         thread_handles.push(thread::spawn(move || {
+            if i == 0 {
+                set_phase(&live, "greeting");
+            }
             let mut state =
                 match TestState::new(addr, config.use_tls, config.use_websocket, i, None, None) {
                     Ok(state) => state,
@@ -87,6 +104,14 @@ pub async fn run_threads(
                         return Err(e);
                     }
                 };
+            state.set_live_sink(sink);
+            state.set_puttimeresult_interval(config.put_time_result_interval_ms);
+            state.set_durations(
+                config.download_duration_ms,
+                config.upload_duration_ms,
+                config.jitter_duration_ms,
+                config.packetloss_duration_ms,
+            );
 
             let greeting = state.process_greeting();
             match greeting {
@@ -97,17 +122,22 @@ pub async fn run_threads(
                 }
             }
             barrier.wait();
-            state.run_get_chunks().unwrap();
+            if i == 0 {
+                set_phase(&live, "init");
+            }
+            let _ = state.run_get_chunks();
 
             barrier.wait();
 
             if i == 0 {
-                state.run_ping().unwrap();
+                set_phase(&live, "ping");
+                let _ = state.run_ping();
                 let ping_ms = state.measurement_state().ping_median
                     .map(|m| m as f64 / 1_000_000.0);
                 if let Some(median) = state.measurement_state().ping_median {
                     *ping_median_clone.lock().unwrap() = Some(median);
                 }
+                update(&live, |s| s.ping_ms = ping_ms);
                 if config.raw_output {
                     if let Some(p) = ping_ms { print!("{:.2}", p); }
                 } else if !config.json_output {
@@ -115,6 +145,7 @@ pub async fn run_threads(
                 }
 
                 if !config.legacy {
+                    set_phase(&live, "jitter");
                     if let Err(e) = state.run_voip_test() {
                         log::warn!("VoIP test failed: {}", e);
                     } else {
@@ -125,6 +156,7 @@ pub async fn run_threads(
                             (None,    Some(o)) => Some(o.mean_jitter as f64 / 1_000_000.0),
                             (None,    None)    => None,
                         };
+                        update(&live, |s| s.jitter_ms = jitter);
                         print_measurement_row(
                             config.raw_output || config.json_output,
                             "Jitter",
@@ -134,6 +166,7 @@ pub async fn run_threads(
                         );
                     }
 
+                    set_phase(&live, "packetloss");
                     let pre_udp_failed = state.measurement_state().failed;
                     if let Err(e) = state.run_udp_test() {
                         log::warn!("UDP packet loss test failed: {}", e);
@@ -150,6 +183,7 @@ pub async fn run_threads(
                         (None,    None)    => None,
                     };
                     if loss.is_some() {
+                        update(&live, |s| s.packet_loss_percent = loss);
                         print_measurement_row(
                             config.raw_output || config.json_output,
                             "Packet Loss",
@@ -162,7 +196,10 @@ pub async fn run_threads(
             }
             barrier.wait();
 
-            state.run_get_time().unwrap();
+            if i == 0 {
+                set_phase(&live, "download");
+            }
+            let _ = state.run_get_time();
             {
                 let mut stats = stats.lock().unwrap();
                 stats.download_measurements.push(
@@ -184,6 +221,7 @@ pub async fn run_threads(
 
                 // Save download speed for later use
                 *download_speed_clone.lock().unwrap() = Some(speed.2); // speed.1 is Gbps
+                update(&live, |s| s.download_mbps = Some(speed.2)); // speed.2 is Mbps
 
                 if config.raw_output {
                     print!("/{:.2}", speed.1); // speed.1 is Gbps
@@ -194,10 +232,13 @@ pub async fn run_threads(
 
             barrier.wait();
 
+            if i == 0 {
+                set_phase(&live, "upload");
+            }
             if config.legacy {
-                state.run_put().unwrap();
+                let _ = state.run_put();
             } else {
-                state.run_perf_test().unwrap();
+                let _ = state.run_perf_test();
             }
             {
                 let mut stats = stats.lock().unwrap();
@@ -220,6 +261,7 @@ pub async fn run_threads(
 
                 // Save upload speed for later use
                 *upload_speed_clone.lock().unwrap() = Some(speed.2); // speed.1 is Gbps
+                update(&live, |s| s.upload_mbps = Some(speed.2)); // speed.2 is Mbps
 
                 if config.raw_output {
                     println!("/{:.2}", speed.1); // speed.1 is Gbps, println! for line break
@@ -231,7 +273,7 @@ pub async fn run_threads(
             barrier.wait();
 
             if config.save_results && config.signed_result {
-                state.run_signed_result().unwrap();
+                let _ = state.run_signed_result();
                 barrier.wait();
             }
 
@@ -255,9 +297,8 @@ pub async fn run_threads(
 
     let states: Vec<Measurement> = thread_handles
         .into_iter()
-        .map(|h| h.join().unwrap())
-        .filter(|s| s.is_ok())
-        .map(|s| s.unwrap())
+        .filter_map(|h| h.join().ok()) // drop a panicked thread instead of crashing
+        .filter_map(|s| s.ok())
         .collect();
 
     for s in states.iter() {

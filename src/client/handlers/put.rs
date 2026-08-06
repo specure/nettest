@@ -82,7 +82,8 @@ pub fn handle_put_send_chunks(
         loop {
             // Check time before writing to determine if this should be the last chunk
             let elapsed_ns = start_time.elapsed().as_nanos();
-            let is_last = elapsed_ns >= UPLINK_DURATION_NS as u128;
+            let duration_ns = state.upload_duration_ms as u128 * 1_000_000;
+            let is_last = elapsed_ns >= duration_ns;
             
             if is_last && state.write_pos == 0 {
                 // Time limit reached before starting to write this chunk, switch to sending last chunk
@@ -109,7 +110,7 @@ pub fn handle_put_send_chunks(
             if state.write_pos == state.chunk_size {
                 // Chunk completed, check time again
                 let tt = start_time.elapsed().as_nanos();
-                let is_last_after_chunk = tt >= UPLINK_DURATION_NS as u128;
+                let is_last_after_chunk = tt >= state.upload_duration_ms as u128 * 1_000_000;
 
                 debug!("Chunk completed: elapsed={} ns ({} s), target={} ns ({} s), is_last={}", 
                     tt, tt as f64 / 1_000_000_000.0, 

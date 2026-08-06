@@ -61,7 +61,7 @@ pub fn run_server_udp(
     });
 
     let mut received: PacketMap = HashMap::new();
-    let deadline = Instant::now() + Duration::from_millis(params.duration_ms + 3000);
+    let deadline = Instant::now() + Duration::from_millis(params.duration_ms + 2000);
 
     loop {
         if Instant::now() >= deadline { break; }
@@ -132,7 +132,7 @@ pub fn run_client_udp(params: VoipParams, ssrc: u32, server_ip: IpAddr) -> RtpQo
     });
 
     let mut received: PacketMap = HashMap::new();
-    let deadline = Instant::now() + Duration::from_millis(params.duration_ms + 3000);
+    let deadline = Instant::now() + Duration::from_millis(params.duration_ms + 2000);
     let mut buf = vec![0u8; 1500];
 
     loop {

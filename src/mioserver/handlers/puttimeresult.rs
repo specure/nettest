@@ -59,11 +59,25 @@ pub fn handle_put_time_result_receive_chunk(
         state.read_pos += n;
         state.total_bytes_received += n as u64;
         trace!("Read {} bytes", state.read_pos);
+
+        // Record a time-based sample so the upload curve has enough points even
+        // with large chunks (sampling does not change the protocol framing).
+        let tt = state.clock.unwrap().elapsed().as_nanos();
+        let interval = state.puttimeresult_interval_ns as u128;
+        let due = interval > 0 && tt - state.puttimeresult_last_sample_ns >= interval;
+        if due && state.read_pos != state.chunk_size {
+            state
+                .bytes_received
+                .push_back((tt as u64, state.total_bytes_received));
+            state.puttimeresult_last_sample_ns = tt;
+        }
+
         if state.read_pos == state.chunk_size {
-            let tt = state.clock.unwrap().elapsed().as_nanos();
+            // Full chunk received: record a sample and handle the terminator.
             state
                     .bytes_received
                     .push_back((tt as u64, state.total_bytes_received));
+            state.puttimeresult_last_sample_ns = tt;
             if state.chunk_buffer[state.read_pos - 1] == 0xFF {
                 state.received_time_ns = Some(tt as u128);
                 state.measurement_state = ServerTestPhase::PutTimeResultSendTimeResult;
@@ -73,49 +87,131 @@ pub fn handle_put_time_result_receive_chunk(
                     .stream
                     .reregister(poll, state.token, Interest::WRITABLE)?;
                 return Ok(n);
-            } else {
-                if state.chunk_buffer[state.read_pos - 1] != 0x00 {
-                    return Err(io::Error::new(io::ErrorKind::Other, "Invalid chunk"));
-                }
+            } else if state.chunk_buffer[state.read_pos - 1] != 0x00 {
+                return Err(io::Error::new(io::ErrorKind::Other, "Invalid chunk"));
             }
             state.read_pos = 0;
+        }
+
+        // Emit accumulated samples as an interim TIMERESULT every `interval` ns,
+        // written INLINE on the same (READABLE) socket — TCP is full-duplex, so
+        // we can write without changing the mio interest. This avoids the
+        // READABLE<->WRITABLE reregister mid-chunk that proved unstable, while
+        // still delivering points every ~interval (not only at chunk boundaries).
+        if interval > 0
+            && tt - state.puttimeresult_last_emit_ns >= interval
+            && state.puttimeresult_emit_index < state.bytes_received.len()
+        {
+            if emit_interim_inline(state)? {
+                state.puttimeresult_last_emit_ns = tt;
+            }
         }
     }
 }
 
-pub fn handle_put_time_result_send_time(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
-    info!("handle_put_time_result_send_time");
-    let result = state.bytes_received.iter().map(|(t, b)| format!("({} {})", t, b)).collect::<Vec<String>>().join("; ");
-    let command = format!("TIMERESULT {}\n", result);
-    if state.write_pos == 0 {
-        if state.chunk_buffer.len() < command.len() {
-            state.chunk_buffer.resize(command.len(), 0);
+/// Write a TIMERESULT with the not-yet-sent samples directly on the socket,
+/// without touching the mio interest. Returns true if it was fully sent.
+/// If the socket buffer is full and nothing could be written, returns false
+/// (the interim is skipped and retried on the next cycle) — never leaves a
+/// partial line in the stream.
+fn emit_interim_inline(state: &mut TestState) -> io::Result<bool> {
+    let result = state
+        .bytes_received
+        .iter()
+        .skip(state.puttimeresult_emit_index)
+        .map(|(t, b)| format!("({} {})", t, b))
+        .collect::<Vec<String>>()
+        .join("; ");
+    let msg = format!("TIMERESULT {}\n", result).into_bytes();
+
+    let mut written = 0usize;
+    loop {
+        match state.stream.write(&msg[written..]) {
+            Ok(0) => {
+                // Can't write now. If nothing went out, skip cleanly.
+                if written == 0 {
+                    return Ok(false);
+                }
+            }
+            Ok(n) => {
+                written += n;
+                if written == msg.len() {
+                    state.puttimeresult_emit_index = state.bytes_received.len();
+                    return Ok(true);
+                }
+            }
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                // Buffer full. If nothing written yet, skip this interim cleanly.
+                // If partially written, we MUST finish to keep the stream intact;
+                // spin (the client is actively draining, so this clears quickly).
+                if written == 0 {
+                    return Ok(false);
+                }
+            }
+            Err(e) => return Err(e),
         }
-        state.chunk_buffer[0..command.len()].copy_from_slice(command.as_bytes());
     }
+}
+
+/// Write a TIMERESULT message containing only the not-yet-sent samples
+/// (`bytes_received[emit_index..]`), then move to `next_phase`/`next_interest`.
+/// Shared by the interim and final senders.
+fn write_time_result(
+    poll: &Poll,
+    state: &mut TestState,
+    next_phase: ServerTestPhase,
+    next_interest: Interest,
+) -> io::Result<usize> {
+    if state.write_pos == 0 {
+        let result = state
+            .bytes_received
+            .iter()
+            .skip(state.puttimeresult_emit_index)
+            .map(|(t, b)| format!("({} {})", t, b))
+            .collect::<Vec<String>>()
+            .join("; ");
+        let command = format!("TIMERESULT {}\n", result);
+        state.puttimeresult_send_buffer = command.into_bytes();
+    }
+    let buf_len = state.puttimeresult_send_buffer.len();
     loop {
         let n = state
             .stream
-            .write(&state.chunk_buffer[state.write_pos..])?;
+            .write(&state.puttimeresult_send_buffer[state.write_pos..])?;
         if n == 0 {
             return Err(io::Error::new(io::ErrorKind::Other, "EOF"));
         }
         state.write_pos += n;
-        info!("write_pos: {}", state.write_pos);
-        if state.write_pos == state.chunk_buffer.len() {
-            let tt = state.clock.unwrap().elapsed().as_nanos();
-            state.total_bytes_received += state.chunk_buffer.len() as u64;
-            state
-                    .bytes_received
-                    .push_back((tt as u64, state.total_bytes_received));
-            debug!("command sent");
+        if state.write_pos == buf_len {
+            state.puttimeresult_emit_index = state.bytes_received.len();
             state.write_pos = 0;
-            state.read_pos = 0;
-            state.measurement_state = ServerTestPhase::AcceptCommandSend;
-            state
-                .stream
-                .reregister(poll, state.token, Interest::WRITABLE)?;
+            // NOTE: do NOT reset read_pos here. Interim emits can happen
+            // mid-chunk (read_pos partial); resetting it would desync chunk
+            // parsing. The full-chunk / final paths reset read_pos themselves.
+            state.measurement_state = next_phase;
+            state.stream.reregister(poll, state.token, next_interest)?;
             return Ok(n);
         }
     }
+}
+
+/// Send an interim TIMERESULT, then resume receiving chunks.
+pub fn handle_put_time_result_send_interim(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
+    write_time_result(
+        poll,
+        state,
+        ServerTestPhase::PutTimeResultReceiveChunk,
+        Interest::READABLE,
+    )
+}
+
+pub fn handle_put_time_result_send_time(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
+    info!("handle_put_time_result_send_time");
+    // Send the final (remaining) samples, then go back to accepting commands.
+    write_time_result(
+        poll,
+        state,
+        ServerTestPhase::AcceptCommandSend,
+        Interest::WRITABLE,
+    )
 }

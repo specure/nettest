@@ -6,15 +6,21 @@ use std::net::UdpSocket;
 use crate::client::state::{MeasurementState, TestPhase};
 use crate::udp::payload::{rtts_from_json, UdpPayload, FLAG_HOLE_PUNCH};
 use crate::udp::socket::{run_client_udp_in, run_client_udp_out};
-use crate::udp::{
-    DEFAULT_UDP_IN_NUM_PACKETS, DEFAULT_UDP_OUT_NUM_PACKETS, DEFAULT_UDP_DELAY_NS,
-    DEFAULT_UDP_TMAX_NS,
-};
+use crate::udp::{DEFAULT_UDP_DELAY_NS, DEFAULT_UDP_TMAX_NS};
 
 // GET UDPPORT removed — port comes from VoIP OK <ssrc> <udp_port> response
 
 fn uuid_to_hex(uuid: &[u8; 16]) -> String {
     uuid.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+/// Number of UDP packets PER DIRECTION for the packet-loss test.
+/// `duration_ms` is the total packet-loss phase budget; the test runs two
+/// directions (OUT + IN), so each direction gets half, at one packet every
+/// DEFAULT_UDP_DELAY_NS.
+fn udp_num_packets(duration_ms: u64) -> u32 {
+    let per_direction_ms = (duration_ms / 2).max(1);
+    ((per_direction_ms * 1_000_000 / DEFAULT_UDP_DELAY_NS).max(1)) as u32
 }
 
 // → UDPTEST OUT <port> <n> <uuid_hex>\n
@@ -28,7 +34,8 @@ pub fn handle_udp_send_test_out(poll: &Poll, state: &mut MeasurementState) -> io
     }
     let port = state.udp_out_port.unwrap_or(0);
     let uuid_hex = uuid_to_hex(state.udp_out_uuid.as_ref().unwrap());
-    let command = format!("UDPTEST OUT {} {} {}\n", port, DEFAULT_UDP_OUT_NUM_PACKETS, uuid_hex);
+    let num_packets = udp_num_packets(state.packetloss_duration_ms);
+    let command = format!("UDPTEST OUT {} {} {}\n", port, num_packets, uuid_hex);
     if state.write_pos == 0 {
         let bytes = command.as_bytes();
         state.write_buffer[..bytes.len()].copy_from_slice(bytes);
@@ -70,11 +77,12 @@ pub fn handle_udp_receive_ok_out(poll: &Poll, state: &mut MeasurementState) -> i
             let port = state.udp_out_port.unwrap_or(0);
             let uuid = state.udp_out_uuid.unwrap_or([0u8; 16]);
 
-            info!("Starting UDP OUT: {} packets → {}:{} uuid={}", DEFAULT_UDP_OUT_NUM_PACKETS, server_ip, port, uuid_to_hex(&uuid));
+            let num_packets = udp_num_packets(state.packetloss_duration_ms);
+            info!("Starting UDP OUT: {} packets → {}:{} uuid={}", num_packets, server_ip, port, uuid_to_hex(&uuid));
             let result = run_client_udp_out(
                 server_ip,
                 port,
-                DEFAULT_UDP_OUT_NUM_PACKETS,
+                num_packets,
                 DEFAULT_UDP_DELAY_NS,
                 DEFAULT_UDP_TMAX_NS,
                 uuid,
@@ -189,7 +197,8 @@ pub fn handle_udp_send_test_in(poll: &Poll, state: &mut MeasurementState) -> io:
     let in_port  = state.udp_in_port.unwrap_or(0);
     let in_uuid  = state.udp_in_uuid.unwrap_or([0u8; 16]);
     let uuid_hex = uuid_to_hex(&in_uuid);
-    let command  = format!("UDPTEST IN {} {} {}\n", in_port, DEFAULT_UDP_IN_NUM_PACKETS, uuid_hex);
+    let num_packets = udp_num_packets(state.packetloss_duration_ms);
+    let command  = format!("UDPTEST IN {} {} {}\n", in_port, num_packets, uuid_hex);
 
     if state.write_pos == 0 {
         let bytes = command.as_bytes();
@@ -208,9 +217,9 @@ pub fn handle_udp_send_test_in(poll: &Poll, state: &mut MeasurementState) -> io:
             if let Some(sock) = state.udp_in_socket.take() {
                 info!(
                     "Starting UDP IN: expecting {} packets on port {}",
-                    DEFAULT_UDP_IN_NUM_PACKETS, in_port
+                    num_packets, in_port
                 );
-                let result = run_client_udp_in(&sock, DEFAULT_UDP_IN_NUM_PACKETS, DEFAULT_UDP_TMAX_NS);
+                let result = run_client_udp_in(&sock, num_packets, DEFAULT_UDP_TMAX_NS);
                 info!(
                     "UDP IN done: received={} loss={}%",
                     result.received_packets, result.packet_loss_rate

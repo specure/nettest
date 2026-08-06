@@ -68,6 +68,16 @@ pub struct TestState {
     pub chunk: Option<BytesMut>,
     pub terminal_chunk: Option<BytesMut>,
     pub bytes_received: VecDeque<(u64, u64)>,
+    /// PUTTIMERESULT interim reporting interval in ns (0 = only final result).
+    pub puttimeresult_interval_ns: u64,
+    /// Timestamp (ns since clock start) of the last interim TIMERESULT emit.
+    pub puttimeresult_last_emit_ns: u128,
+    /// Timestamp (ns) of the last recorded speed sample (for time-based sampling).
+    pub puttimeresult_last_sample_ns: u128,
+    /// Index into `bytes_received` of the first not-yet-sent sample.
+    pub puttimeresult_emit_index: usize,
+    /// Dedicated buffer for writing TIMERESULT messages (interim and final).
+    pub puttimeresult_send_buffer: Vec<u8>,
     pub client_addr: Option<SocketAddr>,
     pub sig_key: Option<String>,
     pub voip_ssrc: Option<u32>,
@@ -541,7 +551,7 @@ impl MioServer {
         let scope_id = addr_v6.scope_id();
         
         let sockaddr = {
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", target_os = "watchos"))]
             {
                 libc::sockaddr_in6 {
                     sin6_len: std::mem::size_of::<libc::sockaddr_in6>() as u8,
@@ -552,7 +562,7 @@ impl MioServer {
                     sin6_scope_id: scope_id,
                 }
             }
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "tvos", target_os = "watchos")))]
             {
                 libc::sockaddr_in6 {
                     sin6_family: libc::AF_INET6 as u16,
