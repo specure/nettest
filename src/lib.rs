@@ -7,7 +7,8 @@ pub mod config;
 pub mod logger;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod mioserver;
-#[cfg(not(target_arch = "wasm32"))]
+// `stream` compiles on both targets (Stream is cfg-split: native transports vs
+// the browser JsWss variant).
 pub mod stream;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod voip;
