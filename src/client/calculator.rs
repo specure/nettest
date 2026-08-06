@@ -1,4 +1,5 @@
-use crate::client::{client::Measurement};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::client::client::Measurement;
 
 pub fn calculate_speed_from_measurements(measurements: Vec<Vec<(u64, u64)>>) -> (f64, f64, f64) {
     if measurements.is_empty() {
@@ -132,6 +133,7 @@ pub fn calculate_upload_speed_from_stats_silent(stats: &Vec<Vec<(u64, u64)>>) ->
     calculate_speed_from_measurements(stats.clone())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn calculate_download_speed(states: &Vec<Measurement>) -> (f64, f64, f64) {
     let mut thread_measurements: Vec<Vec<(u64, u64)>> = Vec::new();
     for state in states {

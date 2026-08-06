@@ -74,20 +74,48 @@ mod wasm_shim {
         }
     }
 
-    /// Inert stand-in for `mio::Poll`. Only exists so `&Poll` arguments in the
-    /// shared handlers type-check; the wasm driver never calls a real poll.
+    /// Inert stand-in for `mio::Poll`. Only exists so the shared handlers and the
+    /// native run loop type-check on wasm; the wasm driver never calls `poll()`
+    /// (it drives handlers directly from JS events).
     pub struct Poll;
     impl Poll {
         pub fn new() -> std::io::Result<Poll> {
             Ok(Poll)
         }
+        pub fn poll(
+            &self,
+            _events: &mut Events,
+            _timeout: Option<std::time::Duration>,
+        ) -> std::io::Result<()> {
+            Ok(())
+        }
     }
 
-    /// Placeholder for `mio::Events` (the wasm pump does not iterate events).
-    pub struct Events;
+    /// Placeholder for a single mio readiness event.
+    pub struct Event;
+    impl Event {
+        pub fn is_readable(&self) -> bool {
+            false
+        }
+        pub fn is_writable(&self) -> bool {
+            false
+        }
+        pub fn token(&self) -> Token {
+            Token(0)
+        }
+    }
+
+    /// Placeholder for `mio::Events` (always empty; the wasm pump doesn't use it).
+    pub struct Events(Vec<Event>);
     impl Events {
         pub fn with_capacity(_capacity: usize) -> Events {
-            Events
+            Events(Vec::new())
+        }
+        pub fn is_empty(&self) -> bool {
+            true
+        }
+        pub fn iter(&self) -> std::slice::Iter<'_, Event> {
+            self.0.iter()
         }
     }
 }

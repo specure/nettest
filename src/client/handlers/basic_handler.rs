@@ -1,29 +1,55 @@
+use crate::reactor::Poll;
 use log::debug;
-use crate::reactor::{Poll};
 use std::io;
 
-use crate::client::handlers::get_chunks::{handle_get_chunks_receive_chunk, handle_get_chunks_receive_time, handle_get_chunks_send_chunks_command, handle_get_chunks_send_ok};
-use crate::client::handlers::greeting::{handle_greeting_receive_greeting, handle_greeting_receive_response, handle_greeting_send_connection_type, handle_greeting_send_token,};
-use crate::client::handlers::get_time::{handle_get_time_receive_chunk, handle_get_time_receive_time, handle_get_time_send_command, handle_get_time_send_ok};
-use crate::client::handlers::ping::{handle_ping_receive_pong, handle_ping_receive_time, handle_ping_send_ok, handle_ping_send_ping};
-use crate::client::handlers::put::{handle_put_receive_final_time, handle_put_receive_ok, handle_put_receive_time_bytes, handle_put_send_chunks, handle_put_send_command, handle_put_send_last_chunk};
-use crate::client::handlers::puttimeresult::{handle_put_time_result_receive_ok, handle_put_time_result_receive_time, handle_put_time_result_send_chunks, handle_put_time_result_send_command, handle_put_time_result_send_last_chunk, handle_put_time_result_drain};
-use crate::client::handlers::signed_result::{handle_signed_result_command, handle_signed_result_receive, handle_signed_result_send_ok};
-use crate::client::handlers::voip::{handle_voip_receive_ok, handle_voip_receive_result, handle_voip_send_command, handle_voip_send_get_result};
+use crate::client::handlers::get_chunks::{
+    handle_get_chunks_receive_chunk, handle_get_chunks_receive_time,
+    handle_get_chunks_send_chunks_command, handle_get_chunks_send_ok,
+};
+use crate::client::handlers::greeting::{
+    handle_greeting_receive_greeting, handle_greeting_receive_response,
+    handle_greeting_send_connection_type, handle_greeting_send_token,
+};
+use crate::client::handlers::get_time::{
+    handle_get_time_receive_chunk, handle_get_time_receive_time, handle_get_time_send_command,
+    handle_get_time_send_ok,
+};
+use crate::client::handlers::ping::{
+    handle_ping_receive_pong, handle_ping_receive_time, handle_ping_send_ok, handle_ping_send_ping,
+};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::client::handlers::put::{
+    handle_put_receive_final_time, handle_put_receive_ok, handle_put_receive_time_bytes,
+    handle_put_send_chunks, handle_put_send_command, handle_put_send_last_chunk,
+};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::client::handlers::puttimeresult::{
+    handle_put_time_result_drain, handle_put_time_result_receive_ok,
+    handle_put_time_result_receive_time, handle_put_time_result_send_chunks,
+    handle_put_time_result_send_command, handle_put_time_result_send_last_chunk,
+};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::client::handlers::signed_result::{
+    handle_signed_result_command, handle_signed_result_receive, handle_signed_result_send_ok,
+};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::client::handlers::voip::{
+    handle_voip_receive_ok, handle_voip_receive_result, handle_voip_send_command,
+    handle_voip_send_get_result,
+};
+#[cfg(not(target_arch = "wasm32"))]
 use crate::client::handlers::udp::{
-    handle_udp_send_test_out, handle_udp_receive_ok_out,
-    handle_udp_send_get_result_out, handle_udp_receive_result_out,
-    handle_udp_send_test_in, handle_udp_send_get_result_in, handle_udp_receive_result_in,
+    handle_udp_receive_ok_out, handle_udp_receive_result_in, handle_udp_receive_result_out,
+    handle_udp_send_get_result_in, handle_udp_send_get_result_out, handle_udp_send_test_in,
+    handle_udp_send_test_out,
 };
 use crate::client::state::{MeasurementState, TestPhase};
 
-
 pub fn handle_client_readable_data(state: &mut MeasurementState, poll: &Poll) -> io::Result<usize> {
-
     match state.phase {
         TestPhase::GreetingReceiveGreeting => handle_greeting_receive_greeting(poll, state),
         TestPhase::GreetingReceiveResponse => handle_greeting_receive_response(poll, state),
-       
+
         TestPhase::GetChunksReceiveChunk => handle_get_chunks_receive_chunk(poll, state),
         TestPhase::GetChunksReceiveTime => handle_get_chunks_receive_time(poll, state),
 
@@ -33,79 +59,98 @@ pub fn handle_client_readable_data(state: &mut MeasurementState, poll: &Poll) ->
         TestPhase::PingReceivePong => handle_ping_receive_pong(poll, state),
         TestPhase::PingReceiveTime => handle_ping_receive_time(poll, state),
 
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::VoipReceiveOk => handle_voip_receive_ok(poll, state),
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::VoipReceiveResult => handle_voip_receive_result(poll, state),
 
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::UdpReceiveOkOut => handle_udp_receive_ok_out(poll, state),
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::UdpReceiveResultOut => handle_udp_receive_result_out(poll, state),
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::UdpReceiveResultIn => handle_udp_receive_result_in(poll, state),
 
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PerfReceiveOk => handle_put_time_result_receive_ok(poll, state),
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PerfReceiveTime => handle_put_time_result_receive_time(poll, state),
 
         // While sending upload chunks, drain interim TIMERESULT on read events.
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PerfSendChunks => handle_put_time_result_drain(poll, state),
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PerfSendLastChunk => handle_put_time_result_drain(poll, state),
 
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PutReceiveOk => handle_put_receive_ok(poll, state),
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PutReceiveTimeBytes => handle_put_receive_time_bytes(poll, state),
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PutReceiveFinalTime => handle_put_receive_final_time(poll, state),
 
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::SignedResultReceive => handle_signed_result_receive(poll, state),
 
-        // TestPhase::PerfReceiveOk => handle_perf_receive_ok(poll, state),
-        // TestPhase::PerfReceiveTime => handle_perf_receive_time(poll, state),
         TestPhase::GreetingSendConnectionType => handle_greeting_send_connection_type(poll, state),
-
 
         _ => {
             debug!("Unknown read phase: {:?}", state.phase);
-            return Ok(1);
-        },
+            Ok(1)
+        }
     }
 }
 
 pub fn handle_client_writable_data(state: &mut MeasurementState, poll: &Poll) -> io::Result<usize> {
-
     match state.phase {
         TestPhase::GreetingSendConnectionType => handle_greeting_send_connection_type(poll, state),
         TestPhase::GreetingSendToken => handle_greeting_send_token(poll, state),
-        
+
         TestPhase::GetChunksSendChunksCommand => handle_get_chunks_send_chunks_command(poll, state),
         TestPhase::GetChunksSendOk => handle_get_chunks_send_ok(poll, state),
 
         TestPhase::PingSendPing => handle_ping_send_ping(poll, state),
         TestPhase::PingSendOk => handle_ping_send_ok(poll, state),
 
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::VoipSendCommand => handle_voip_send_command(poll, state),
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::VoipSendGetResult => handle_voip_send_get_result(poll, state),
 
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::UdpSendTestOut => handle_udp_send_test_out(poll, state),
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::UdpSendGetResultOut => handle_udp_send_get_result_out(poll, state),
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::UdpSendTestIn => handle_udp_send_test_in(poll, state),
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::UdpSendGetResultIn => handle_udp_send_get_result_in(poll, state),
 
         TestPhase::GetTimeSendCommand => handle_get_time_send_command(poll, state),
         TestPhase::GetTimeSendOk => handle_get_time_send_ok(poll, state),
 
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PerfSendCommand => handle_put_time_result_send_command(poll, state),
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PerfSendChunks => handle_put_time_result_send_chunks(poll, state),
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PerfSendLastChunk => handle_put_time_result_send_last_chunk(poll, state),
 
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PutSendCommand => handle_put_send_command(poll, state),
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PutSendChunks => handle_put_send_chunks(poll, state),
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PutSendLastChunk => handle_put_send_last_chunk(poll, state),
 
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::SignedResultSend => handle_signed_result_command(poll, state),
+        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::SignedResultSendOk => handle_signed_result_send_ok(poll, state),
-
-        // TestPhase::PerfSendCommand => handle_perf_send_command(poll, state),
-        // TestPhase::PerfSendChunks => handle_perf_send_chunks(poll, state),
-        // TestPhase::PerfSendLastChunk => handle_perf_send_last_chunk(poll, state),
 
         _ => {
             debug!("Unknown write phase: {:?}", state.phase);
-            return Ok(1);
-        },
+            Ok(1)
+        }
     }
 }

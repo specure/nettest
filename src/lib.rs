@@ -16,7 +16,9 @@ pub mod voip;
 pub mod udp;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod utils;
-#[cfg(not(target_arch = "wasm32"))]
+// `client` (state machine + handlers) compiles on both targets; native-only
+// submodules (runner/api/control_server/print/udp-voip handlers) are gated
+// inside client/*.
 pub mod client;
 
 #[cfg(not(target_arch = "wasm32"))]
