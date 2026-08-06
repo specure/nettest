@@ -322,6 +322,22 @@ jobs:
       contents: write
 
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Read the changelog section of this release
+      id: changelog
+      run: |
+        {
+          echo 'notes<<CHANGELOG_EOF'
+          awk -v version="${{ needs.determine-version.outputs.version }}" '
+            $0 ~ "^## \\[" version "\\]" { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md
+          echo 'CHANGELOG_EOF'
+        } >> "$GITHUB_OUTPUT"
+
     - name: Download all binaries
       uses: actions/download-artifact@v4
 
@@ -385,6 +401,9 @@ jobs:
         name: Release v${{ needs.determine-version.outputs.version }}
         body: |
           ## Release v${{ needs.determine-version.outputs.version }}
+
+          ### What is new
+          ${{ steps.changelog.outputs.notes }}
 
           ### Downloads
 

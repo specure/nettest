@@ -1,6 +1,8 @@
+use crate::client::api::run_measurement_with_chunk_size;
 use crate::client::args_parser::{parse_args, print_help};
 use crate::client::constants::init_max_chunk_size;
 use crate::client::print::graph_service::GraphService;
+use crate::client::print::json::print_json_result;
 use crate::client::print::printer::print_test_header;
 use crate::client::runnner::run_threads;
 use crate::config::FileConfig;
@@ -45,6 +47,7 @@ pub struct ClientConfig {
     pub use_websocket: bool,
     pub graphs: bool,
     pub raw_output: bool,
+    pub json_output: bool,
     pub thread_count: usize,
     pub log: Option<LevelFilter>,
     pub server: Option<String>,
@@ -74,6 +77,7 @@ impl Default for ClientConfig {
             use_websocket: false,
             graphs: false,
             raw_output: false,
+            json_output: false,
             thread_count: 3,
             log: None,
             server: None,
@@ -101,6 +105,7 @@ pub async fn client_run(args: Vec<String>, dafault_config: FileConfig) -> anyhow
 
     // Initialize MAX_CHUNK_SIZE from config
     init_max_chunk_size(dafault_config.max_chunk_size);
+    let max_chunk_size = dafault_config.max_chunk_size;
 
     if args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
         print_help();
@@ -108,6 +113,12 @@ pub async fn client_run(args: Vec<String>, dafault_config: FileConfig) -> anyhow
     }
 
     let config = parse_args(args, dafault_config).await?;
+
+    if config.json_output {
+        let result = run_measurement_with_chunk_size(config.clone(), max_chunk_size).await?;
+        print_json_result(&result, &config);
+        return Ok(());
+    }
 
     if !config.raw_output {
         print_test_header();
