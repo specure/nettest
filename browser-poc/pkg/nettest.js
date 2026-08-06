@@ -1,9 +1,9 @@
 /* @ts-self-types="./nettest.d.ts" */
 
 /**
- * Run greeting → ping → download entirely in Rust/wasm over a browser
- * WebSocket. `log_fn(msg: string)` receives progress lines. Resolves to
- * `{ pingMs, downloadMbps, downloadBytes }`.
+ * Run greeting → ping → download entirely in Rust/wasm, driving the real RMBT
+ * handlers over a browser WebSocket. `log_fn(msg: string)` receives progress.
+ * Resolves to `{ pingMs, downloadMbps, downloadSamples }`.
  * @param {string} url
  * @param {Function} log_fn
  * @returns {Promise<any>}
@@ -47,10 +47,6 @@ function __wbg_get_imports() {
         __wbg__wbg_cb_unref_3c3b4f651835fbcb: function(arg0) {
             arg0._wbg_cb_unref();
         },
-        __wbg_bufferedAmount_22f5c8c3d56b8df6: function(arg0) {
-            const ret = arg0.bufferedAmount;
-            return ret;
-        },
         __wbg_call_d578befcc3145dee: function() { return handleError(function (arg0, arg1, arg2) {
             const ret = arg0.call(arg1, arg2);
             return ret;
@@ -66,23 +62,10 @@ function __wbg_get_imports() {
             const ret = arg0.data;
             return ret;
         },
-        __wbg_getRandomValues_d49329ff89a07af1: function() { return handleError(function (arg0, arg1) {
-            globalThis.crypto.getRandomValues(getArrayU8FromWasm0(arg0, arg1));
-        }, arguments); },
         __wbg_instanceof_ArrayBuffer_ff7c1337a5e3b33a: function(arg0) {
             let result;
             try {
                 result = arg0 instanceof ArrayBuffer;
-            } catch (_) {
-                result = false;
-            }
-            const ret = result;
-            return ret;
-        },
-        __wbg_instanceof_Window_c0fee4c064502536: function(arg0) {
-            let result;
-            try {
-                result = arg0 instanceof Window;
             } catch (_) {
                 result = false;
             }
@@ -123,13 +106,13 @@ function __wbg_get_imports() {
                 state0.a = 0;
             }
         },
-        __wbg_now_2c44418ca0623664: function(arg0) {
+        __wbg_now_e7c6795a7f81e10f: function(arg0) {
             const ret = arg0.now();
             return ret;
         },
-        __wbg_performance_5ed3f6a3bbe36d0d: function(arg0) {
+        __wbg_performance_3fcf6e32a7e1ed0a: function(arg0) {
             const ret = arg0.performance;
-            return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
+            return ret;
         },
         __wbg_prototypesetcall_3e05eb9545565046: function(arg0, arg1, arg2) {
             Uint8Array.prototype.set.call(getArrayU8FromWasm0(arg0, arg1), arg2);
@@ -176,9 +159,6 @@ function __wbg_get_imports() {
         __wbg_set_onclose_47cce56c686db4fb: function(arg0, arg1) {
             arg0.onclose = arg1;
         },
-        __wbg_set_onerror_3db8bc3e52b2b10b: function(arg0, arg1) {
-            arg0.onerror = arg1;
-        },
         __wbg_set_onmessage_45bd33b110c54f5b: function(arg0, arg1) {
             arg0.onmessage = arg1;
         },
@@ -206,18 +186,18 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 22, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__hc75b36dc412eb990);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 36, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h6352c280a6a807a8);
             return ret;
         },
         __wbindgen_cast_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 47, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 63, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h160485aae3a66553);
             return ret;
         },
         __wbindgen_cast_0000000000000003: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("MessageEvent")], shim_idx: 23, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__hce6629646aac96f6);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("MessageEvent")], shim_idx: 35, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h46acd27aced84116);
             return ret;
         },
         __wbindgen_cast_0000000000000004: function(arg0) {
@@ -251,12 +231,12 @@ function wasm_bindgen__convert__closures_____invoke__he68637de3e80e9b3(arg0, arg
     return ret !== 0;
 }
 
-function wasm_bindgen__convert__closures_____invoke__hc75b36dc412eb990(arg0, arg1, arg2) {
-    wasm.wasm_bindgen__convert__closures_____invoke__hc75b36dc412eb990(arg0, arg1, arg2);
+function wasm_bindgen__convert__closures_____invoke__h6352c280a6a807a8(arg0, arg1, arg2) {
+    wasm.wasm_bindgen__convert__closures_____invoke__h6352c280a6a807a8(arg0, arg1, arg2);
 }
 
-function wasm_bindgen__convert__closures_____invoke__hce6629646aac96f6(arg0, arg1, arg2) {
-    wasm.wasm_bindgen__convert__closures_____invoke__hce6629646aac96f6(arg0, arg1, arg2);
+function wasm_bindgen__convert__closures_____invoke__h46acd27aced84116(arg0, arg1, arg2) {
+    wasm.wasm_bindgen__convert__closures_____invoke__h46acd27aced84116(arg0, arg1, arg2);
 }
 
 function wasm_bindgen__convert__closures_____invoke__h160485aae3a66553(arg0, arg1, arg2) {
@@ -416,7 +396,6 @@ function makeMutClosure(arg0, arg1, f) {
 }
 
 function passStringToWasm0(arg, malloc, realloc) {
-
     if (realloc === undefined) {
         const buf = cachedTextEncoder.encode(arg);
         const ptr = malloc(buf.length, 1) >>> 0;

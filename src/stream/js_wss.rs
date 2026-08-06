@@ -7,13 +7,16 @@
 //! expect from a non-blocking socket. Writes go straight to `WebSocket.send`.
 //!
 //! `register`/`reregister` don't touch any OS poll (there is none in a browser);
-//! they just record the interest so the wasm pump (the JS-driven event loop that
-//! replaces `poll.poll()`) knows whether to feed reads or drive writes.
+//! they just record the interest so the wasm pump (the async driver that
+//! replaces `poll.poll()`) knows whether to feed reads or drive writes. A
+//! [`Notify`] handle lets that pump `await` new data / socket-open without
+//! holding a borrow on the stream.
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::io::{self, Read, Write};
 use std::rc::Rc;
+use std::task::Waker;
 
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -22,15 +25,48 @@ use web_sys::{BinaryType, MessageEvent, WebSocket};
 use crate::reactor::{Interest, Poll, Token};
 
 type Inbox = Rc<RefCell<VecDeque<u8>>>;
+type WakerCell = Rc<RefCell<Option<Waker>>>;
+
+/// A pump-side handle to await readability / socket-open without borrowing the
+/// stream (which the handlers hold `&mut`).
+#[derive(Clone)]
+pub struct Notify {
+    inbox: Inbox,
+    opened: Rc<Cell<bool>>,
+    closed: Rc<Cell<bool>>,
+    waker: WakerCell,
+}
+
+impl Notify {
+    pub fn has_incoming(&self) -> bool {
+        !self.inbox.borrow().is_empty()
+    }
+    pub fn is_open(&self) -> bool {
+        self.opened.get()
+    }
+    pub fn is_closed(&self) -> bool {
+        self.closed.get()
+    }
+    pub fn set_waker(&self, w: &Waker) {
+        *self.waker.borrow_mut() = Some(w.clone());
+    }
+}
+
+fn wake(cell: &WakerCell) {
+    if let Some(w) = cell.borrow_mut().take() {
+        w.wake();
+    }
+}
 
 pub struct JsWss {
     ws: WebSocket,
     inbox: Inbox,
     interest: Rc<Cell<Interest>>,
     opened: Rc<Cell<bool>>,
-    // Kept alive for the socket's lifetime.
+    closed: Rc<Cell<bool>>,
+    waker: WakerCell,
+    _cbs: Vec<Closure<dyn FnMut(JsValue)>>,
     _onmessage: Closure<dyn FnMut(MessageEvent)>,
-    _onopen: Closure<dyn FnMut(JsValue)>,
 }
 
 impl std::fmt::Debug for JsWss {
@@ -45,7 +81,12 @@ impl JsWss {
         ws.set_binary_type(BinaryType::Arraybuffer);
 
         let inbox: Inbox = Rc::new(RefCell::new(VecDeque::new()));
+        let opened = Rc::new(Cell::new(false));
+        let closed = Rc::new(Cell::new(false));
+        let waker: WakerCell = Rc::new(RefCell::new(None));
+
         let inbox_cb = inbox.clone();
+        let waker_msg = waker.clone();
         let onmessage = Closure::wrap(Box::new(move |e: MessageEvent| {
             if let Ok(ab) = e.data().dyn_into::<js_sys::ArrayBuffer>() {
                 let arr = js_sys::Uint8Array::new(&ab);
@@ -55,28 +96,50 @@ impl JsWss {
             } else if let Some(s) = e.data().as_string() {
                 inbox_cb.borrow_mut().extend(s.into_bytes());
             }
+            wake(&waker_msg);
         }) as Box<dyn FnMut(MessageEvent)>);
         ws.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
 
-        let opened = Rc::new(Cell::new(false));
+        let mut cbs: Vec<Closure<dyn FnMut(JsValue)>> = Vec::new();
+
         let opened_cb = opened.clone();
+        let waker_open = waker.clone();
         let onopen = Closure::wrap(Box::new(move |_e: JsValue| {
             opened_cb.set(true);
+            wake(&waker_open);
         }) as Box<dyn FnMut(JsValue)>);
         ws.set_onopen(Some(onopen.as_ref().unchecked_ref()));
+        cbs.push(onopen);
+
+        let closed_cb = closed.clone();
+        let waker_close = waker.clone();
+        let onclose = Closure::wrap(Box::new(move |_e: JsValue| {
+            closed_cb.set(true);
+            wake(&waker_close);
+        }) as Box<dyn FnMut(JsValue)>);
+        ws.set_onclose(Some(onclose.as_ref().unchecked_ref()));
+        cbs.push(onclose);
 
         Ok(JsWss {
             ws,
             inbox,
-            interest: Rc::new(Cell::new(Interest::READABLE)),
+            // The RMBT flow starts by sending, so begin interested in writes.
+            interest: Rc::new(Cell::new(Interest::WRITABLE)),
             opened,
+            closed,
+            waker,
+            _cbs: cbs,
             _onmessage: onmessage,
-            _onopen: onopen,
         })
     }
 
-    pub fn is_open(&self) -> bool {
-        self.opened.get()
+    pub fn notify(&self) -> Notify {
+        Notify {
+            inbox: self.inbox.clone(),
+            opened: self.opened.clone(),
+            closed: self.closed.clone(),
+            waker: self.waker.clone(),
+        }
     }
 
     pub fn interest(&self) -> Interest {

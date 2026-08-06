@@ -32,6 +32,8 @@ lazy_static = "1.4.0"
 bytes = "1.11.1"
 anyhow = "1.0"
 semver = "1.0"
+# Instant that works on wasm (performance.now); a std::time re-export on native.
+web-time = "1.1"
 
 # Native-only dependencies (raw sockets, TLS, threads, server, plotting, http).
 # Not available / not needed in a browser WASM build.

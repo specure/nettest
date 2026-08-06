@@ -2,7 +2,7 @@ use anyhow::Result;
 use log::{debug, info, trace};
 use crate::reactor::{Events, Interest, Poll, Token};
 use std::collections::VecDeque;
-use std::time::Instant;
+use web_time::Instant;
 use std::{net::SocketAddr, path::Path, time::Duration};
 use std::io;
 

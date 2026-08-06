@@ -4,7 +4,7 @@ use crate::client::state::MeasurementState;
 use anyhow::Result;
 use log::debug;
 use crate::reactor::{Interest, Poll};
-use std::time::Instant;
+use web_time::Instant;
 
 const MAX_PINGS: u32 = 200;
 const PING_DURATION_NS: u64 = 1_000_000_000; // 1 second

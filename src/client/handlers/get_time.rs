@@ -1,7 +1,7 @@
 use anyhow::Result;
 use log::debug;
 use crate::reactor::{Interest, Poll};
-use std::time::Instant;
+use web_time::Instant;
 
 use crate::client::constants::ACCEPT_GETCHUNKS_STRING;
 use crate::client::state::{MeasurementState, TestPhase};
