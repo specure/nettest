@@ -1,0 +1,5 @@
+# Browser WASM only: MeasurementState carries two 128 KiB I/O buffers (~256 KiB),
+# which overflows the default ~1 MiB wasm shadow stack (seen as "memory access
+# out of bounds"). Give the wasm build an 8 MiB stack. Native builds unaffected.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=-zstack-size=8388608"]

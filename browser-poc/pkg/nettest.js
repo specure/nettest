@@ -159,6 +159,9 @@ function __wbg_get_imports() {
         __wbg_set_onclose_47cce56c686db4fb: function(arg0, arg1) {
             arg0.onclose = arg1;
         },
+        __wbg_set_onerror_3db8bc3e52b2b10b: function(arg0, arg1) {
+            arg0.onerror = arg1;
+        },
         __wbg_set_onmessage_45bd33b110c54f5b: function(arg0, arg1) {
             arg0.onmessage = arg1;
         },

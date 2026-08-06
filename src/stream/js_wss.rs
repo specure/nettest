@@ -165,9 +165,28 @@ impl JsWss {
         Ok(())
     }
 
+    /// Detach all JS event handlers so a subsequent event (e.g. onclose) can't
+    /// invoke a Rust closure that is about to be / has been dropped.
+    fn detach(&self) {
+        self.ws.set_onmessage(None);
+        self.ws.set_onopen(None);
+        self.ws.set_onclose(None);
+        self.ws.set_onerror(None);
+    }
+
     pub fn close(&mut self) -> anyhow::Result<()> {
+        self.detach();
         let _ = self.ws.close();
         Ok(())
+    }
+}
+
+impl Drop for JsWss {
+    fn drop(&mut self) {
+        // Clear handlers before the Closure fields are freed, otherwise a
+        // pending WebSocket event would call into dropped closures.
+        self.detach();
+        let _ = self.ws.close();
     }
 }
 
