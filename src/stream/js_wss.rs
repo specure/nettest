@@ -196,10 +196,17 @@ impl Read for JsWss {
         if inbox.is_empty() {
             return Err(io::ErrorKind::WouldBlock.into());
         }
+        // Bulk copy via the deque's two contiguous slices, not byte-by-byte.
         let n = buf.len().min(inbox.len());
-        for slot in buf.iter_mut().take(n) {
-            *slot = inbox.pop_front().unwrap();
+        {
+            let (a, b) = inbox.as_slices();
+            let na = a.len().min(n);
+            buf[..na].copy_from_slice(&a[..na]);
+            if na < n {
+                buf[na..n].copy_from_slice(&b[..(n - na)]);
+            }
         }
+        inbox.drain(..n);
         Ok(n)
     }
 }

@@ -2,9 +2,9 @@
 /* eslint-disable */
 
 /**
- * Run greeting → ping → download entirely in Rust/wasm, driving the real RMBT
- * handlers over a browser WebSocket. `log_fn(msg: string)` receives progress.
- * Resolves to `{ pingMs, downloadMbps, downloadSamples }`.
+ * Run greeting → ping → (N-connection) download, all via the real Rust handlers
+ * over browser WebSockets. Resolves to `{ pingMs, downloadMbps, threads,
+ * downloadBytes }`.
  */
 export function run_measurement(url: string, log_fn: Function): Promise<any>;
 
@@ -13,11 +13,10 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly run_measurement: (a: number, b: number, c: any) => any;
-    readonly wasm_bindgen__convert__closures_____invoke__h160485aae3a66553: (a: number, b: number, c: any) => [number, number];
-    readonly wasm_bindgen__convert__closures_____invoke__hbb680bc4a66f6edb: (a: number, b: number, c: any, d: any) => void;
-    readonly wasm_bindgen__convert__closures_____invoke__h6352c280a6a807a8: (a: number, b: number, c: any) => void;
-    readonly wasm_bindgen__convert__closures_____invoke__h46acd27aced84116: (a: number, b: number, c: any) => void;
-    readonly wasm_bindgen__convert__closures_____invoke__he68637de3e80e9b3: (a: number, b: number) => number;
+    readonly wasm_bindgen__convert__closures_____invoke__ha35c4af35f66a655: (a: number, b: number, c: any) => [number, number];
+    readonly wasm_bindgen__convert__closures_____invoke__h0e9ddeb7e3c5452f: (a: number, b: number, c: any, d: any) => void;
+    readonly wasm_bindgen__convert__closures_____invoke__ha1460d7052dc2410: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen__convert__closures_____invoke__ha1460d7052dc2410_2: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;
