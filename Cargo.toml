@@ -12,7 +12,7 @@ name = "nettest"
 path = "src/main.rs"
 
 [dependencies]
-openssl = { version = "0.10.72", features = ["vendored"]}
+openssl = { version = "0.10.79", features = ["vendored"]}
 tokio = { version = "1.36.0", features = ["full"] }
 env_logger = "0.11.2"
 log = "0.4.20"
