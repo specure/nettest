@@ -19,6 +19,23 @@ use crate::client::{
     state::TestState,
 };
 
+/// Prints a measurement row unless the output has to stay machine-readable.
+///
+/// The jitter and packet loss rows are pretty tables. They would corrupt both
+/// the `-raw` line and the `-json` document, so they are skipped in those modes.
+fn print_measurement_row(
+    machine_readable: bool,
+    phase: &str,
+    unit: &str,
+    value: Option<f64>,
+    is_last: bool,
+) {
+    if machine_readable {
+        return;
+    }
+    print_float_result(phase, unit, value, is_last);
+}
+
 pub async fn run_threads(
     config: ClientConfig,
     stats: Arc<Mutex<SharedStats>>,
@@ -101,7 +118,7 @@ pub async fn run_threads(
             match greeting {
                 Ok(_) => {}
                 Err(e) => {
-                    println!("Thread {i} could not connect to the server. {:?}", e);
+                    eprintln!("Thread {i} could not connect to the server. {:?}", e);
                     return Err(anyhow::anyhow!("Greeting failed with error: {:?}", e));
                 }
             }
@@ -124,7 +141,7 @@ pub async fn run_threads(
                 update(&live, |s| s.ping_ms = ping_ms);
                 if config.raw_output {
                     if let Some(p) = ping_ms { print!("{:.2}", p); }
-                } else {
+                } else if !config.json_output {
                     print_float_result("Ping Median", "ms", ping_ms, false);
                 }
 
@@ -142,6 +159,13 @@ pub async fn run_threads(
                         };
                         update(&live, |s| s.jitter_ms = jitter);
                         print_float_result("Jitter", "ms", jitter, false);
+                        print_measurement_row(
+                            config.raw_output || config.json_output,
+                            "Jitter",
+                            "ms",
+                            jitter,
+                            false,
+                        );
                     }
 
                     set_phase(&live, "packetloss");
@@ -163,6 +187,13 @@ pub async fn run_threads(
                     if loss.is_some() {
                         update(&live, |s| s.packet_loss_percent = loss);
                         print_float_result("Packet Loss", "%", loss, false);
+                        print_measurement_row(
+                            config.raw_output || config.json_output,
+                            "Packet Loss",
+                            "%",
+                            loss,
+                            false,
+                        );
                     }
                 }
             }
@@ -197,7 +228,7 @@ pub async fn run_threads(
 
                 if config.raw_output {
                     print!("/{:.2}", speed.1); // speed.1 is Gbps
-                } else {
+                } else if !config.json_output {
                     print_test_result("Download Test", "Completed", Some(speed), false);
                 }
             }
@@ -237,7 +268,7 @@ pub async fn run_threads(
 
                 if config.raw_output {
                     println!("/{:.2}", speed.1); // speed.1 is Gbps, println! for line break
-                } else {
+                } else if !config.json_output {
                     print_test_result("Upload Test", "Completed", Some(speed), true);
                 }
             }
@@ -287,7 +318,7 @@ pub async fn run_threads(
         .collect();
 
     if state_refs.len() != config.thread_count {
-        println!("Failed threads: {} out of {}", config.thread_count - state_refs.len(), config.thread_count);
+        eprintln!("Failed threads: {} out of {}", config.thread_count - state_refs.len(), config.thread_count);
     }
 
     let envelopes: Vec<Option<String>> = state_refs.iter().map(|s| s.envelope.clone()).collect();

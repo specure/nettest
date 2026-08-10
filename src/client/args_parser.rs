@@ -10,6 +10,7 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
         use_websocket: default_config.client_use_websocket,
         graphs: false,
         raw_output: false,
+        json_output: false,
         log: None,
         thread_count: default_config.client_thread_count,
         server: None,
@@ -66,6 +67,9 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
             }
             "-raw" => {
                 config.raw_output = true;
+            }
+            "-json" => {
+                config.json_output = true;
             }
             "-save" => {
                 config.save_results = true;
@@ -167,6 +171,7 @@ pub fn print_help() {
     println!("    -ws             Use WebSocket protocol");
     println!("    -g              Display download/upload graphs");
     println!("    -raw            Output results in parseable format: ping/download/upload");
+    println!("    -json           Output the measurement as JSON on stdout");
     println!("    -save           Save results to control server");
     println!("    -signed         Request signed result from server");
     println!("    -legacy         Use legacy PUT command instead of PUTTIMERESULT");

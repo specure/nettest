@@ -100,6 +100,69 @@ nettest -c <SERVER_ADDRESS> -ws
 
 # TLS client 
 nettest -c <SERVER_ADDRESS> -tls
+
+# Machine-readable output
+nettest -c <SERVER_ADDRESS> -json
+```
+
+### Output Formats
+
+By default the client prints a table meant for humans. Two flags switch to
+machine-readable output, which keeps stdout free of anything but the result:
+
+| Flag | Output |
+|------|--------|
+| `-raw` | One line: `ping/download/upload`, latency in ms and speed in Gbit/s |
+| `-json` | A JSON document with every measured value |
+
+The JSON document reports nettest's native units: milliseconds for latency and
+jitter, bits per second for speed, percent for packet loss and bytes for the
+transferred volume. A value that was not measured is left out instead of being
+reported as zero, so a consumer can tell "not measured" apart from "measured as
+zero". With `-legacy`, for example, `jitter_ms` and `packet_loss_percent` are
+absent because no VoIP and no UDP test ran.
+
+```console
+$ nettest -c 192.168.1.100 -json
+{
+  "type": "measurement",
+  "timestamp": "2026-08-05T12:34:56Z",
+  "client": {
+    "name": "nettest",
+    "version": "2.1.0"
+  },
+  "server": {
+    "host": "192.168.1.100",
+    "port": 5005
+  },
+  "protocol": "tcp",
+  "num_threads": 3,
+  "failed_threads": 0,
+  "ping": {
+    "latency_ms": 12.34,
+    "jitter_ms": 0.42
+  },
+  "download": {
+    "speed_bps": 942123456,
+    "bytes_transferred": 1177654320
+  },
+  "upload": {
+    "speed_bps": 512345678,
+    "bytes_transferred": 640432098
+  },
+  "packet_loss_percent": 0.0
+}
+```
+
+`jitter_ms` is the mean jitter measured by the VoIP test on an idle line. It is
+not the jitter under download or upload load, because nettest does not measure
+that.
+
+Progress messages, warnings and errors go to stderr in every mode, so piping
+stdout into a parser needs no filtering:
+
+```bash
+nettest -c 192.168.1.100 -json | jq .download.speed_bps
 ```
 
 ## ⚙️ Configuration
@@ -128,6 +191,8 @@ nettest -c <SERVER_ADDRESS> -tls
 | `-t` | Number of threads | `3` |
 | `-p` | TCP/TLS port | `5005` |
 | `-g` | Generate graphs | `false` |
+| `-raw` | Print one parseable line: `ping/download/upload` | `false` |
+| `-json` | Print the measurement as JSON on stdout | `false` |
 | `-legacy` | Use legacy PUT command (skip VoIP/packet loss) | `false` |
 | `-log` | Log level (info, debug, trace) | - |
 

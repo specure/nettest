@@ -22,11 +22,11 @@ pub fn read_config_file() -> Result<FileConfig, anyhow::Error> {
     let config_content = if config_path.exists() {
         match fs::read_to_string(&config_path) {
             Ok(content) => {
-                println!("Reading config from: {:?}", config_path);
+                eprintln!("Reading config from: {:?}", config_path);
                 content
             }
             Err(e) => {
-                println!(
+                eprintln!(
                     "Warning: Could not read config file {:?}: {}",
                     config_path, e
                 );
@@ -37,19 +37,19 @@ pub fn read_config_file() -> Result<FileConfig, anyhow::Error> {
         if let Some(parent) = config_path.parent() {
             if !parent.exists() {
                 if let Err(e) = fs::create_dir_all(parent) {
-                    println!("Warning: Could not create config directory: {}", e);
+                    eprintln!("Warning: Could not create config directory: {}", e);
                 }
             }
         }
         let default_config = include_str!("../../nettest.conf");
 
         if let Err(e) = fs::write(&config_path, default_config) {
-            println!(
+            eprintln!(
                 "Warning: Could not create config file {:?}: {}",
                 config_path, e
             );
         } else {
-            println!("Created default config file at: {:?}", config_path);
+            eprintln!("Created default config file at: {:?}", config_path);
         }
 
         default_config.to_string()
@@ -126,7 +126,7 @@ fn parse_config_content(content: &str) -> Result<FileConfig, anyhow::Error> {
                     } else if value == "trace" {
                         config.logger = LevelFilter::Trace;
                     } else {
-                        println!("Unknown logger level: {}, using default", value);
+                        eprintln!("Unknown logger level: {}, using default", value);
                         return Err(anyhow::anyhow!("Unknown logger level: {}", value));
                     }
                 }
@@ -168,12 +168,12 @@ fn parse_config_content(content: &str) -> Result<FileConfig, anyhow::Error> {
                     if let Ok(size) = value.parse::<u32>() {
                         config.max_chunk_size = Some(size);
                     } else {
-                        println!("Warning: Invalid max_chunk_size value: {}, using default", value);
+                        eprintln!("Warning: Invalid max_chunk_size value: {}, using default", value);
                     }
                 }
                 _ => {
                     //return error
-                    println!("Warning: Unknown config key: {}", key);
+                    eprintln!("Warning: Unknown config key: {}", key);
                     return Err(anyhow::anyhow!("Unknown config key: {}", key));
                 }
             }
