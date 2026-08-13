@@ -39,6 +39,9 @@ pub fn handle_greeting_send_connection_type(
             let n = state
                 .stream
                 .write(&state.write_buffer[state.write_pos..state.write_pos + greeting.len()])?;
+            if n == 0 {
+                return Ok(0);
+            }
             state.write_pos += n;
             if state.write_pos == state.stream.get_greeting().len() {
                 state
@@ -70,6 +73,9 @@ pub fn handle_greeting_send_token(
         let n = state
             .stream
             .write(&state.write_buffer[state.write_pos..state.write_pos + s.len()])?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.write_pos += n;
         if state.write_pos == s.len() {
             state.write_pos = 0;
@@ -96,6 +102,9 @@ pub fn handle_greeting_receive_greeting(
         let n = state
             .stream
             .read(&mut state.read_buffer[state.read_pos..])?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.read_pos += n;
         let end = b"ACCEPT TOKEN QUIT\n";
         if n > 0 && state.read_pos >= end.len() && state.read_buffer[state.read_pos - end.len()..state.read_pos] == *end {
@@ -118,6 +127,9 @@ pub fn handle_greeting_receive_response(
         let n = state
             .stream
             .read(&mut state.read_buffer[state.read_pos..])?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.read_pos += n;
         let end = b"ACCEPT GETCHUNKS GETTIME PUT PUTNORESULT PING QUIT\n";
         if n > 0

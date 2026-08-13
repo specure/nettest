@@ -106,8 +106,15 @@ impl Read for WebSocketRustlsServerStream {
                         return Ok(buf.len());
                     }
                 }
+                // Ok(0) is EOF; only a Close actually ends the stream. Ping/Pong
+                // means the connection is alive with nothing to hand over yet.
                 Ok(Message::Close(_)) => return Ok(0),
-                Ok(_) => return Ok(0),
+                Ok(_) => {
+                    if current_pos > 0 {
+                        return Ok(current_pos);
+                    }
+                    return Err(io::Error::new(io::ErrorKind::WouldBlock, "WouldBlock"));
+                }
                 Err(e) => match e {
                     tungstenite::Error::Io(io_err)
                         if io_err.kind() == std::io::ErrorKind::WouldBlock =>
