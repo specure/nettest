@@ -19,6 +19,9 @@ pub fn handle_get_time_send_ok(
         let n = state
             .stream
             .write(&state.write_buffer[state.write_pos..b"OK\n".len()])?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.write_pos += n;
         if state.write_pos == b"OK\n".len() {
             state.write_pos = 0;
@@ -52,6 +55,9 @@ pub fn handle_get_time_send_command(
         let n = state
             .stream
             .write(&state.write_buffer[state.write_pos..command.len()])?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.write_pos += n;
         if state.write_pos == command.len() {
             state.write_pos = 0;
@@ -76,6 +82,11 @@ pub fn handle_get_time_receive_chunk(
         let n = state
             .stream
             .read(&mut state.chunk_buffer[state.read_pos..])?;
+        if n == 0 {
+            // EOF: the peer is gone, so the chunk can never complete. Without
+            // this the loop would spin on read() forever, burning a core.
+            return Ok(0);
+        }
         state.read_pos += n;
         if state.read_pos == state.chunk_size {
             state.bytes_received += state.chunk_size as u64;
@@ -104,6 +115,9 @@ pub fn handle_get_time_receive_time(
         let n = state
             .stream
             .read(&mut state.read_buffer[state.read_pos..])?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.read_pos += n;
         let buffer_str = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
 

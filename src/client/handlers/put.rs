@@ -23,6 +23,9 @@ pub fn handle_put_send_command(
         let n = state
             .stream
             .write(&state.write_buffer[state.write_pos..command.len()])?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.write_pos += n;
         if state.write_pos == command.len() {
             state.phase = TestPhase::PutReceiveOk;
@@ -45,6 +48,9 @@ pub fn handle_put_receive_ok(
         let n = state
             .stream
             .read(&mut state.read_buffer[state.read_pos..state.read_pos + OK_COMMAND.len()])?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.read_pos += n;
         if state.read_pos >= OK_COMMAND.len() {
             let received = &state.read_buffer[..state.read_pos];
@@ -176,7 +182,10 @@ pub fn handle_put_receive_time_bytes(
         };
         
         debug!("read {} bytes", n);
-        
+
+        if n == 0 {
+            return Ok(0);
+        }
         state.read_pos += n;
 
         debug!("read_pos: {}", state.read_pos);
@@ -232,6 +241,9 @@ pub fn handle_put_send_last_chunk(
     loop {
         // Write from current position
         let n = state.stream.write(&buffer[state.write_pos..])?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.bytes_sent += n as u64;
         state.write_pos += n;
         if state.write_pos == state.chunk_size {
@@ -256,6 +268,9 @@ pub fn handle_put_receive_final_time(
         let n = state
             .stream
             .read(&mut state.read_buffer[state.read_pos..])?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.read_pos += n;
 
         let buffer_str = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);

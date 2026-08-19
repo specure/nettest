@@ -17,6 +17,9 @@ pub fn handle_ping_send_ok(poll: &Poll, state: &mut MeasurementState) -> Result<
     }
     loop {
         let n = state.stream.write(&state.write_buffer[state.write_pos..b"OK\n".len()])?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.write_pos += n;
         if state.write_pos == b"OK\n".len() {
             state.write_pos = 0;
@@ -42,6 +45,9 @@ pub fn handle_ping_send_ping(
         let n = state.stream.write(
             &state.write_buffer[state.write_pos..b"PING\n".len()],
         )?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.write_pos += n;
         if state.write_pos == b"PING\n".len() {
             if state.phase_start_time.is_none() {
@@ -67,6 +73,9 @@ pub fn handle_ping_receive_pong(
         let n = state
             .stream
             .read(&mut state.read_buffer[state.read_pos..PONG_RESPONSE.len()])?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.read_pos += n;
         if state.read_pos == PONG_RESPONSE.len() {
             state.read_pos = 0;
@@ -88,6 +97,9 @@ pub fn handle_ping_receive_time(
         let n = state
             .stream
             .read(&mut state.read_buffer[state.read_pos..])?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.read_pos += n;
         if state.read_pos >= ACCEPT_GETCHUNKS_STRING.len()
             && state.read_buffer[state.read_pos - ACCEPT_GETCHUNKS_STRING.len()..state.read_pos]
