@@ -3,7 +3,6 @@ use std::{io, time::Instant};
 use hmac::{Hmac, Mac};
 use log::debug;
 use mio::{Interest, Poll};
-use openssl::rand;
 use sha2::Sha256;
 use base64;
 
@@ -93,6 +92,6 @@ fn sign_message(message: &str, secret_key: &str) -> Result<String, std::io::Erro
 //TODO: or get from file
 pub fn generate_secret_key() -> String {
     let mut secret_key = [0u8; 32];
-    rand::rand_bytes(&mut secret_key).unwrap();
+    getrandom::fill(&mut secret_key).expect("failed to read from the OS CSPRNG");
     base64::Engine::encode(&base64::engine::general_purpose::STANDARD, secret_key)
 }
