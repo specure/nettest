@@ -8,8 +8,7 @@ use std::path::Path;
 use crate::client::constants::RMBT_UPGRADE_REQUEST;
 use crate::stream::{
     websocket::WebSocketClient,
-    websocket_tls_openssl::WebSocketTlsClient,
-    openssl::OpenSslStream,
+    websocket_tls::WebSocketTlsClient,
     rustls::RustlsStream,
     rustls_server::RustlsServerStream,
     websocket_rustls_server::WebSocketRustlsServerStream,
@@ -21,7 +20,6 @@ use crate::utils::websocket::Handshake;
 pub enum Stream {
     Tcp(TcpStream),
     WebSocket(WebSocketClient),
-    OpenSsl(OpenSslStream),
     Rustls(RustlsStream),
     RustlsServer(RustlsServerStream),
     WebSocketTls(WebSocketTlsClient),
@@ -45,7 +43,6 @@ impl Stream {
     pub fn return_type(&self) -> &str {
         match self {
             Stream::Tcp(_) => "Tcp",
-            Stream::OpenSsl(_) => "OpenSsl",
             Stream::WebSocket(_) => "WebSocket",
             Stream::Rustls(_) => "Rustls",
             Stream::WebSocketTls(_) => "WebSocketTls",
@@ -98,7 +95,6 @@ impl Stream {
     pub fn close(&mut self) -> Result<()> {
         match self {
             Stream::Tcp(_) => Ok(()),
-            Stream::OpenSsl(stream) => stream.close(),
             Stream::WebSocket(stream) => stream.close(),
             Stream::Rustls(_) => Ok(()),
             Stream::WebSocketTls(stream) => stream.close(),
@@ -110,7 +106,6 @@ impl Stream {
     pub fn get_greeting(&mut self) -> Vec<u8> {
         match self {
             Stream::Tcp(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
-            Stream::OpenSsl(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
             Stream::WebSocket(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
             Stream::Rustls(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
             Stream::WebSocketTls(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
@@ -118,19 +113,6 @@ impl Stream {
             Stream::WebSocketRustlsServer(_) => RMBT_UPGRADE_REQUEST.as_bytes().to_vec(),
         }
     }
-
-    pub fn new_openssl(addr: SocketAddr) -> Result<Self> {
-        let stream1 = TcpStream::connect(addr)?;
-        if let Err(_) = stream1.set_nodelay(true) {
-            std::thread::sleep(std::time::Duration::from_millis(1000));
-            if let Err(e) = stream1.set_nodelay(true) {
-                debug!("Failed to set TCP_NODELAY: {}", e);
-            }
-        }
-        let stream = OpenSslStream::new(stream1, "localhost")?;
-        Ok(Self::OpenSsl(stream))
-    }
-    
 
     pub fn new_websocket_tls(addr: SocketAddr) -> Result<Self> {
         let stream1 = TcpStream::connect(addr)?;
@@ -147,7 +129,6 @@ impl Stream {
     pub fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             Stream::Tcp(stream) => stream.read(buf),
-            Stream::OpenSsl(stream) => stream.read(buf),
             Stream::WebSocket(stream) => stream.read(buf),
             Stream::Rustls(stream) => stream.read(buf),
             Stream::WebSocketTls(stream) => stream.read(buf),
@@ -159,7 +140,6 @@ impl Stream {
     pub fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
             Stream::Tcp(stream) => stream.write(buf),
-            Stream::OpenSsl(stream) => stream.write(buf),
             Stream::WebSocket(stream) => stream.write(buf),
             Stream::Rustls(stream) => stream.write(buf),
             Stream::WebSocketTls(stream) => stream.write(buf),
@@ -172,9 +152,6 @@ impl Stream {
         match self {
             Stream::Tcp(stream) => {
                 poll.registry().register(stream, token, interest)?;
-            }
-            Stream::OpenSsl(stream) => {
-                stream.register(poll, token, interest)?;
             }
             Stream::WebSocket(stream) => {
                stream.register(poll, token, interest)?;
@@ -198,7 +175,6 @@ impl Stream {
     pub fn flush(&mut self) -> io::Result<()> {
         match self {
             Stream::Tcp(stream) => stream.flush(),
-            Stream::OpenSsl(stream) => stream.flush(),
             Stream::WebSocket(stream) => stream.flush(),
             Stream::Rustls(stream) => stream.flush(),
             Stream::WebSocketTls(stream) => stream.flush(),
@@ -211,10 +187,6 @@ impl Stream {
         match self {
             Stream::Tcp(stream) => {
                 poll.registry().reregister(stream, token, interest)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-            }
-            Stream::OpenSsl(stream) => {
-                stream.reregister(poll, token, interest)
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
             }
             Stream::WebSocket(stream) => {

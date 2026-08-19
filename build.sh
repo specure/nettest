@@ -8,8 +8,6 @@ declare -A TARGETS=(
 )
 
 # Environment variables for static linking
-export OPENSSL_STATIC=1
-export OPENSSL_VENDORED=1
 export RUSTFLAGS="-C target-feature=+crt-static"
 
 # Fontconfig environment variables - use system libraries

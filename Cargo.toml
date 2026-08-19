@@ -12,7 +12,7 @@ name = "nettest"
 path = "src/main.rs"
 
 [dependencies]
-openssl = { version = "0.10.72", features = ["vendored"]}
+getrandom = "0.4"
 tokio = { version = "1.36.0", features = ["full"] }
 env_logger = "0.11.2"
 log = "0.4.20"
@@ -39,7 +39,7 @@ quanta = "0.11"
 plotters = "0.3.7"
 plotters-backend = "0.3.7"
 textplots = "0.8.7"
-reqwest = { version = "0.11.16", features = ["json"] }
+reqwest = { version = "0.12.9", default-features = false, features = ["json", "rustls-tls"] }
 serde_json = "1.0"
 anyhow = "1.0"
 semver = "1.0"
