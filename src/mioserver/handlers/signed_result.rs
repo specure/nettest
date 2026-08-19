@@ -95,3 +95,35 @@ pub fn generate_secret_key() -> String {
     getrandom::fill(&mut secret_key).expect("failed to read from the OS CSPRNG");
     base64::Engine::encode(&base64::engine::general_purpose::STANDARD, secret_key)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn secret_key_is_32_bytes_of_valid_base64() {
+        let key = generate_secret_key();
+        let decoded =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &key)
+                .expect("secret key must be valid base64");
+        assert_eq!(decoded.len(), 32, "HMAC key must be 32 bytes");
+    }
+
+    #[test]
+    fn secret_keys_are_unique() {
+        // A repeated key would let one client forge another's signed result.
+        let keys: HashSet<String> = (0..1000).map(|_| generate_secret_key()).collect();
+        assert_eq!(keys.len(), 1000, "generate_secret_key produced a duplicate");
+    }
+
+    #[test]
+    fn secret_key_is_usable_for_signing() {
+        let key = generate_secret_key();
+        let signature = sign_message("GETTIME:(1 2); CLIENT_IP:127.0.0.1;", &key)
+            .expect("signing with a generated key must succeed");
+        assert!(!signature.is_empty());
+        // HMAC-SHA256 is 32 bytes, base64-encoded as 44 chars.
+        assert_eq!(signature.len(), 44);
+    }
+}
