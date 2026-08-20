@@ -14,8 +14,10 @@ path = "src/main.rs"
 [dependencies]
 getrandom = "0.4"
 tokio = { version = "1.36.0", features = ["full"] }
-env_logger = "0.11.2"
-log = "0.4.20"
+# "std" is required by log::set_boxed_logger in src/logger/mod.rs. It used to
+# be enabled implicitly by env_logger; declare it now that env_logger is a
+# dev-dependency, so a plain `cargo build` still compiles.
+log = { version = "0.4.20", features = ["std"] }
 serde = { version = "1.0.197", features = ["derive"] }
 sha1 = "0.10.6"
 sha2 = "0.10.8"
@@ -25,8 +27,6 @@ regex = "1.10.3"
 libc = "0.2.153"
 fastrand = "2.0.1"
 uuid = { version = "1.7.0", features = ["v4"] }
-futures = "0.3"
-futures-util = "0.3.30"
 tokio-tungstenite = { version = "0.24.0", features = ["rustls"] }
 tungstenite = { version = "0.24.0", features = ["rustls"] }
 lazy_static = "1.4.0"
@@ -35,20 +35,13 @@ bytes = "1.11.1"
 tokio-rustls = { version = "0.26.0", default-features = false, features = ["ring", "tls12", "logging"] }
 rustls = { version = "0.23.0", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 rustls-pemfile = "2.0.0"
-quanta = "0.11"
-plotters = "0.3.7"
-plotters-backend = "0.3.7"
 textplots = "0.8.7"
 reqwest = { version = "0.12.9", default-features = false, features = ["json", "rustls-tls"] }
 serde_json = "1.0"
 anyhow = "1.0"
 semver = "1.0"
 mio = { version = "1", features = ["net"] }
-ringbuf = "0.4.8"
-rgb = "0.8.50"
 prettytable = "0.10.0"
-num_cpus = "1.13"
-rayon = "1.8"
 mdns-sd = "0.17.1"
 include_dir = "0.7"
 
@@ -58,4 +51,6 @@ nix = "0.26"
 [dev-dependencies]
 tokio-native-tls = "0.3"
 native-tls = "0.2"
+env_logger = "0.11.2"
+futures-util = "0.3.30"
 
