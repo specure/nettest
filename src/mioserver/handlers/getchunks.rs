@@ -3,7 +3,7 @@ use mio::{Interest, Poll};
 use std::{io, time::Instant};
 
 use crate::{
-    client::globals::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE},
+    client::globals::{get_chunk, CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE},
     mioserver::{server::TestState, ServerTestPhase},
 };
 
@@ -37,7 +37,18 @@ pub fn handle_get_chunks_send_chunks(poll: &Poll, state: &mut TestState) -> io::
         state.write_pos = 0;
         state.clock = Some(Instant::now());
     }
-    let chunk = CHUNK_STORAGE.get(&(chunk_size as u64)).unwrap();
+    // CHUNK_STORAGE only holds power-of-two sizes. A client may ask for any
+    // size between MIN_CHUNK_SIZE and MAX_CHUNK_SIZE, and unwrapping here
+    // panicked the worker thread on such a request. Fall back to generating
+    // the chunk, as handle_get_time_send_chunk already does.
+    let fallback;
+    let chunk = match CHUNK_STORAGE.get(&(chunk_size as u64)) {
+        Some(chunk) => chunk,
+        None => {
+            fallback = get_chunk(chunk_size as u64, false);
+            &fallback
+        }
+    };
     let is_last = state.processed_chunks == chunk_num - 1;
     if is_last {
         state.measurement_state = ServerTestPhase::GetChunksSendChunksLast;
@@ -73,7 +84,14 @@ pub fn handle_get_chunks_send_chunks(poll: &Poll, state: &mut TestState) -> io::
 pub fn handle_get_chunks_send_chunks_last(poll: &Poll, state: &mut TestState) -> io::Result<usize> {
     debug!("handle_get_chunks_send_chunks_last token {:?}", state.token);
     let chunk_size = state.chunk_size;
-    let chunk = CHUNK_TERMINATION_STORAGE.get(&(chunk_size as u64)).unwrap();
+    let fallback;
+    let chunk = match CHUNK_TERMINATION_STORAGE.get(&(chunk_size as u64)) {
+        Some(chunk) => chunk,
+        None => {
+            fallback = get_chunk(chunk_size as u64, true);
+            &fallback
+        }
+    };
     loop {
         trace!("Sending last chunk: {}", state.processed_chunks);
 
