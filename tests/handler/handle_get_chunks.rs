@@ -11,7 +11,7 @@ mod test_utils;
 use tokio::runtime::Runtime;
 use log::{info, debug};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use crate::test_utils::TestServer;
+use crate::test_utils::{TestServer, read_line};
 use std::time::Duration;
 use env_logger;
 use tokio::time::sleep;
@@ -39,6 +39,11 @@ fn test_handle_get_chunks_r() {
         let server = TestServer::new(None, None).unwrap();
         
         let (mut stream, initial_chunk_size) = server.connect_rmbtd().await.expect("Failed to connect to server");
+
+        // Consume the ACCEPT line the server sends after the handshake, so the
+        // first chunk read below starts on a chunk boundary.
+        let accept = read_line(&mut stream).await.expect("Failed to read initial ACCEPT");
+        assert!(accept.contains("ACCEPT"), "Server should send initial ACCEPT message");
         
         let mut chunks = 1;
         let mut chunk_size = initial_chunk_size;
@@ -64,8 +69,11 @@ fn test_handle_get_chunks_r() {
             
             while !found_terminator {
                 let mut buf = vec![0u8; chunk_size as usize];
-                
-                match stream.read(&mut buf).await {
+
+                // read_exact, not read: chunk boundaries do not line up with
+                // whatever the kernel happens to have buffered, so a plain
+                // read gives a last byte that is not the chunk terminator.
+                match stream.read_exact(&mut buf).await {
                     Ok(n) => {
                         if n == 0 {
                             panic!("Connection closed before receiving full chunk");
@@ -97,18 +105,23 @@ fn test_handle_get_chunks_r() {
             assert!(found_terminator, "Did not find terminator byte");
             
             // Send OK only after receiving all chunks
-            stream.write_all(b"OK").await.expect("Failed to send OK");
+            // The trailing newline matters: without it the server never sees a
+            // complete command and drops the connection.
+            stream.write_all(b"OK\n").await.expect("Failed to send OK");
             stream.flush().await.expect("Failed to flush OK");
             
-            let mut response = [0u8; 1024];
-            let n = stream.read(&mut response).await.expect("Failed to read TIME response");
-            let time_response = String::from_utf8_lossy(&response[..n]);
+            let time_response = read_line(&mut stream).await.expect("Failed to read TIME response");
             debug!("Received TIME response: {}", time_response);
             assert!(time_response.contains("TIME"), "Server should respond with TIME");
             
             let time_str = time_response.trim().split_whitespace().nth(1).unwrap();
             let time_ns = time_str.parse::<u64>().expect("Failed to parse time");
             assert!(time_ns > 0, "Time should be positive");
+
+            // The server follows TIME with an ACCEPT line. Consume it so the
+            // next iteration's chunk reads start on a chunk boundary.
+            let accept = read_line(&mut stream).await.expect("Failed to read ACCEPT after TIME");
+            assert!(accept.contains("ACCEPT"), "Server should send ACCEPT after TIME");
             
             // Calculate speed using server's time
             let bytes_per_second = (total_bytes_read as f64 * 1_000_000_000.0 / time_ns as f64) as u64;
@@ -214,7 +227,10 @@ async fn test_handle_get_chunks_ws() {
         assert!(found_terminator, "Did not find terminator byte");
         
         // Send OK only after receiving all chunks
-        write.send(Message::Text("OK".to_string())).await.expect("Failed to send OK");
+        // The trailing newline is required: the server's command parser reads
+        // newline-terminated lines, so a bare "OK" is never dispatched and the
+        // connection is eventually reset.
+        write.send(Message::Text("OK\n".to_string())).await.expect("Failed to send OK");
         
         let time_response = read.next().await.expect("Failed to read TIME response").expect("Failed to read TIME response");
         let time_text = time_response.to_text().expect("TIME response is not text");

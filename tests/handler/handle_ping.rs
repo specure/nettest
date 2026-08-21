@@ -11,7 +11,7 @@ mod test_utils;
 use tokio::runtime::Runtime;
 use log::{info, debug, trace};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use crate::test_utils::{TestServer, create_optimized_runtime};
+use crate::test_utils::{TestServer, create_optimized_runtime, read_line};
 use std::time::Duration;
 use env_logger;
 use std::collections::VecDeque;
@@ -44,9 +44,7 @@ fn test_handle_ping_rmbt() {
         info!("Connected to server");
         
         // Read initial ACCEPT message after token validation
-        let mut initial_accept = [0u8; 1024];
-        let n = stream.read(&mut initial_accept).await.expect("Failed to read initial ACCEPT");
-        let accept_str = String::from_utf8_lossy(&initial_accept[..n]);
+        let accept_str = read_line(&mut stream).await.expect("Failed to read initial ACCEPT");
         info!("Initial ACCEPT message: {}", accept_str);
         assert!(accept_str.contains("ACCEPT"), "Server should send initial ACCEPT message");
         
@@ -67,10 +65,7 @@ fn test_handle_ping_rmbt() {
             trace!("PING command sent");
             
             // Read PONG response
-            let mut response = [0u8; 1024];
-            let n = stream.read(&mut response).await.expect("Failed to read PONG response");
-            let pong_response = String::from_utf8_lossy(&response[..n]);
-            debug!("Received PONG response (raw bytes): {:?}", &response[..n]);
+            let pong_response = read_line(&mut stream).await.expect("Failed to read PONG response");
             debug!("Received PONG response: {}", pong_response);
             
             // Send OK immediately after receiving PONG
@@ -88,10 +83,7 @@ fn test_handle_ping_rmbt() {
             trace!("PONG response received");
             
             // Read TIME response
-            let mut time_response = [0u8; 1024];
-            let n = stream.read(&mut time_response).await.expect("Failed to read TIME response");
-            let time_str = String::from_utf8_lossy(&time_response[..n]);
-            debug!("Received TIME response (raw bytes): {:?}", &time_response[..n]);
+            let time_str = read_line(&mut stream).await.expect("Failed to read TIME response");
             debug!("Received TIME response: {}", time_str);
             trace!("TIME response received");
             
@@ -108,9 +100,7 @@ fn test_handle_ping_rmbt() {
             trace!("Time parsed: {} ns", time_ns);
             
             // Read ACCEPT_GETCHUNKS response
-            let mut accept_response = [0u8; 1024];
-            let n = stream.read(&mut accept_response).await.expect("Failed to read ACCEPT_GETCHUNKS response");
-            let accept_str = String::from_utf8_lossy(&accept_response[..n]);
+            let accept_str = read_line(&mut stream).await.expect("Failed to read ACCEPT_GETCHUNKS response");
             debug!("Received ACCEPT_GETCHUNKS response: {}", accept_str);
             assert!(accept_str.contains("ACCEPT"), "Server should send ACCEPT_GETCHUNKS message");
             
@@ -164,9 +154,7 @@ fn test_handle_ping_ws() {
         info!("Connected to server via WebSocket");
         
         // Read initial ACCEPT message after token validation
-        let mut initial_accept = [0u8; 1024];
-        let n = stream.read(&mut initial_accept).await.expect("Failed to read initial ACCEPT");
-        let accept_str = String::from_utf8_lossy(&initial_accept[..n]);
+        let accept_str = read_line(&mut stream).await.expect("Failed to read initial ACCEPT");
         info!("Initial ACCEPT message: {}", accept_str);
         assert!(accept_str.contains("ACCEPT"), "Server should send initial ACCEPT message");
         
@@ -187,10 +175,7 @@ fn test_handle_ping_ws() {
             trace!("WebSocket PING command sent");
             
             // Read PONG response
-            let mut response = [0u8; 1024];
-            let n = stream.read(&mut response).await.expect("Failed to read PONG response");
-            let pong_response = String::from_utf8_lossy(&response[..n]);
-            debug!("Received WebSocket PONG response (raw bytes): {:?}", &response[..n]);
+            let pong_response = read_line(&mut stream).await.expect("Failed to read PONG response");
             debug!("Received WebSocket PONG response: {}", pong_response);
             
             // Send OK immediately after receiving PONG
@@ -208,10 +193,7 @@ fn test_handle_ping_ws() {
             trace!("WebSocket PONG response received");
             
             // Read TIME response
-            let mut time_response = [0u8; 1024];
-            let n = stream.read(&mut time_response).await.expect("Failed to read TIME response");
-            let time_str = String::from_utf8_lossy(&time_response[..n]);
-            debug!("Received WebSocket TIME response (raw bytes): {:?}", &time_response[..n]);
+            let time_str = read_line(&mut stream).await.expect("Failed to read TIME response");
             debug!("Received WebSocket TIME response: {}", time_str);
             trace!("WebSocket TIME response received");
             
@@ -228,9 +210,7 @@ fn test_handle_ping_ws() {
             trace!("WebSocket time parsed: {} ns", time_ns);
             
             // Read ACCEPT_GETCHUNKS response
-            let mut accept_response = [0u8; 1024];
-            let n = stream.read(&mut accept_response).await.expect("Failed to read ACCEPT_GETCHUNKS response");
-            let accept_str = String::from_utf8_lossy(&accept_response[..n]);
+            let accept_str = read_line(&mut stream).await.expect("Failed to read ACCEPT_GETCHUNKS response");
             debug!("Received WebSocket ACCEPT_GETCHUNKS response: {}", accept_str);
             assert!(accept_str.contains("ACCEPT"), "Server should send ACCEPT_GETCHUNKS message");
             

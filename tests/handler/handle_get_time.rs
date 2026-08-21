@@ -11,7 +11,7 @@ mod test_utils;
 use tokio::runtime::Runtime;
 use log::{info, debug};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use crate::test_utils::TestServer;
+use crate::test_utils::{TestServer, read_line};
 use std::time::Duration;
 use env_logger;
 use tokio::time::timeout;
@@ -40,9 +40,7 @@ fn test_handle_get_time_rmbt() {
         let (mut stream, initial_chunk_size) = server.connect_rmbtd().await.expect("Failed to connect to server");
 
         // Read initial ACCEPT message after token validation
-        let mut initial_accept = [0u8; 1024];
-        let n = stream.read(&mut initial_accept).await.expect("Failed to read initial ACCEPT");
-        let accept_str = String::from_utf8_lossy(&initial_accept[..n]);
+        let accept_str = read_line(&mut stream).await.expect("Failed to read initial ACCEPT");
         assert!(accept_str.contains("ACCEPT"), "Server should send initial ACCEPT message");
 
         let mut chunk_size = initial_chunk_size;
@@ -59,7 +57,10 @@ fn test_handle_get_time_rmbt() {
         let mut received_termination = false;
 
         while !received_termination {
-            match timeout(IO_TIMEOUT, stream.read(&mut buffer)).await {
+            // Read a whole chunk. A plain read() returns whatever the kernel
+            // has buffered, which is rarely a chunk boundary, so the last byte
+            // of the read is not the chunk's terminator byte.
+            match timeout(IO_TIMEOUT, stream.read_exact(&mut buffer)).await {
                 Ok(Ok(n)) => {
                     if n == 0 {
                         break;
@@ -75,9 +76,7 @@ fn test_handle_get_time_rmbt() {
                         stream.flush().await.expect("Failed to flush OK response");
 
                         // Read TIME response
-                        let mut time_response = [0u8; 1024];
-                        let n = stream.read(&mut time_response).await.expect("Failed to read TIME response");
-                        let time_str = String::from_utf8_lossy(&time_response[..n]);
+                        let time_str = read_line(&mut stream).await.expect("Failed to read TIME response");
 
                         // Verify TIME response format
                         let time_parts: Vec<&str> = time_str.trim().split_whitespace().collect();
@@ -117,15 +116,11 @@ fn test_handle_get_time_rmbt() {
         stream.write_all(b"QUIT\n").await.expect("Failed to send QUIT");
 
         // Read ACCEPT response first
-        let mut response = [0u8; 1024];
-        let n = stream.read(&mut response).await.expect("Failed to read ACCEPT response");
-        let accept_response = String::from_utf8_lossy(&response[..n]);
+        let accept_response = read_line(&mut stream).await.expect("Failed to read ACCEPT response");
         assert!(accept_response.contains("ACCEPT"), "Server should respond with ACCEPT after QUIT");
 
         // Then read BYE response
-        let mut response = [0u8; 1024];
-        let n = stream.read(&mut response).await.expect("Failed to read BYE response");
-        let bye_response = String::from_utf8_lossy(&response[..n]);
+        let bye_response = read_line(&mut stream).await.expect("Failed to read BYE response");
         assert!(bye_response.contains("BYE"), "Server should respond with BYE");
 
         info!("GETTIME test completed successfully");

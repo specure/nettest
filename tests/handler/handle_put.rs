@@ -11,7 +11,7 @@ mod test_utils;
 use tokio::{runtime::Runtime};
 use log::{info, debug};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use crate::test_utils::TestServer;
+use crate::test_utils::{TestServer, read_line};
 use fastrand::Rng;
 use std::time::{Duration, Instant};
 use tokio_tungstenite::tungstenite::Message;
@@ -89,24 +89,26 @@ fn test_handle_put_rmbt() {
                 .expect("Failed to send PUT command");
             info!("Sent PUT command with chunk_size={}", current_chunk_size);
 
-            // Read OK response
-            let mut response = [0u8; 1024];
-            let n = timeout(IO_TIMEOUT, stream.read(&mut response))
-                .await
-                .expect("OK response timeout")
-                .expect("Failed to read OK response");
-            let response_str = String::from_utf8_lossy(&response[..n]);
-            info!("Received response: {}", response_str.trim());
-
-            // Check if we got OK or TIME response
-            if response_str.contains("OK") {
-                info!("Got OK response");
-            } else if response_str.contains("TIME") {
-                info!("Got TIME response");
-                // No need to wait for OK after TIME - server goes back to command loop
-            } else {
-                panic!("Server should respond with either OK or TIME");
+            // Wait for the OK that opens the upload phase.
+            //
+            // The previous version read once into a buffer and accepted a TIME
+            // line as equivalent to OK. TIME means the *previous* phase ended
+            // and the server is back in the command loop, so the chunks sent
+            // afterwards were parsed as commands and the server closed the
+            // connection. Read line-wise and skip anything that is not OK.
+            let mut got_ok = false;
+            for _ in 0..32 {
+                let line = timeout(IO_TIMEOUT, read_line(&mut stream))
+                    .await
+                    .expect("OK response timeout")
+                    .expect("Failed to read OK response");
+                debug!("Received line: {}", line);
+                if line.starts_with("OK") {
+                    got_ok = true;
+                    break;
+                }
             }
+            assert!(got_ok, "Server should respond with OK to PUT");
 
             // Send data chunks
             info!("Sending {} chunks of size {}", current_chunks, current_chunk_size);
@@ -130,30 +132,22 @@ fn test_handle_put_rmbt() {
 
                 // After sending the last chunk, wait for TIME response
                 if is_last_chunk {
-                    let mut attempts = 0;
-                    let max_attempts = 5;
                     let mut got_time = false;
                     let mut time_response = String::new();
 
-                    while attempts < max_attempts && !got_time {
-                        match timeout(IO_TIMEOUT, stream.read(&mut response)).await {
-                            Ok(Ok(n)) => {
-                                let response_str = String::from_utf8_lossy(&response[..n]);
-                                info!("Received response: {}", response_str.trim());
-                                
-                                // Split response into lines to handle multiple responses
-                                for line in response_str.lines() {
-                                    if line.starts_with("TIME") {
-                                        time_response = line.to_string();
-                                        info!("Found TIME response: {}", time_response);
-                                        got_time = true;
-                                    }
-                                }
-                            }
-                            _ => {
-                                attempts += 1;
-                                // sleep(Duration::from_millis(100)).await;
-                            }
+                    // The server emits an intermediate TIME line per chunk, so
+                    // read until the final one rather than assuming it arrives
+                    // in the first read.
+                    for _ in 0..64 {
+                        let line = timeout(IO_TIMEOUT, read_line(&mut stream))
+                            .await
+                            .expect("TIME response timeout")
+                            .expect("Failed to read TIME response");
+                        debug!("Received line: {}", line);
+                        if line.starts_with("TIME") {
+                            time_response = line;
+                            got_time = true;
+                            break;
                         }
                     }
 

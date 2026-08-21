@@ -4,7 +4,7 @@ mod test_utils;
 use tokio::runtime::Runtime;
 use log::{info, debug};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use crate::test_utils::TestServer;
+use crate::test_utils::{TestServer, read_line};
 use fastrand::Rng;
 use std::time::{Duration, Instant};
 use env_logger;
@@ -61,12 +61,10 @@ fn test_handle_put_no_result_rmbt() {
 
         while start_time.elapsed().as_secs() < TEST_DURATION {
             // Read ACCEPT response with timeout
-            let mut accept_response = [0u8; 1024];
-            let n = timeout(IO_TIMEOUT, stream.read(&mut accept_response))
+            let accept_str = timeout(IO_TIMEOUT, read_line(&mut stream))
                 .await
                 .expect("ACCEPT response timeout")
                 .expect("Failed to read ACCEPT response");
-            let accept_str = String::from_utf8_lossy(&accept_response[..n]);
             info!("Received ACCEPT response");
             assert!(accept_str.contains("ACCEPT"), "Server should respond with ACCEPT");
 
@@ -91,12 +89,10 @@ fn test_handle_put_no_result_rmbt() {
             info!("Sent PUTNORESULT command with chunk_size={}", current_chunk_size);
 
             // Read OK response with timeout
-            let mut response = [0u8; 1024];
-            let n = timeout(IO_TIMEOUT, stream.read(&mut response))
+            let ok_response = timeout(IO_TIMEOUT, read_line(&mut stream))
                 .await
                 .expect("OK response timeout")
                 .expect("Failed to read OK response");
-            let ok_response = String::from_utf8_lossy(&response[..n]);
             info!("Received OK response");
             assert!(ok_response.contains("OK"), "Server should respond with OK");
 
@@ -116,12 +112,10 @@ fn test_handle_put_no_result_rmbt() {
             }
 
             // Read TIME response
-            let mut time_response = [0u8; 1024];
-            let n = timeout(IO_TIMEOUT, stream.read(&mut time_response))
+            let time_str = timeout(IO_TIMEOUT, read_line(&mut stream))
                 .await
                 .expect("TIME response timeout")
                 .expect("Failed to read TIME response");
-            let time_str = String::from_utf8_lossy(&time_response[..n]);
             info!("Received TIME response: {}", time_str.trim());
             assert!(time_str.contains("TIME"), "Server should respond with TIME");
 
@@ -137,22 +131,18 @@ fn test_handle_put_no_result_rmbt() {
             .expect("Failed to send QUIT");
 
         // Read ACCEPT response first
-        let mut response = [0u8; 1024];
-        let n = timeout(IO_TIMEOUT, stream.read(&mut response))
+        let accept_response = timeout(IO_TIMEOUT, read_line(&mut stream))
             .await
             .expect("Final ACCEPT timeout")
             .expect("Failed to read final ACCEPT response");
-        let accept_response = String::from_utf8_lossy(&response[..n]);
         info!("Received final ACCEPT response");
         assert!(accept_response.contains("ACCEPT"), "Server should respond with ACCEPT after QUIT");
 
         // Then read BYE response
-        let mut response = [0u8; 1024];
-        let n = timeout(IO_TIMEOUT, stream.read(&mut response))
+        let bye_response = timeout(IO_TIMEOUT, read_line(&mut stream))
             .await
             .expect("BYE response timeout")
             .expect("Failed to read BYE response");
-        let bye_response = String::from_utf8_lossy(&response[..n]);
         info!("Received BYE response");
         assert!(bye_response.contains("BYE"), "Server should respond with BYE");
 
@@ -280,10 +270,24 @@ fn test_handle_put_no_result_ws() {
             // Double the number of chunks for next iteration
             current_chunks *= 2;
 
-            // If we've reached the maximum number of chunks, increase chunk size
+            // If we've reached the maximum number of chunks, increase chunk size.
+            //
+            // The doubling must wrap at MAX_CHUNK_SIZE, as the plain-TCP test
+            // above already does. Without the clamp this eventually sends
+            // PUTNORESULT 8388608, which the server rejects as out of range and
+            // silently keeps the previous chunk size for. The client then sends
+            // 8 MiB chunks into a 4 MiB reader, the stream desynchronises, and
+            // the server drops the connection with "Invalid chunk". Whether the
+            // loop got that far within TEST_DURATION depended on machine speed,
+            // which is what made this test flaky.
             if current_chunks > MAX_CHUNKS {
                 current_chunks = 1;
-                current_chunk_size *= 2;
+                let next_chunk_size = current_chunk_size * 2;
+                current_chunk_size = if next_chunk_size <= MAX_CHUNK_SIZE {
+                    next_chunk_size
+                } else {
+                    CHUNK_SIZE
+                };
             }
         }
 

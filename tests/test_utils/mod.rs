@@ -1,6 +1,7 @@
-use std::process::{Command, Child};
+use std::process::{Command, Child, Stdio};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::path::PathBuf;
 use log::info;
 use tokio::net::TcpStream;
 use uuid::Uuid;
@@ -141,23 +142,26 @@ impl TestServer {
 
         info!("Starting test server on ports: {} (plain) and {} (tls)", port, ws_port);
 
-        let process = Command::new("cargo")
+        let (cert_path, key_path) = ensure_test_certificate();
+
+        // Run the binary built for this test run, not `cargo run`: nesting cargo
+        // inside a test deadlocks on the build lock and hides startup failures.
+        let process = Command::new(env!("CARGO_BIN_EXE_nettest"))
             .args([
-                "run", "--",
+                "-s",
                 "-l", &port.to_string(),
-                "-D",
                 "-L", &ws_port.to_string(),
-                "-c", "measurementservers.crt",
-                "-k", "measurementservers.key",
-                "-w"
+                "-c", cert_path.to_str().unwrap(),
+                "-k", key_path.to_str().unwrap(),
             ])
+            .stdout(Stdio::null())
             .spawn()
             .expect("Failed to start server");
 
         info!("Server process started with PID: {}", process.id());
 
-        // Give server time to start
-        thread::sleep(Duration::from_secs(2));
+        wait_for_port(port);
+        wait_for_port(ws_port);
 
         let instance = TestServerInstance {
             process,
@@ -267,16 +271,8 @@ impl TestServer {
     }
 
     pub async fn connect_rmbtd(&self) -> Result<(TcpStream, u32), Box<dyn Error + Send + Sync>> {
-        // Create TLS connector with custom configuration
-        let mut tls_connector = NativeTlsConnector::builder();
-        tls_connector.danger_accept_invalid_certs(true);
-        tls_connector.danger_accept_invalid_hostnames(true);
-        let tls_connector = TlsConnector::from(tls_connector.build().unwrap());
-
-        // Connect to the TLS port
-        info!("Connecting to TLS port {}", self.tls_port);
-        let mut tls_stream = TcpStream::connect(format!("{}:{}", self.host, 8080)).await?;
-        // let mut tls_stream = tls_connector.connect("localhost", tcp_stream).await?;
+        info!("Connecting to plain port {}", self.plain_port);
+        let mut stream = TcpStream::connect(format!("{}:{}", self.host, self.plain_port)).await?;
 
         // Send RMBT upgrade request
         let upgrade_request = "GET /rmbt HTTP/1.1 \r\n\
@@ -286,54 +282,39 @@ impl TestServer {
                              \r\n";
 
         info!("Sending RMBT upgrade request: {}", upgrade_request);
-        tls_stream.write_all(upgrade_request.as_bytes()).await?;
-        tls_stream.flush().await?;
+        stream.write_all(upgrade_request.as_bytes()).await?;
+        stream.flush().await?;
 
         // Read and verify upgrade response
-        let mut buf = [0u8; 1024];
-        info!("Waiting for upgrade response...");
-        let n = tls_stream.read(&mut buf).await?;
-        let response = String::from_utf8_lossy(&buf[..n]);
+        let response = read_http_headers(&mut stream).await?;
         info!("Received RMBT upgrade response: {}", response);
 
         assert!(response.contains("101 Switching Protocols"), "Server should accept RMBT upgrade");
         assert!(response.contains("Upgrade: RMBT"), "Server should upgrade to RMBT");
 
         // Read greeting message
-        let mut buf = [0u8; 1024];
-        info!("Waiting for greeting message...");
-        let n = tls_stream.read(&mut buf).await?;
-        let greeting = String::from_utf8_lossy(&buf[..n]);
+        let greeting = read_line(&mut stream).await?;
         info!("Received greeting: {}", greeting);
         assert!(greeting.contains("RMBTv"), "Server should send version in greeting");
 
         // Read ACCEPT TOKEN message
-        let mut buf = [0u8; 1024];
-        info!("Waiting for ACCEPT TOKEN message...");
-        let n = tls_stream.read(&mut buf).await?;
-        let accept_token = String::from_utf8_lossy(&buf[..n]);
+        let accept_token = read_line(&mut stream).await?;
         info!("Received ACCEPT TOKEN message: {}", accept_token);
         assert!(accept_token.contains("ACCEPT TOKEN"), "Server should send ACCEPT TOKEN message");
 
         // Send token
         let token = generate_token()?;
         info!("Sending token: {}", token);
-        tls_stream.write_all(token.as_bytes()).await?;
-        tls_stream.flush().await?;
+        stream.write_all(token.as_bytes()).await?;
+        stream.flush().await?;
 
         // Read token response
-        let mut buf = [0u8; 1024];
-        info!("Waiting for token response...");
-        let n = tls_stream.read(&mut buf).await?;
-        let response = String::from_utf8_lossy(&buf[..n]);
+        let response = read_line(&mut stream).await?;
         info!("Received token response: {}", response);
         assert!(response.contains("OK"), "Server should accept valid token");
 
         // Read CHUNKSIZE message
-        let mut buf = [0u8; 1024];
-        info!("Waiting for CHUNKSIZE message...");
-        let n = tls_stream.read(&mut buf).await?;
-        let chunksize_msg = String::from_utf8_lossy(&buf[..n]);
+        let chunksize_msg = read_line(&mut stream).await?;
         info!("Received CHUNKSIZE message: {}", chunksize_msg);
         assert!(chunksize_msg.contains("CHUNKSIZE"), "Server should send CHUNKSIZE message");
 
@@ -345,7 +326,7 @@ impl TestServer {
             .parse::<u32>()
             .expect("Failed to parse chunk size");
 
-        Ok((tls_stream, chunk_size))
+        Ok((stream, chunk_size))
     }
 }
 
@@ -363,6 +344,88 @@ impl Drop for TestServer {
             SERVER_INITIALIZED.store(false, Ordering::SeqCst);
         }
     }
+}
+
+/// Read a single newline-terminated line, one byte at a time.
+///
+/// The handshake reads used to be `read()` into a 1 KiB buffer per message,
+/// which assumed each protocol message arrived in its own TCP segment. The
+/// server sends OK and CHUNKSIZE back to back, so a single read would often
+/// consume both and the next read would then block or return the wrong
+/// message. Reading byte-wise never over-reads, so the stream is left exactly
+/// at the start of the next message for the test to use.
+pub async fn read_line(stream: &mut TcpStream) -> Result<String, Box<dyn Error + Send + Sync>> {
+    let mut line = Vec::new();
+    loop {
+        let mut byte = [0u8; 1];
+        let n = stream.read(&mut byte).await?;
+        if n == 0 {
+            return Err("connection closed while reading line".into());
+        }
+        if byte[0] == b'\n' {
+            let text = String::from_utf8_lossy(&line).trim().to_string();
+            // The server pads with blank lines; skip them rather than
+            // mistaking one for a protocol message.
+            if text.is_empty() {
+                line.clear();
+                continue;
+            }
+            return Ok(text);
+        }
+        line.push(byte[0]);
+    }
+}
+
+/// Read an HTTP response up to and including the terminating blank line.
+async fn read_http_headers(stream: &mut TcpStream) -> Result<String, Box<dyn Error + Send + Sync>> {
+    let mut buf = Vec::new();
+    loop {
+        let mut byte = [0u8; 1];
+        let n = stream.read(&mut byte).await?;
+        if n == 0 {
+            return Err("connection closed while reading HTTP headers".into());
+        }
+        buf.push(byte[0]);
+        if buf.ends_with(b"\r\n\r\n") {
+            return Ok(String::from_utf8_lossy(&buf).to_string());
+        }
+    }
+}
+
+/// Block until `port` accepts connections, so tests do not race the server's
+/// startup. Panics rather than letting every test fail later with
+/// ConnectionRefused, which gives no clue that the server never came up.
+fn wait_for_port(port: u16) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < deadline {
+        if std::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port)).is_ok() {
+            return;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    panic!("test server did not start listening on port {} within 30s", port);
+}
+
+/// Generate a self-signed certificate for the test server.
+///
+/// The certificate is not in the repository, and generating it here keeps the
+/// suite runnable from a clean checkout with no setup step.
+fn ensure_test_certificate() -> (PathBuf, PathBuf) {
+    let dir = env::temp_dir().join(format!("nettest-test-certs-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("failed to create certificate directory");
+    let cert_path = dir.join("cert.pem");
+    let key_path = dir.join("key.pem");
+
+    let cert = rcgen::generate_simple_self_signed(vec![
+        "localhost".to_string(),
+        "127.0.0.1".to_string(),
+    ])
+    .expect("failed to generate self-signed certificate");
+
+    std::fs::write(&cert_path, cert.cert.pem()).expect("failed to write certificate");
+    std::fs::write(&key_path, cert.key_pair.serialize_pem()).expect("failed to write key");
+
+    (cert_path, key_path)
 }
 
 pub fn find_free_port() -> u16 {
