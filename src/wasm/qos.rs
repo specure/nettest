@@ -31,7 +31,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use web_time::Instant;
 
-use crate::client::calculator::rfc3550_jitter_ns;
+use crate::client::calculator::rfc3550_jitter_from_transits_ns;
 use crate::udp::payload::{random_uuid, UdpPayload, FLAG_HOLE_PUNCH, FLAG_ONE_DIRECTION, FLAG_RESPONSE};
 use crate::stream::wt_datagrams::{supported, WtDatagrams};
 use crate::wasm::{command, js_err, sleep_ms, Conn, Ctx};
@@ -282,16 +282,17 @@ pub async fn run(
     let mut sequences: Vec<u32> = received.iter().map(|a| a.sequence).collect();
     sequences.sort_unstable();
     sequences.dedup();
-    // Transit times carry the clock offset between the two machines, but it is
-    // constant and cancels in RFC 3550's consecutive differences.
-    let transits: Vec<u64> = received
+    // Signed: the two machines' clocks differ by an arbitrary constant (seconds,
+    // in either direction), which cancels in RFC 3550's consecutive differences
+    // — but only while the sign is kept.
+    let transits: Vec<i64> = received
         .iter()
-        .map(|a| a.arrived_ns.saturating_sub(a.sent_ns).max(0) as u64)
+        .map(|a| a.arrived_ns - a.sent_ns)
         .collect();
     let inbound = Direction {
         sent: server_sent,
         received: sequences.len() as u32,
-        jitter_ms: rfc3550_jitter_ns(&transits).unwrap_or(0.0) / 1e6,
+        jitter_ms: rfc3550_jitter_from_transits_ns(&transits).unwrap_or(0.0) / 1e6,
     };
 
     session.close();

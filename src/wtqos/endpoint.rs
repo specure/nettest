@@ -184,7 +184,10 @@ async fn serve_session(incoming: IncomingSession) -> anyhow::Result<()> {
                         } else {
                             highest_seq = payload.packet_number as i64;
                         }
-                        let transit = arrival.saturating_sub(payload.timestamp_ns.max(0) as u64);
+                        // Signed: the client's clock may be ahead of ours by
+                        // seconds, and that offset must survive into the
+                        // differences, where it cancels.
+                        let transit = arrival as i64 - payload.timestamp_ns;
                         jitter.push(transit);
                         stats.jitter_ns = jitter.value_ns();
                         stats.max_delta_ns = jitter.max_delta_ns;
@@ -251,12 +254,12 @@ async fn serve_session(incoming: IncomingSession) -> anyhow::Result<()> {
 #[derive(Default)]
 struct Jitter {
     smoothed: f64,
-    previous_transit: Option<u64>,
+    previous_transit: Option<i64>,
     max_delta_ns: u64,
 }
 
 impl Jitter {
-    fn push(&mut self, transit_ns: u64) {
+    fn push(&mut self, transit_ns: i64) {
         if let Some(previous) = self.previous_transit {
             let delta = transit_ns.abs_diff(previous);
             self.smoothed += (delta as f64 - self.smoothed) / 16.0;
@@ -282,4 +285,28 @@ fn now_ns() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Jitter;
+
+    /// The client's clock can sit seconds away from ours, in either direction.
+    /// That offset must not reach the jitter figure.
+    #[test]
+    fn jitter_survives_a_clock_offset() {
+        let series = [20_000_000i64, 21_000_000, 19_500_000, 20_500_000, 20_100_000];
+        let run = |offset: i64| {
+            let mut jitter = Jitter::default();
+            for t in series {
+                jitter.push(t + offset);
+            }
+            jitter.value_ns()
+        };
+        let baseline = run(0);
+        for offset in [-5_000_000_000i64, -1_330_000_000, 1_330_000_000] {
+            assert_eq!(run(offset), baseline, "offset {offset} changed the jitter");
+        }
+        assert!(baseline > 0, "a varying series must not report zero jitter");
+    }
 }

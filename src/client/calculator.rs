@@ -179,9 +179,52 @@ pub fn rfc3550_jitter_ns(samples: &[u64]) -> Option<f64> {
     Some(jitter)
 }
 
+/// The same estimator over *transit times* — arrival minus the sender's own
+/// timestamp, as RFC 3550's `D(i,j)` intends.
+///
+/// Signed on purpose. Two machines rarely agree on the wall clock, so a transit
+/// time is the real one plus a constant offset that can easily be seconds and
+/// can point either way. The offset cancels in the consecutive differences, so
+/// unsynchronised clocks are fine — but only if the sign survives: clamping a
+/// negative transit to zero flattens the whole series and reports a jitter of
+/// exactly 0.
+pub fn rfc3550_jitter_from_transits_ns(transits: &[i64]) -> Option<f64> {
+    if transits.len() < 2 {
+        return None;
+    }
+    let mut jitter = 0.0f64;
+    for pair in transits.windows(2) {
+        let d = (pair[1] - pair[0]) as f64;
+        jitter += (d.abs() - jitter) / 16.0;
+    }
+    Some(jitter)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::rfc3550_jitter_ns;
+    use super::{rfc3550_jitter_from_transits_ns, rfc3550_jitter_ns};
+
+    /// A clock offset between the two machines — of either sign, and far larger
+    /// than the jitter being measured — must not reach the result.
+    #[test]
+    fn transit_jitter_ignores_the_clock_offset() {
+        let real: Vec<i64> = vec![20_000_000, 21_000_000, 19_500_000, 20_500_000, 20_100_000];
+        let expected = rfc3550_jitter_from_transits_ns(&real).unwrap();
+        for offset in [-5_000_000_000i64, -1_330_000_000, 1_330_000_000, 5_000_000_000] {
+            let shifted: Vec<i64> = real.iter().map(|t| t + offset).collect();
+            let got = rfc3550_jitter_from_transits_ns(&shifted).unwrap();
+            assert!(
+                (got - expected).abs() < 1.0,
+                "offset {offset} changed the jitter: {got} vs {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn transit_jitter_needs_two_samples() {
+        assert_eq!(rfc3550_jitter_from_transits_ns(&[]), None);
+        assert_eq!(rfc3550_jitter_from_transits_ns(&[-42]), None);
+    }
 
     #[test]
     fn needs_at_least_two_samples() {
