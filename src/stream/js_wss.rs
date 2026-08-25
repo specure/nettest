@@ -24,6 +24,21 @@ use web_sys::{BinaryType, MessageEvent, WebSocket};
 
 use crate::reactor::{Interest, Poll, Token};
 
+/// Browser send-buffer high-water mark: `write` reports `WouldBlock` above it,
+/// so the caller yields to the JS event loop instead of queueing the whole
+/// upload in the tab's memory.
+///
+/// Keep it small. It bounds the data queued in the tab but not yet on the wire,
+/// which on a slow uplink is a tail the server still has to receive after the
+/// send window closes (512 KiB is ~0.4 s at 10 Mbit/s). It does *not* bound
+/// throughput: that depends on how often the driver can refill the buffer, and
+/// `wasm::yield_now` is unclamped — measured upload was identical at 512 KiB,
+/// 1 MiB and 4 MiB.
+const SEND_HIGH_WATER: u32 = 512 * 1024;
+/// Largest single `WebSocket.send`, so backpressure is re-checked often enough
+/// even with a multi-megabyte RMBT chunk.
+const MAX_SEND: usize = 256 * 1024;
+
 type Inbox = Rc<RefCell<VecDeque<u8>>>;
 type WakerCell = Rc<RefCell<Option<Waker>>>;
 
@@ -155,6 +170,12 @@ impl JsWss {
         self.ws.buffered_amount()
     }
 
+    /// True when `write` would accept data (socket open and below the
+    /// high-water mark). The pump uses it to wait out backpressure.
+    pub fn is_writable(&self) -> bool {
+        self.ws.ready_state() == WebSocket::OPEN && self.ws.buffered_amount() < SEND_HIGH_WATER
+    }
+
     pub fn register(&mut self, _poll: &Poll, _token: Token, interest: Interest) -> io::Result<()> {
         self.interest.set(interest);
         Ok(())
@@ -212,11 +233,38 @@ impl Read for JsWss {
 }
 
 impl Write for JsWss {
+    /// Non-blocking write with browser backpressure.
+    ///
+    /// `WebSocket.send` never refuses data: it queues it in the browser's own
+    /// send buffer and there is no `drain` event. Without a high-water mark the
+    /// upload phase — whose handler loops `write()` until the phase duration
+    /// elapses — would queue the entire upload in memory and never yield to the
+    /// JS event loop (so no TIMERESULT would ever be read). Reporting
+    /// `WouldBlock` above [`SEND_HIGH_WATER`] gives the handlers the same signal
+    /// a full native socket buffer does, and the wasm pump turns it into a tick
+    /// of the event loop.
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        match self.ws.ready_state() {
+            WebSocket::CONNECTING => return Err(io::ErrorKind::WouldBlock.into()),
+            WebSocket::OPEN => {}
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "WebSocket is closed",
+                ))
+            }
+        }
+        if self.ws.buffered_amount() >= SEND_HIGH_WATER {
+            return Err(io::ErrorKind::WouldBlock.into());
+        }
+        let n = buf.len().min(MAX_SEND);
         self.ws
-            .send_with_u8_array(buf)
+            .send_with_u8_array(&buf[..n])
             .map_err(|_| io::Error::new(io::ErrorKind::Other, "WebSocket.send failed"))?;
-        Ok(buf.len())
+        Ok(n)
     }
 
     fn flush(&mut self) -> io::Result<()> {

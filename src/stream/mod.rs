@@ -18,3 +18,5 @@ pub mod websocket_rustls_server;
 
 #[cfg(target_arch = "wasm32")]
 pub mod js_wss;
+#[cfg(target_arch = "wasm32")]
+pub mod wt_datagrams;

@@ -1,6 +1,0 @@
-{
-  "name": "nettest-browser-poc",
-  "private": true,
-  "type": "module",
-  "description": "TEMPORARY PoC: RMBT-over-WebSocket client running greeting/ping/download in the browser (and Node) — see rmbt-ws.js"
-}
