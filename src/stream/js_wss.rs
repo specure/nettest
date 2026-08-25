@@ -39,14 +39,80 @@ const SEND_HIGH_WATER: u32 = 512 * 1024;
 /// even with a multi-megabyte RMBT chunk.
 const MAX_SEND: usize = 256 * 1024;
 
-type Inbox = Rc<RefCell<VecDeque<u8>>>;
+/// One received WebSocket message and how much of it has been read.
+struct Message {
+    data: Vec<u8>,
+    read: usize,
+}
+
+/// Received-but-unread data.
+///
+/// A queue of whole messages rather than a byte deque: the download path moves
+/// gigabytes, and profiling the phase showed the byte-wise `VecDeque::extend`
+/// and its per-message zeroed allocation costing about a tenth of the run all
+/// by themselves. Keeping messages intact leaves exactly two copies per byte —
+/// JS memory into wasm (unavoidable), then into the caller's buffer — and the
+/// drained buffers are recycled, so steady state allocates nothing.
+#[derive(Default)]
+struct Inbox {
+    messages: VecDeque<Message>,
+    /// Buffers returned by fully-read messages, ready to be filled again.
+    pool: Vec<Vec<u8>>,
+    /// Unread bytes across all queued messages.
+    unread: usize,
+}
+
+impl Inbox {
+    fn push(&mut self, array: &js_sys::Uint8Array) {
+        let len = array.length() as usize;
+        let mut data = self.pool.pop().unwrap_or_default();
+        // Grow only when the recycled buffer is too short: `truncate` below
+        // keeps the allocation, so a steady stream of same-sized chunks stops
+        // allocating and stops zeroing after the first few messages.
+        if data.len() < len {
+            data.resize(len, 0);
+        }
+        array.copy_to(&mut data[..len]);
+        data.truncate(len);
+        self.messages.push_back(Message { data, read: 0 });
+        self.unread += len;
+    }
+
+    fn take(&mut self, buf: &mut [u8]) -> usize {
+        let mut written = 0;
+        while written < buf.len() {
+            let Some(front) = self.messages.front_mut() else { break };
+            let available = front.data.len() - front.read;
+            let n = available.min(buf.len() - written);
+            buf[written..written + n].copy_from_slice(&front.data[front.read..front.read + n]);
+            front.read += n;
+            written += n;
+            if front.read == front.data.len() {
+                let done = self.messages.pop_front().expect("front exists");
+                // Recycle a bounded number of buffers; a browser tab should not
+                // hold onto every buffer a multi-gigabyte transfer produced.
+                if self.pool.len() < 8 {
+                    self.pool.push(done.data);
+                }
+            }
+        }
+        self.unread -= written;
+        written
+    }
+
+    fn is_empty(&self) -> bool {
+        self.unread == 0
+    }
+}
+
+type InboxCell = Rc<RefCell<Inbox>>;
 type WakerCell = Rc<RefCell<Option<Waker>>>;
 
 /// A pump-side handle to await readability / socket-open without borrowing the
 /// stream (which the handlers hold `&mut`).
 #[derive(Clone)]
 pub struct Notify {
-    inbox: Inbox,
+    inbox: InboxCell,
     opened: Rc<Cell<bool>>,
     closed: Rc<Cell<bool>>,
     waker: WakerCell,
@@ -75,7 +141,7 @@ fn wake(cell: &WakerCell) {
 
 pub struct JsWss {
     ws: WebSocket,
-    inbox: Inbox,
+    inbox: InboxCell,
     interest: Rc<Cell<Interest>>,
     opened: Rc<Cell<bool>>,
     closed: Rc<Cell<bool>>,
@@ -95,7 +161,7 @@ impl JsWss {
         let ws = WebSocket::new(url)?;
         ws.set_binary_type(BinaryType::Arraybuffer);
 
-        let inbox: Inbox = Rc::new(RefCell::new(VecDeque::new()));
+        let inbox: InboxCell = Rc::new(RefCell::new(Inbox::default()));
         let opened = Rc::new(Cell::new(false));
         let closed = Rc::new(Cell::new(false));
         let waker: WakerCell = Rc::new(RefCell::new(None));
@@ -104,12 +170,12 @@ impl JsWss {
         let waker_msg = waker.clone();
         let onmessage = Closure::wrap(Box::new(move |e: MessageEvent| {
             if let Ok(ab) = e.data().dyn_into::<js_sys::ArrayBuffer>() {
-                let arr = js_sys::Uint8Array::new(&ab);
-                let mut v = vec![0u8; arr.length() as usize];
-                arr.copy_to(&mut v);
-                inbox_cb.borrow_mut().extend(v);
-            } else if let Some(s) = e.data().as_string() {
-                inbox_cb.borrow_mut().extend(s.into_bytes());
+                inbox_cb.borrow_mut().push(&js_sys::Uint8Array::new(&ab));
+            } else if let Some(text) = e.data().as_string() {
+                let bytes = text.into_bytes();
+                inbox_cb
+                    .borrow_mut()
+                    .push(&js_sys::Uint8Array::from(&bytes[..]));
             }
             wake(&waker_msg);
         }) as Box<dyn FnMut(MessageEvent)>);
@@ -217,18 +283,7 @@ impl Read for JsWss {
         if inbox.is_empty() {
             return Err(io::ErrorKind::WouldBlock.into());
         }
-        // Bulk copy via the deque's two contiguous slices, not byte-by-byte.
-        let n = buf.len().min(inbox.len());
-        {
-            let (a, b) = inbox.as_slices();
-            let na = a.len().min(n);
-            buf[..na].copy_from_slice(&a[..na]);
-            if na < n {
-                buf[na..n].copy_from_slice(&b[..(n - na)]);
-            }
-        }
-        inbox.drain(..n);
-        Ok(n)
+        Ok(inbox.take(buf))
     }
 }
 
