@@ -61,6 +61,7 @@ num_cpus = "1.13"
 rayon = "1.8"
 mdns-sd = "0.17.1"
 include_dir = "0.7"
+wtransport = "0.7"
 
 [target.'cfg(unix)'.dependencies]
 nix = "0.26"
@@ -84,6 +85,8 @@ web-sys = { version = "0.3", features = [
     "Blob",
     "Window",
     "Performance",
+    "MessageChannel",
+    "MessagePort",
 ] }
 
 [dev-dependencies]

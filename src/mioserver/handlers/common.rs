@@ -283,6 +283,38 @@ pub fn handle_main_command_receive(poll: &Poll, state: &mut TestState) -> io::Re
                 return Ok(n);
             }
 
+            if command_str.starts_with("GET WTURL") {
+                state.read_pos = 0;
+                state.measurement_state = ServerTestPhase::WtSendUrl;
+                state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
+                return Ok(n);
+            }
+
+            if command_str.starts_with("WTTEST ") {
+                // Copy the command out first: `command_str` borrows the read
+                // buffer that `arm_test` needs to mutate.
+                let command = command_str.to_string();
+                crate::mioserver::handlers::wtqos::arm_test(state, &command);
+                state.read_pos = 0;
+                state.measurement_state = ServerTestPhase::WtSendOk;
+                state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
+                return Ok(n);
+            }
+
+            if command_str.starts_with("GET WTRESULT OUT") {
+                state.read_pos = 0;
+                state.measurement_state = ServerTestPhase::WtSendResultOut;
+                state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
+                return Ok(n);
+            }
+
+            if command_str.starts_with("GET WTRESULT IN") {
+                state.read_pos = 0;
+                state.measurement_state = ServerTestPhase::WtSendResultIn;
+                state.stream.reregister(poll, state.token, Interest::WRITABLE)?;
+                return Ok(n);
+            }
+
             if command_str.starts_with("GET UDPPORT") {
                 state.read_pos = 0;
                 state.measurement_state = ServerTestPhase::UdpSendPort;

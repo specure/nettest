@@ -10,9 +10,14 @@ pub mod mioserver;
 // `stream` compiles on both targets (Stream is cfg-split: native transports vs
 // the browser JsWss variant).
 pub mod stream;
+// Browser QoS over QUIC datagrams: the server side of the WebTransport jitter /
+// packet-loss test. Native-only — it *is* the server.
 #[cfg(not(target_arch = "wasm32"))]
+pub mod wtqos;
+
+// `voip` and `udp` are cfg-split inside: the QoS statistics and wire formats
+// compile on both targets, the socket drivers are native-only.
 pub mod voip;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod udp;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod utils;

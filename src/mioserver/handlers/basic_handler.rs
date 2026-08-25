@@ -75,6 +75,15 @@ pub fn handle_client_writable_data(state: &mut TestState, poll: &Poll) -> io::Re
         ServerTestPhase::UdpSendResultOut => handle_udp_send_result_out(poll, state),
         ServerTestPhase::UdpSendResultIn => handle_udp_send_result_in(poll, state),
 
+        ServerTestPhase::WtSendUrl => crate::mioserver::handlers::wtqos::handle_wt_send_url(poll, state),
+        ServerTestPhase::WtSendOk => crate::mioserver::handlers::wtqos::handle_wt_send_ok(poll, state),
+        ServerTestPhase::WtSendResultOut => {
+            crate::mioserver::handlers::wtqos::handle_wt_send_result_out(poll, state)
+        }
+        ServerTestPhase::WtSendResultIn => {
+            crate::mioserver::handlers::wtqos::handle_wt_send_result_in(poll, state)
+        }
+
         _ => {
             debug!("Unknown measurement state: {:?}", state.measurement_state);
             Ok(1)

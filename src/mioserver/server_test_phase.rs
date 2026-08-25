@@ -52,4 +52,10 @@ pub enum ServerTestPhase {
     UdpSendOkOut,
     UdpSendResultOut,
     UdpSendResultIn,
+
+    // Browser QoS over WebTransport datagrams.
+    WtSendUrl,
+    WtSendOk,
+    WtSendResultOut,
+    WtSendResultIn,
 }
