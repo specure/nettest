@@ -152,3 +152,67 @@ pub fn calculate_download_speed(states: &Vec<Measurement>) -> (f64, f64, f64) {
 
     calculate_speed_from_measurements(thread_measurements)
 }
+/// Interarrival jitter over a series of latency samples, per RFC 3550 §6.4.1:
+///
+/// ```text
+/// J(i) = J(i-1) + (|D(i-1,i)| - J(i-1)) / 16
+/// ```
+///
+/// RFC 3550 feeds `D` with *one-way* transit-time differences, measured on a
+/// stream of equally spaced packets. Here `samples` are round-trip latencies
+/// (the RMBT `PING`/`TIME` samples), so this measures the variation of the round
+/// trip: an approximation that shares the RFC's smoothing, not its packet model.
+/// Over TCP it is also blind to retransmissions, which show up as latency spikes
+/// rather than loss — callers should label it accordingly and must not report a
+/// packet-loss figure derived from it.
+///
+/// Returns `None` for fewer than two samples (no difference to measure).
+pub fn rfc3550_jitter_ns(samples: &[u64]) -> Option<f64> {
+    if samples.len() < 2 {
+        return None;
+    }
+    let mut jitter = 0.0f64;
+    for pair in samples.windows(2) {
+        let d = (pair[1] as f64) - (pair[0] as f64);
+        jitter += (d.abs() - jitter) / 16.0;
+    }
+    Some(jitter)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rfc3550_jitter_ns;
+
+    #[test]
+    fn needs_at_least_two_samples() {
+        assert_eq!(rfc3550_jitter_ns(&[]), None);
+        assert_eq!(rfc3550_jitter_ns(&[1_000_000]), None);
+    }
+
+    #[test]
+    fn constant_latency_has_no_jitter() {
+        let samples = [5_000_000u64; 50];
+        assert_eq!(rfc3550_jitter_ns(&samples), Some(0.0));
+    }
+
+    #[test]
+    fn converges_towards_the_mean_absolute_difference() {
+        // Alternating 10 ms / 20 ms: every |D| is 10 ms, so the smoothed jitter
+        // must approach 10 ms from below and never exceed it.
+        let samples: Vec<u64> = (0..200)
+            .map(|i| if i % 2 == 0 { 10_000_000 } else { 20_000_000 })
+            .collect();
+        let j = rfc3550_jitter_ns(&samples).unwrap();
+        assert!(j > 9_900_000.0 && j <= 10_000_000.0, "jitter was {j}");
+    }
+
+    #[test]
+    fn one_spike_decays_and_does_not_dominate() {
+        // A single 100 ms outlier in an otherwise steady 10 ms stream: the 1/16
+        // smoothing must keep the result far below the spike.
+        let mut samples = vec![10_000_000u64; 100];
+        samples[50] = 110_000_000;
+        let j = rfc3550_jitter_ns(&samples).unwrap();
+        assert!(j < 5_000_000.0, "single spike dominated the result: {j}");
+    }
+}

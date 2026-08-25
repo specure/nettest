@@ -12,9 +12,7 @@ use crate::client::handlers::basic_handler::{
 use crate::client::constants::{MIN_CHUNK_SIZE};
 use crate::client::live::LiveSink;
 use crate::stream::stream::Stream;
-#[cfg(not(target_arch = "wasm32"))]
 use crate::voip::{RtpQoSResult, VoipParams};
-#[cfg(not(target_arch = "wasm32"))]
 use crate::udp::UdpQoSResult;
 
 pub const ONE_SECOND_NS: u128 = 1_000_000_000;
@@ -120,11 +118,8 @@ pub struct MeasurementState {
     pub envelope: Option<String>,
     pub server_addr: std::net::SocketAddr,
     pub voip_ssrc: Option<u32>,
-    #[cfg(not(target_arch = "wasm32"))]
     pub voip_params: Option<VoipParams>,
-    #[cfg(not(target_arch = "wasm32"))]
     pub voip_result_in: Option<RtpQoSResult>,
-    #[cfg(not(target_arch = "wasm32"))]
     pub voip_result_out: Option<RtpQoSResult>,
     pub server_udp_port: u16,
     pub udp_out_port: Option<u16>,
@@ -132,9 +127,7 @@ pub struct MeasurementState {
     pub udp_in_uuid: Option<[u8; 16]>,
     pub udp_in_port: Option<u16>,
     pub udp_in_socket: Option<std::net::UdpSocket>,
-    #[cfg(not(target_arch = "wasm32"))]
     pub udp_result_out: Option<UdpQoSResult>,
-    #[cfg(not(target_arch = "wasm32"))]
     pub udp_result_in: Option<UdpQoSResult>,
     pub udp_server_received_out: Option<u32>,
     /// Optional sink for publishing live per-thread samples during a phase.
@@ -184,24 +177,16 @@ impl MeasurementState {
             envelope: None,
             server_addr,
             voip_ssrc: None,
-            #[cfg(not(target_arch = "wasm32"))]
             voip_params: None,
-            #[cfg(not(target_arch = "wasm32"))]
             voip_result_in: None,
-            #[cfg(not(target_arch = "wasm32"))]
             voip_result_out: None,
-            #[cfg(not(target_arch = "wasm32"))]
             server_udp_port: crate::udp::DEFAULT_UDP_SERVER_PORT,
-            #[cfg(target_arch = "wasm32")]
-            server_udp_port: 0,
             udp_out_port: None,
             udp_out_uuid: None,
             udp_in_uuid: None,
             udp_in_port: None,
             udp_in_socket: None,
-            #[cfg(not(target_arch = "wasm32"))]
             udp_result_out: None,
-            #[cfg(not(target_arch = "wasm32"))]
             udp_result_in: None,
             udp_server_received_out: None,
             live_sink: None,

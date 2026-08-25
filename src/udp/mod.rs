@@ -1,9 +1,16 @@
+// The wire format and the statistics are plain arithmetic and compile
+// everywhere, so the browser (wasm) client can reuse them over WebTransport
+// datagrams and produce results comparable to the native UDP test. Only the
+// socket plumbing below is native-only.
 pub mod payload;
 pub mod result;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod server;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod socket;
 
 pub use result::UdpQoSResult;
+#[cfg(not(target_arch = "wasm32"))]
 pub use server::SharedUdpServer;
 
 pub const DEFAULT_UDP_OUT_NUM_PACKETS: u32 = 10;

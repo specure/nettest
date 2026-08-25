@@ -17,18 +17,15 @@ use crate::client::handlers::get_time::{
 use crate::client::handlers::ping::{
     handle_ping_receive_pong, handle_ping_receive_time, handle_ping_send_ok, handle_ping_send_ping,
 };
-#[cfg(not(target_arch = "wasm32"))]
 use crate::client::handlers::put::{
     handle_put_receive_final_time, handle_put_receive_ok, handle_put_receive_time_bytes,
     handle_put_send_chunks, handle_put_send_command, handle_put_send_last_chunk,
 };
-#[cfg(not(target_arch = "wasm32"))]
 use crate::client::handlers::puttimeresult::{
     handle_put_time_result_drain, handle_put_time_result_receive_ok,
     handle_put_time_result_receive_time, handle_put_time_result_send_chunks,
     handle_put_time_result_send_command, handle_put_time_result_send_last_chunk,
 };
-#[cfg(not(target_arch = "wasm32"))]
 use crate::client::handlers::signed_result::{
     handle_signed_result_command, handle_signed_result_receive, handle_signed_result_send_ok,
 };
@@ -71,25 +68,17 @@ pub fn handle_client_readable_data(state: &mut MeasurementState, poll: &Poll) ->
         #[cfg(not(target_arch = "wasm32"))]
         TestPhase::UdpReceiveResultIn => handle_udp_receive_result_in(poll, state),
 
-        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PerfReceiveOk => handle_put_time_result_receive_ok(poll, state),
-        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PerfReceiveTime => handle_put_time_result_receive_time(poll, state),
 
         // While sending upload chunks, drain interim TIMERESULT on read events.
-        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PerfSendChunks => handle_put_time_result_drain(poll, state),
-        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PerfSendLastChunk => handle_put_time_result_drain(poll, state),
 
-        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PutReceiveOk => handle_put_receive_ok(poll, state),
-        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PutReceiveTimeBytes => handle_put_receive_time_bytes(poll, state),
-        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PutReceiveFinalTime => handle_put_receive_final_time(poll, state),
 
-        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::SignedResultReceive => handle_signed_result_receive(poll, state),
 
         TestPhase::GreetingSendConnectionType => handle_greeting_send_connection_type(poll, state),
@@ -129,23 +118,15 @@ pub fn handle_client_writable_data(state: &mut MeasurementState, poll: &Poll) ->
         TestPhase::GetTimeSendCommand => handle_get_time_send_command(poll, state),
         TestPhase::GetTimeSendOk => handle_get_time_send_ok(poll, state),
 
-        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PerfSendCommand => handle_put_time_result_send_command(poll, state),
-        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PerfSendChunks => handle_put_time_result_send_chunks(poll, state),
-        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PerfSendLastChunk => handle_put_time_result_send_last_chunk(poll, state),
 
-        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PutSendCommand => handle_put_send_command(poll, state),
-        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PutSendChunks => handle_put_send_chunks(poll, state),
-        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::PutSendLastChunk => handle_put_send_last_chunk(poll, state),
 
-        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::SignedResultSend => handle_signed_result_command(poll, state),
-        #[cfg(not(target_arch = "wasm32"))]
         TestPhase::SignedResultSendOk => handle_signed_result_send_ok(poll, state),
 
         _ => {

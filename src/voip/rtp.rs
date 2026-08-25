@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::time::Instant;
+use web_time::Instant;
 
 pub const RTP_HEADER_SIZE: usize = 12;
 
