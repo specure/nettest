@@ -162,6 +162,31 @@ mod native {
             }
         }
 
+        /// Consume up to `max` incoming bytes without handing them out, and
+        /// report the last byte consumed.
+        ///
+        /// The RMBT download only needs a byte count and the terminator byte
+        /// that ends each chunk, never the payload. A browser transport can do
+        /// that by advancing a cursor; here there is no buffered stream to
+        /// advance, so the bytes are read into a scratch buffer that is reused
+        /// across calls — the same single copy `read` would have done, so this
+        /// path is no slower than before.
+        pub fn consume(&mut self, max: usize) -> io::Result<(usize, u8)> {
+            thread_local! {
+                static SCRATCH: std::cell::RefCell<Vec<u8>> =
+                    std::cell::RefCell::new(vec![0u8; 256 * 1024]);
+            }
+            SCRATCH.with(|scratch| -> io::Result<(usize, u8)> {
+                let mut scratch = scratch.borrow_mut();
+                let want = max.min(scratch.len());
+                let n = self.read(&mut scratch[..want])?;
+                if n == 0 {
+                    return std::result::Result::Ok((0, 0));
+                }
+                std::result::Result::Ok((n, scratch[n - 1]))
+            })
+        }
+
         pub fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
             match self {
                 Stream::Tcp(stream) => stream.write(buf),
@@ -298,6 +323,16 @@ mod wasm {
         pub fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
             match self {
                 Stream::Js(s) => s.read(buf),
+            }
+        }
+
+        /// Consume up to `max` incoming bytes without copying them out, and
+        /// report the last byte consumed — for the browser this is a cursor
+        /// advance over the queued messages, so the download phase moves its
+        /// payload with a single copy (JS memory into wasm) and no second one.
+        pub fn consume(&mut self, max: usize) -> std::io::Result<(usize, u8)> {
+            match self {
+                Stream::Js(s) => s.consume(max),
             }
         }
 

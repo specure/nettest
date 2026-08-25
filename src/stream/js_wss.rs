@@ -78,6 +78,31 @@ impl Inbox {
         self.unread += len;
     }
 
+    /// Drop up to `max` bytes, reporting the last one dropped.
+    ///
+    /// The download handler only needs the byte count and the terminator byte
+    /// that ends each RMBT chunk, so there is nothing to copy them into.
+    fn consume(&mut self, max: usize) -> (usize, u8) {
+        let mut consumed = 0;
+        let mut last = 0u8;
+        while consumed < max {
+            let Some(front) = self.messages.front_mut() else { break };
+            let available = front.data.len() - front.read;
+            let n = available.min(max - consumed);
+            last = front.data[front.read + n - 1];
+            front.read += n;
+            consumed += n;
+            if front.read == front.data.len() {
+                let done = self.messages.pop_front().expect("front exists");
+                if self.pool.len() < 8 {
+                    self.pool.push(done.data);
+                }
+            }
+        }
+        self.unread -= consumed;
+        (consumed, last)
+    }
+
     fn take(&mut self, buf: &mut [u8]) -> usize {
         let mut written = 0;
         while written < buf.len() {
@@ -234,6 +259,17 @@ impl JsWss {
     /// The browser's send-buffer backpressure signal.
     pub fn buffered_amount(&self) -> u32 {
         self.ws.buffered_amount()
+    }
+
+    /// Discard up to `max` buffered bytes without copying them anywhere,
+    /// returning how many went and what the last one was. See
+    /// [`crate::stream::stream::Stream::consume`].
+    pub fn consume(&mut self, max: usize) -> io::Result<(usize, u8)> {
+        let mut inbox = self.inbox.borrow_mut();
+        if inbox.is_empty() {
+            return Err(io::ErrorKind::WouldBlock.into());
+        }
+        Ok(inbox.consume(max))
     }
 
     /// True when `write` would accept data (socket open and below the

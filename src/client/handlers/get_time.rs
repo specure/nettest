@@ -58,7 +58,6 @@ pub fn handle_get_time_send_command(
             state.phase_start_time = Some(Instant::now());
 
             state.phase = TestPhase::GetTimeReceiveChunk;
-            state.chunk_buffer.resize(state.chunk_size, 0);
             state
                 .stream
                 .reregister(&poll, state.token, Interest::READABLE)?;
@@ -73,9 +72,15 @@ pub fn handle_get_time_receive_chunk(
 ) -> Result<usize, std::io::Error> {
     debug!("handle_get_time_receive_chunk token {:?}", state.token);
     loop {
-        let n = state
-            .stream
-            .read(&mut state.chunk_buffer[state.read_pos..])?;
+        // The payload is never looked at — only its size and the terminator
+        // byte that ends the last chunk matter — so it is consumed in place
+        // rather than copied into a buffer. On a browser transport that is the
+        // difference between one copy per byte and two. Bounded by what is left
+        // of the current chunk, so a read never crosses a chunk boundary.
+        let (n, last_byte) = state.stream.consume(state.chunk_size - state.read_pos)?;
+        if n == 0 {
+            return Ok(0); // EOF: the caller fails the phase
+        }
         state.read_pos += n;
         if state.read_pos == state.chunk_size {
             state.bytes_received += state.chunk_size as u64;
@@ -83,14 +88,14 @@ pub fn handle_get_time_receive_chunk(
                 state.phase_start_time.unwrap().elapsed().as_nanos() as u64,
                 state.bytes_received,
             ));
-            if state.chunk_buffer[state.read_pos - 1] == 0xFF {
+            state.read_pos = 0;
+            if last_byte == 0xFF {
                 state.phase = TestPhase::GetTimeSendOk;
                 state
                     .stream
                     .reregister(&poll, state.token, Interest::WRITABLE)?;
                 return Ok(n);
             }
-            state.read_pos = 0;
         }
     }
 }
