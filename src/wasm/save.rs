@@ -20,16 +20,9 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
+use crate::client::graph::speed_curve;
 use crate::client::user_agent::parse_user_agent;
 use crate::wasm::{err_str, js_err};
-
-/// Upper bound on speed-curve points per thread and direction.
-///
-/// A 7-second download at 4 MiB chunks produces thousands of samples per
-/// connection; the server only needs enough shape to draw a curve, and the
-/// whole raw series would make the body megabytes wide. The final sample is
-/// always kept, so the total byte count stays exact.
-const MAX_CURVE_POINTS: usize = 120;
 
 /// One connection's `(time_ns, cumulative_bytes)` samples for one direction.
 pub struct ThreadSamples {
@@ -54,6 +47,16 @@ pub struct SaveRequest {
     pub upload_mbps: f64,
     pub threads: usize,
     pub samples: Vec<ThreadSamples>,
+}
+
+impl SaveRequest {
+    fn download_samples(&self) -> Vec<Vec<(u64, u64)>> {
+        self.samples.iter().map(|t| t.download.clone()).collect()
+    }
+
+    fn upload_samples(&self) -> Vec<Vec<(u64, u64)>> {
+        self.samples.iter().map(|t| t.upload.clone()).collect()
+    }
 }
 
 /// POST the result. Resolves to the `open_test_uuid` it was stored under.
@@ -106,11 +109,16 @@ async fn read_text(response: &JsValue) -> Option<String> {
 fn payload(request: &SaveRequest) -> Value {
     let (browser_name, browser_version, platform) = browser_identity();
 
+    // The curve, not the raw per-thread samples. Interpolating the threads onto
+    // one timeline is what the result page draws, and doing it here means the
+    // stored graph is the one the user watched — the server's own aggregation
+    // truncates every thread to the shortest one's sample count, which on a
+    // browser measurement (where threads report at very different rates) would
+    // throw away most of the transfer. Sent as a single series, the way the
+    // Flutter client sends its curve.
     let mut speed_detail: Vec<Value> = Vec::new();
-    for thread in &request.samples {
-        push_curve(&mut speed_detail, "download", thread.thread, &thread.download);
-        push_curve(&mut speed_detail, "upload", thread.thread, &thread.upload);
-    }
+    push_curve(&mut speed_detail, "download", &request.download_samples());
+    push_curve(&mut speed_detail, "upload", &request.upload_samples());
 
     let pings: Vec<Value> = request
         .ping_times_ns
@@ -157,24 +165,15 @@ fn shortest_ping_ns(request: &SaveRequest) -> u64 {
         .unwrap_or_else(|| (request.ping_ms * 1e6) as u64)
 }
 
-/// Append one thread's curve, thinned to [`MAX_CURVE_POINTS`].
-fn push_curve(into: &mut Vec<Value>, direction: &str, thread: usize, samples: &[(u64, u64)]) {
-    if samples.is_empty() {
-        return;
-    }
-    let step = (samples.len() / MAX_CURVE_POINTS).max(1);
-    let last = samples.len() - 1;
-    for (index, (time_ns, bytes)) in samples.iter().enumerate() {
-        // Keep the final sample whatever the stride lands on: it carries the
-        // phase's total byte count.
-        if index % step != 0 && index != last {
-            continue;
-        }
+/// Aggregate one direction's per-connection samples into a curve and append it.
+fn push_curve(into: &mut Vec<Value>, direction: &str, per_thread: &[Vec<(u64, u64)>]) {
+    for point in speed_curve(per_thread) {
         into.push(json!({
             "direction": direction,
-            "thread": thread,
-            "time": time_ns,
-            "bytes": bytes,
+            // One series: the threads have already been summed into it.
+            "thread": 0,
+            "time": point.time_elapsed_ms * 1_000_000,
+            "bytes": point.bytes_total,
         }));
     }
 }

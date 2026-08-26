@@ -6,6 +6,7 @@ pub mod handlers;
 pub mod state;
 pub mod calculator;
 pub mod live;
+pub mod graph;
 pub mod user_agent;
 
 // `client` (ClientConfig/SharedStats + the CLI/native orchestration) pulls the
