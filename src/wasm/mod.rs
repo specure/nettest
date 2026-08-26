@@ -1016,10 +1016,6 @@ pub async fn run_measurement(
             packet_loss_percent: packet_loss,
             download_mbps,
             upload_mbps,
-            download_bytes,
-            upload_bytes,
-            download_duration_ms: download_ms,
-            upload_duration_ms: upload_ms,
             threads: alive.iter().filter(|a| **a).count(),
             samples: conns
                 .iter()

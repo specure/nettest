@@ -4,7 +4,13 @@
 //! the client makes up its own `open_test_uuid`, so there is nothing to
 //! register before a test and nothing to reconcile after one.
 //!
-//! Only what the client legitimately knows is sent. Provider, ASN, geo and the
+//! Only what the client legitimately knows is sent, and only what is actually
+//! stored: the speeds go as the client computed them (RMBT — first second
+//! skipped, interpolated at t*), with no byte totals or phase durations, which
+//! reach neither Elasticsearch nor any table and would only invite the server to
+//! recompute a different number.
+//!
+//! Beyond that, Provider, ASN, geo and the
 //! measurement server's identity are resolved by the control server from the
 //! address the request arrives on — a browser cannot be trusted to state them,
 //! and the server would overwrite them anyway.
@@ -46,10 +52,6 @@ pub struct SaveRequest {
     pub packet_loss_percent: Option<f64>,
     pub download_mbps: f64,
     pub upload_mbps: f64,
-    pub download_bytes: u64,
-    pub upload_bytes: u64,
-    pub download_duration_ms: u64,
-    pub upload_duration_ms: u64,
     pub threads: usize,
     pub samples: Vec<ThreadSamples>,
 }
@@ -132,10 +134,6 @@ fn payload(request: &SaveRequest) -> Value {
     // guessing would put a wrong network type on every record.
     body.insert("network_type".into(), json!(98));
     body.insert("test_num_threads".into(), json!(request.threads));
-    body.insert("test_bytes_download".into(), json!(request.download_bytes));
-    body.insert("test_bytes_upload".into(), json!(request.upload_bytes));
-    body.insert("test_nsec_download".into(), json!(request.download_duration_ms * 1_000_000));
-    body.insert("test_nsec_upload".into(), json!(request.upload_duration_ms * 1_000_000));
     body.insert("test_speed_download".into(), json!((request.download_mbps * 1000.0).round() as i64));
     body.insert("test_speed_upload".into(), json!((request.upload_mbps * 1000.0).round() as i64));
     body.insert("test_ping_shortest".into(), json!(shortest_ping_ns(request)));
