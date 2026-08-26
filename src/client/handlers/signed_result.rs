@@ -15,6 +15,9 @@ pub fn handle_signed_result_command(
     loop {
         debug!("write_string: {}", String::from_utf8_lossy(&state.write_buffer[state.write_pos..command.len()]));
         let n = state.stream.write(&mut state.write_buffer[state.write_pos..command.len()])?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.write_pos += n;
         if state.write_pos >= command.len() {
             state.write_pos = 0;
@@ -34,6 +37,9 @@ pub fn handle_signed_result_receive(
     loop {
         let mut buf = [0; 1024];
         let n = state.stream.read(&mut buf)?;
+        if n == 0 {
+            return Ok(0);
+        }
         debug!("{}", String::from_utf8_lossy(&buf[0..n]));
         debug!("{}", state.read_pos);
         state.read_buffer[state.read_pos..state.read_pos + n].copy_from_slice(&buf[0..n]);
@@ -60,6 +66,9 @@ pub fn handle_signed_result_send_ok(
     let ok = b"OK\n";
     loop {
         let n = state.stream.write(ok)?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.write_pos += n;
         if state.write_pos >= ok.len() {
             state.write_pos = 0;

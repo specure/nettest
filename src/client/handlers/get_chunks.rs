@@ -18,6 +18,9 @@ pub fn handle_get_chunks_receive_time(
         let n = state
             .stream
             .read(&mut state.read_buffer[state.read_pos..])?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.read_pos += n;
         let buffer_str = String::from_utf8_lossy(&state.read_buffer[..state.read_pos]);
 
@@ -74,6 +77,9 @@ pub fn handle_get_chunks_send_chunks_command(
         let n = state
             .stream
             .write(&state.write_buffer[state.write_pos..state.write_pos + command.len()])?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.write_pos += n;
         if state.write_pos == command.len() {
             state
@@ -100,6 +106,9 @@ pub fn handle_get_chunks_send_ok(
         let n = state
             .stream
             .write(&state.write_buffer[state.write_pos..state.write_pos + OK_COMMAND.len()])?;
+        if n == 0 {
+            return Ok(0);
+        }
         state.write_pos += n;
         if state.write_pos == OK_COMMAND.len() {
             state
@@ -122,6 +131,11 @@ pub fn handle_get_chunks_receive_chunk(
         let n = state
             .stream
             .read(&mut state.chunk_buffer[state.read_pos..])?;
+        if n == 0 {
+            // EOF: the peer is gone, so the chunk can never complete. Without
+            // this the loop would spin on read() forever, burning a core.
+            return Ok(0);
+        }
         state.read_pos += n;
         if state.read_pos == state.chunk_size as usize {
             if state.chunk_buffer[state.read_pos - 1] == 0x00 {

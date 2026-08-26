@@ -294,11 +294,20 @@ impl Read for WebSocketClient {
             }
             Ok(Message::Close(_)) => {
                 debug!("WebSocket close message");
+                // Ok(0) is EOF: callers stop their read loop on it.
                 Ok(0)
             }
             Ok(_) => {
+                // Ping/Pong/Frame carry no payload for the caller, but the
+                // connection is alive — reporting EOF here would abort a
+                // perfectly healthy test. Anything already buffered is handed
+                // over; otherwise this reads as "nothing available yet".
                 debug!("WebSocket other message");
-                Ok(0)
+                if current_pos > 0 {
+                    Ok(current_pos)
+                } else {
+                    Err(io::Error::new(io::ErrorKind::WouldBlock, "WouldBlock"))
+                }
             }
             Err(e) => match e {
                 tungstenite::Error::Io(io_err)

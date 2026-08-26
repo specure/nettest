@@ -150,6 +150,9 @@ pub fn handle_put_time_result_receive_ok(
         let n = measurement_state
             .stream
             .read(&mut measurement_state.read_buffer[measurement_state.read_pos..b"OK\n".len()])?;
+        if n == 0 {
+            return Ok(0);
+        }
         if n == b"OK\n".len() {
             measurement_state.phase = TestPhase::PerfSendChunks;
             // READABLE too: drain interim TIMERESULT while sending.
@@ -173,6 +176,9 @@ pub fn handle_put_time_result_receive_time(
         let n = measurement_state
             .stream
             .read(&mut measurement_state.read_buffer[measurement_state.read_pos..])?;
+        if n == 0 {
+            return Ok(0);
+        }
         measurement_state.time_result_buffer.extend_from_slice(&measurement_state.read_buffer[..n]);
 
         // The server may send any number of interim `TIMERESULT ...` lines for
@@ -216,6 +222,9 @@ pub fn handle_put_time_result_send_command(
         let n = measurement_state
             .stream
             .write(&mut measurement_state.write_buffer[measurement_state.write_pos..command.len()])?;
+        if n == 0 {
+            return Ok(0);
+        }
         measurement_state.write_pos += n;
         if measurement_state.write_pos == command.len() {
             measurement_state.phase = TestPhase::PerfReceiveOk;
@@ -304,6 +313,9 @@ pub fn handle_put_time_result_send_last_chunk(
     loop {
         // Write from current position
         let n = measurement_state.stream.write(&buffer[measurement_state.write_pos..])?;
+        if n == 0 {
+            return Ok(0);
+        }
         measurement_state.bytes_sent += n as u64;
         measurement_state.write_pos += n;
         if measurement_state.write_pos == measurement_state.chunk_size {

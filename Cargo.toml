@@ -16,7 +16,10 @@ path = "src/main.rs"
 
 # Portable dependencies (compile on both native and wasm32).
 [dependencies]
-log = "0.4.20"
+# "std" is required by log::set_boxed_logger in src/logger/mod.rs. It used to
+# be enabled implicitly by env_logger; declare it now that env_logger is a
+# dev-dependency, so a plain `cargo build` still compiles.
+log = { version = "0.4.20", features = ["std"] }
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = "1.0"
 sha1 = "0.10.6"
@@ -27,7 +30,6 @@ regex = "1.10.3"
 fastrand = "2.0.1"
 uuid = { version = "1.7.0", features = ["v4"] }
 futures = "0.3"
-futures-util = "0.3.30"
 lazy_static = "1.4.0"
 bytes = "1.11.1"
 anyhow = "1.0"
@@ -35,38 +37,31 @@ semver = "1.0"
 # Instant that works on wasm (performance.now); a std::time re-export on native.
 web-time = "1.1"
 
-# Native-only dependencies (raw sockets, TLS, threads, server, plotting, http).
+# Native-only dependencies (raw sockets, TLS, threads, server, printing, http).
 # Not available / not needed in a browser WASM build.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-openssl = { version = "0.10.72", features = ["vendored"]}
+getrandom = "0.4"
 tokio = { version = "1.36.0", features = ["full"] }
-env_logger = "0.11.2"
 libc = "0.2.153"
-tokio-tungstenite = { version = "0.21.0", features = ["rustls"] }
-tungstenite = { version = "0.21.0", features = ["rustls"] }
+tokio-tungstenite = { version = "0.24.0", features = ["rustls"] }
+tungstenite = { version = "0.24.0", features = ["rustls"] }
 chrono = "0.4.34"
-tokio-rustls = { version = "0.25.0" }
-rustls = { version = "0.22.0" }
+tokio-rustls = { version = "0.26.0", default-features = false, features = ["ring", "tls12", "logging"] }
+rustls = { version = "0.23.0", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 rustls-pemfile = "2.0.0"
-quanta = "0.11"
-plotters = "0.3.7"
-plotters-backend = "0.3.7"
 textplots = "0.8.7"
-reqwest = { version = "0.11.16", features = ["json"] }
+reqwest = { version = "0.12.9", default-features = false, features = ["json", "rustls-tls"] }
 mio = { version = "1", features = ["net"] }
-ringbuf = "0.4.8"
-rgb = "0.8.50"
 prettytable = "0.10.0"
-num_cpus = "1.13"
-rayon = "1.8"
 mdns-sd = "0.17.1"
 include_dir = "0.7"
+# QUIC endpoint for the browser QoS phase (jitter / packet loss over datagrams).
 wtransport = "0.7"
 
 [target.'cfg(unix)'.dependencies]
 nix = "0.26"
 
-# Browser WASM dependencies: JS interop + the WebSocket transport, plus
+# Browser WASM dependencies: JS interop and the WebSocket transport, plus
 # getrandom's "js" backend so uuid v4 / fastrand work in the browser.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
@@ -92,3 +87,5 @@ web-sys = { version = "0.3", features = [
 [dev-dependencies]
 tokio-native-tls = "0.3"
 native-tls = "0.2"
+env_logger = "0.11.2"
+futures-util = "0.3.30"
