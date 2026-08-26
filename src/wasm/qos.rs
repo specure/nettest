@@ -118,7 +118,7 @@ fn hex(uuid: &[u8; 16]) -> String {
 
 /// Host part of the control-channel URL — the QUIC endpoint lives on the same
 /// host, on its own UDP port.
-fn host_of(url: &str) -> &str {
+pub fn host_of(url: &str) -> &str {
     let without_scheme = url.split("://").nth(1).unwrap_or(url);
     let host = without_scheme.split('/').next().unwrap_or(without_scheme);
     // Keep a bracketed IPv6 literal intact; otherwise cut the port.

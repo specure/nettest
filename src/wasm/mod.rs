@@ -29,6 +29,7 @@
 //! hides loss behind retransmissions.
 
 pub mod qos;
+pub mod save;
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
@@ -776,6 +777,10 @@ pub async fn run_measurement(
     let legacy_upload = opt_bool(&options, "legacyUpload", false);
     let do_signed_result = opt_bool(&options, "signedResult", false);
     let do_qos = opt_bool(&options, "qos", true);
+    // Submitting the result is opt-in: a page pointed at a measurement server
+    // has no business posting to a control server unless it was told to.
+    let control_server = get_prop(&options, "controlServer").and_then(|v| v.as_string());
+    let do_save = opt_bool(&options, "save", false) && control_server.is_some();
     let qos_packets = opt_u64(&options, "qosPackets", 10).max(2) as u32;
     let qos_delay_ms = opt_u64(&options, "qosDelayMs", 200).max(1);
     let progress_fn = opt_fn(&options, "onProgress");
@@ -991,6 +996,52 @@ pub async fn run_measurement(
         log_ping_jitter_fallback(ctx, jitter_ms);
     }
 
+    // ---- SAVE (control server) ----
+    let mut open_test_uuid: Option<String> = None;
+    if do_save {
+        ctx.begin_phase("save");
+        let request = save::SaveRequest {
+            control_server: control_server.clone().unwrap_or_default(),
+            client_uuid: save::client_uuid(),
+            open_test_uuid: save::new_open_test_uuid(),
+            measurement_server: qos::host_of(&url).to_string(),
+            client_version: env!("CARGO_PKG_VERSION").to_string(),
+            ping_ms,
+            ping_times_ns: conns
+                .iter()
+                .find(|c| alive[c.idx])
+                .map(|c| c.state.ping_times.clone())
+                .unwrap_or_default(),
+            jitter_ms,
+            packet_loss_percent: packet_loss,
+            download_mbps,
+            upload_mbps,
+            download_bytes,
+            upload_bytes,
+            download_duration_ms: download_ms,
+            upload_duration_ms: upload_ms,
+            threads: alive.iter().filter(|a| **a).count(),
+            samples: conns
+                .iter()
+                .filter(|c| alive[c.idx])
+                .map(|c| save::ThreadSamples {
+                    thread: c.idx,
+                    download: c.state.download_measurements.iter().cloned().collect(),
+                    upload: c.state.upload_measurements.iter().cloned().collect(),
+                })
+                .collect(),
+        };
+        match save::submit(&request).await {
+            Ok(uuid) => {
+                open_test_uuid = Some(uuid.clone());
+                ctx.log(&format!("saved: {uuid}"));
+            }
+            // A measurement that could not be filed is still a measurement:
+            // report the reason and hand the numbers back regardless.
+            Err(e) => ctx.log(&format!("save failed: {}", save::describe_failure(&e))),
+        }
+    }
+
     // ---- SIGNEDRESULT (single connection) ----
     let mut envelope: Option<String> = None;
     if do_signed_result {
@@ -1015,6 +1066,13 @@ pub async fn run_measurement(
     let set = |k: &str, v: JsValue| {
         let _ = js_sys::Reflect::set(&obj, &JsValue::from_str(k), &v);
     };
+    set(
+        "openTestUuid",
+        match &open_test_uuid {
+            Some(uuid) => JsValue::from_str(uuid),
+            None => JsValue::NULL,
+        },
+    );
     set("pingMs", JsValue::from_f64(ping_ms));
     set(
         "jitterMs",
