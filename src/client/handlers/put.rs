@@ -1,7 +1,7 @@
 use anyhow::Result;
 use log::{debug, info, trace};
-use mio::{Interest, Poll};
-use std::time::Instant;
+use crate::reactor::{Interest, Poll};
+use web_time::Instant;
 
 use crate::client::constants::OK_COMMAND;
 use crate::client::globals::{CHUNK_STORAGE, CHUNK_TERMINATION_STORAGE};

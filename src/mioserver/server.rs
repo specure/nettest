@@ -93,6 +93,8 @@ pub struct TestState {
     pub udp_in_num_packets: Option<u32>,
     pub udp_out_result: Option<Arc<Mutex<Option<UdpServerOutResult>>>>,
     pub udp_in_result: Option<Arc<Mutex<Option<UdpServerInResult>>>>,
+    /// UUID binding this control connection to its WebTransport QoS session.
+    pub wt_uuid: Option<[u8; 16]>,
 }
 
 #[derive(Clone)]

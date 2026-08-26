@@ -190,6 +190,7 @@ impl Worker {
                                 udp_in_num_packets: None,
                                 udp_out_result: None,
                                 udp_in_result: None,
+                                wt_uuid: None,
                             },
                         );
                     }

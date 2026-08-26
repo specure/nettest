@@ -1,5 +1,8 @@
+// Portable: the RTP packet model and the RFC 3550 QoS maths, reused by the
+// browser client. Native-only: the UDP socket driver below.
 pub mod calculator;
 pub mod rtp;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod udp;
 
 pub use calculator::RtpQoSResult;

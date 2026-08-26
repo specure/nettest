@@ -12,3 +12,4 @@ pub mod timeout_utils;
 pub mod static_files;
 pub mod voip;
 pub mod udp;
+pub mod wtqos;

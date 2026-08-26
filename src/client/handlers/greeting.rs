@@ -2,7 +2,7 @@ use crate::client::{state::{MeasurementState, TestPhase}};
 use crate::stream::stream::Stream;
 use anyhow::Result;
 use log::{debug};
-use mio::{Interest, Poll};
+use crate::reactor::{Interest, Poll};
 
 
 pub fn handle_greeting_send_connection_type(
@@ -16,7 +16,21 @@ pub fn handle_greeting_send_connection_type(
         state.write_buffer[0..greeting.len()].copy_from_slice(&greeting);
     }
 
+    // Browser WebSocket: the WS handshake is already done and there is no RMBT
+    // upgrade to send, so wait for the server's greeting straight away.
+    #[cfg(target_arch = "wasm32")]
+    if let Stream::Js(_) = &mut state.stream {
+        state
+            .stream
+            .reregister(&poll, state.token, Interest::READABLE)?;
+        state.phase = TestPhase::GreetingReceiveGreeting;
+        state.write_pos = 0;
+        state.read_pos = 0;
+        return Ok(1);
+    }
+
     match &mut state.stream {
+        #[cfg(not(target_arch = "wasm32"))]
         Stream::WebSocketTls(stream) => {
             state.phase = TestPhase::GreetingSendToken;
             debug!("TO Greeting send token token WS TLS {:?}", state.token);
@@ -26,6 +40,7 @@ pub fn handle_greeting_send_connection_type(
             state.read_pos = 0;
             return Ok(1);
         }
+        #[cfg(not(target_arch = "wasm32"))]
         Stream::WebSocket(stream) => {
             state.phase = TestPhase::GreetingSendToken;
             debug!("TO Greeting send token token WS {:?}", state.token);

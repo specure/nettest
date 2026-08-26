@@ -164,6 +164,14 @@ fn parse_config_content(content: &str) -> Result<FileConfig, anyhow::Error> {
                         config.server_udp_port = port;
                     }
                 }
+                "server_wt_port" => {
+                    if let Ok(port) = value.parse::<u16>() {
+                        config.server_wt_port = port;
+                    }
+                }
+                "enable_webtransport" => {
+                    config.enable_webtransport = value == "true";
+                }
                 "max_chunk_size" => {
                     if let Ok(size) = value.parse::<u32>() {
                         config.max_chunk_size = Some(size);

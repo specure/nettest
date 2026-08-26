@@ -22,7 +22,36 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         debug!("args: {:?}", args);
         args = args.iter().skip(1).map(|s| s.clone()).collect();
 
+        let wt_settings = (
+            config.enable_webtransport,
+            config.server_wt_port,
+            config.cert_path.clone(),
+            config.key_path.clone(),
+        );
         let mut mio_server = MioServer::new(args, config)?;
+
+        // QUIC/WebTransport QoS endpoint on its own UDP port, next to the RMBT
+        // TCP listener: it is what lets a browser measure jitter / packet loss,
+        // which need unreliable datagrams. Failing to start it is not fatal —
+        // the control channel then answers "QoS unavailable" and everything
+        // else still runs.
+        let (wt_enabled, wt_port, wt_cert, wt_key) = wt_settings;
+        if wt_enabled {
+            match nettest::wtqos::endpoint::identity_from_config(
+                wt_cert.as_deref(),
+                wt_key.as_deref(),
+            )
+            .await
+            {
+                Ok((identity, self_signed)) => {
+                    if let Err(e) = nettest::wtqos::start(wt_port, identity, self_signed) {
+                        info!("WebTransport QoS endpoint not started: {e}");
+                    }
+                }
+                Err(e) => info!("WebTransport QoS identity unavailable: {e}"),
+            }
+        }
+
 
         // Create separate thread for signal handling
         let shutdown_signal = mio_server.get_shutdown_signal();

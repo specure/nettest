@@ -1,8 +1,8 @@
 use anyhow::Result;
 use log::{debug, info, trace};
-use mio::{Events, Interest, Poll, Token};
+use crate::reactor::{Events, Interest, Poll, Token};
 use std::collections::VecDeque;
-use std::time::Instant;
+use web_time::Instant;
 use std::{net::SocketAddr, path::Path, time::Duration};
 use std::io;
 
@@ -79,6 +79,9 @@ pub enum TestPhase {
     UdpCompleted,
 }
 
+// The native driver: owns the mio poll + event loop. On wasm the state machine
+// is driven by a JS pump instead, so TestState is native-only.
+#[cfg(not(target_arch = "wasm32"))]
 pub struct TestState {
     poll: Poll,
     events: Events,
@@ -140,6 +143,64 @@ pub struct MeasurementState {
     pub packetloss_duration_ms: u64,
 }
 
+impl MeasurementState {
+    /// Build the shared measurement state around an already-connected `stream`.
+    /// Used by the native `TestState::new` and by the wasm driver (which passes a
+    /// `Stream::Js` and a dummy `server_addr`).
+    pub fn new(stream: Stream, token: Token, server_addr: SocketAddr) -> Self {
+        MeasurementState {
+            phase: TestPhase::GreetingSendConnectionType,
+            upload_bytes: None,
+            upload_time: None,
+            upload_speed: None,
+            download_time: None,
+            chunk_size: MIN_CHUNK_SIZE as usize,
+            ping_median: None,
+            read_buffer: [0u8; 1024 * 8 * 16],
+            download_measurements: VecDeque::new(),
+            upload_measurements: VecDeque::new(),
+            phase_start_time: None,
+            failed: false,
+            token,
+            write_buffer: [0u8; 1024 * 8 * 16],
+            read_pos: 0,
+            write_pos: 0,
+            stream,
+            total_chunks: 1,
+            chunk_buffer: Vec::with_capacity(MIN_CHUNK_SIZE as usize),
+            cursor: 0,
+            ping_times: Vec::new(),
+            time_result: None,
+            bytes_received: 0,
+            bytes_sent: 0,
+            time_result_buffer: Vec::new(),
+            envelope: None,
+            server_addr,
+            voip_ssrc: None,
+            voip_params: None,
+            voip_result_in: None,
+            voip_result_out: None,
+            server_udp_port: crate::udp::DEFAULT_UDP_SERVER_PORT,
+            udp_out_port: None,
+            udp_out_uuid: None,
+            udp_in_uuid: None,
+            udp_in_port: None,
+            udp_in_socket: None,
+            udp_result_out: None,
+            udp_result_in: None,
+            udp_server_received_out: None,
+            live_sink: None,
+            last_live_publish: None,
+            puttimeresult_interval_ms: 0,
+            download_duration_ms: 7000,
+            upload_duration_ms: 7000,
+            jitter_duration_ms: 4000,
+            packetloss_duration_ms: 4000,
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 impl TestState {
     pub fn new(
         addr: SocketAddr,
@@ -173,56 +234,7 @@ impl TestState {
         stream.register(&mut poll, token, Interest::READABLE | Interest::WRITABLE)?;
         debug!("Stream registered");
 
-        let measurement_state = MeasurementState {
-            phase: TestPhase::GreetingSendConnectionType,
-            upload_bytes: None,
-            upload_time: None,
-            upload_speed: None,
-            download_time: None,
-            chunk_size: MIN_CHUNK_SIZE as usize,
-            ping_median: None,
-            read_buffer: [0u8; 1024 * 8 * 16],
-            download_measurements: VecDeque::new(),
-            upload_measurements: VecDeque::new(),
-            phase_start_time: None,
-            failed: false,
-            token,
-            write_buffer: [0u8; 1024 * 8 * 16],
-            read_pos: 0,
-            write_pos: 0,
-            stream,
-            total_chunks: 1,
-            chunk_buffer: Vec::with_capacity(MIN_CHUNK_SIZE as usize),
-            cursor: 0,
-            ping_times: Vec::new(),
-            time_result: None,
-            bytes_received: 0,
-            bytes_sent: 0,
-            time_result_buffer: Vec::new(),
-            envelope: None,
-            server_addr: addr,
-            voip_ssrc: None,
-            voip_params: None,
-            voip_result_in: None,
-            voip_result_out: None,
-            server_udp_port: crate::udp::DEFAULT_UDP_SERVER_PORT,
-            udp_out_port: None,
-            udp_out_uuid: None,
-            udp_in_uuid: None,
-            udp_in_port: None,
-            udp_in_socket: None,
-            udp_result_out: None,
-            udp_result_in: None,
-            udp_server_received_out: None,
-            live_sink: None,
-            last_live_publish: None,
-            puttimeresult_interval_ms: 0,
-            download_duration_ms: 7000,
-            upload_duration_ms: 7000,
-            jitter_duration_ms: 4000,
-            packetloss_duration_ms: 4000,
-        };
-
+        let measurement_state = MeasurementState::new(stream, token, addr);
 
         Ok(Self {
             poll,

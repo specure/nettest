@@ -30,7 +30,13 @@ impl WebSocketClient {
 
     pub fn finish_server_handshake(&mut self, handshake: Handshake) -> Result<()> {
         let response = generate_handshake_response(&handshake).unwrap();
-        self.write_all(response.as_bytes()).unwrap();
+        // The HTTP 101 response must go out as raw bytes: `self.write_all` would
+        // wrap it in a WebSocket frame, which real clients (browsers, Node) see
+        // as garbage before the handshake and reject. Mirrors the TLS variant
+        // in `websocket_rustls_server.rs`.
+        let stream = self.ws.get_mut();
+        stream.write_all(response.as_bytes())?;
+        stream.flush()?;
         Ok(())
     }
 

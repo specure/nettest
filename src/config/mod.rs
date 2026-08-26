@@ -15,6 +15,9 @@ pub struct FileConfig {
     pub server_tcp_port: String,
     pub server_tls_port: Option<String>,
     pub server_udp_port: u16,
+    /// UDP port of the QUIC/WebTransport QoS endpoint (browser jitter / loss).
+    pub server_wt_port: u16,
+    pub enable_webtransport: bool,
     pub cert_path: Option<String>,
     pub key_path: Option<String>,
     pub server_workers: Option<usize>,
@@ -46,6 +49,8 @@ impl Default for FileConfig {
             server_tcp_port: "5005".to_string(),
             server_tls_port: None,
             server_udp_port: 5004,
+            server_wt_port: crate::wtqos::DEFAULT_WT_PORT,
+            enable_webtransport: true,
             cert_path: None,
             key_path: None,
             server_workers: None,
