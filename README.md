@@ -1,6 +1,6 @@
 # 🌐 Nettest - Network Speed Measurement
 
-![Network Speed Measurement](Gemini_Generated_Image_skkcnfskkcnfskkc.png)
+![Network Speed Measurement](hero.jpg)
 
 ## Overview
 
