@@ -38,7 +38,10 @@ pub struct FileConfig {
     pub registration_token: Option<String>,
     pub client_uuid: Option<String>,
     pub signed_result: bool,
+    /// Announce the server on the local network over mDNS (`_nettest._tcp`).
     pub enable_mdns: bool,
+    /// Serve the embedded browser client on the measurement port(s).
+    pub enable_web_ui: bool,
     pub max_chunk_size: Option<u32>,
 }
 
@@ -71,7 +74,8 @@ impl Default for FileConfig {
             registration_token: None,
             client_uuid: None,
             signed_result: false,
-            enable_mdns: false,
+            enable_mdns: true,
+            enable_web_ui: true,
             max_chunk_size: None,
         }
     }

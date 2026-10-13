@@ -1,4 +1,5 @@
 pub mod server;
+pub mod banner;
 pub mod handlers;
 pub mod server_test_phase;
 pub mod worker;

@@ -40,63 +40,57 @@ const SEND_HIGH_WATER: u32 = 512 * 1024;
 const MAX_SEND: usize = 256 * 1024;
 
 /// One received WebSocket message and how much of it has been read.
+///
+/// The payload stays in JS memory (a view on the message's `ArrayBuffer`);
+/// only the bytes a caller actually asks for are copied into wasm.
 struct Message {
-    data: Vec<u8>,
+    data: js_sys::Uint8Array,
+    len: usize,
     read: usize,
 }
 
 /// Received-but-unread data.
 ///
-/// A queue of whole messages rather than a byte deque: the download path moves
-/// gigabytes, and profiling the phase showed the byte-wise `VecDeque::extend`
-/// and its per-message zeroed allocation costing about a tenth of the run all
-/// by themselves. Keeping messages intact leaves exactly two copies per byte —
-/// JS memory into wasm (unavoidable), then into the caller's buffer — and the
-/// drained buffers are recycled, so steady state allocates nothing.
+/// A queue of whole messages, kept on the JS side. The download path moves
+/// gigabytes but only needs each chunk's size and its terminator byte
+/// ([`Inbox::consume`]), so copying every message into wasm memory — as this
+/// used to — cost a full extra pass over every downloaded byte for nothing.
+/// Control lines and upload acknowledgements, which *are* parsed, are copied
+/// out on demand by [`Inbox::take`].
 #[derive(Default)]
 struct Inbox {
     messages: VecDeque<Message>,
-    /// Buffers returned by fully-read messages, ready to be filled again.
-    pool: Vec<Vec<u8>>,
     /// Unread bytes across all queued messages.
     unread: usize,
 }
 
 impl Inbox {
-    fn push(&mut self, array: &js_sys::Uint8Array) {
-        let len = array.length() as usize;
-        let mut data = self.pool.pop().unwrap_or_default();
-        // Grow only when the recycled buffer is too short: `truncate` below
-        // keeps the allocation, so a steady stream of same-sized chunks stops
-        // allocating and stops zeroing after the first few messages.
-        if data.len() < len {
-            data.resize(len, 0);
+    fn push(&mut self, data: js_sys::Uint8Array) {
+        let len = data.length() as usize;
+        if len == 0 {
+            return;
         }
-        array.copy_to(&mut data[..len]);
-        data.truncate(len);
-        self.messages.push_back(Message { data, read: 0 });
+        self.messages.push_back(Message { data, len, read: 0 });
         self.unread += len;
     }
 
     /// Drop up to `max` bytes, reporting the last one dropped.
     ///
     /// The download handler only needs the byte count and the terminator byte
-    /// that ends each RMBT chunk, so there is nothing to copy them into.
+    /// that ends each RMBT chunk, so nothing is copied: one JS call reads the
+    /// single byte that matters.
     fn consume(&mut self, max: usize) -> (usize, u8) {
         let mut consumed = 0;
         let mut last = 0u8;
         while consumed < max {
             let Some(front) = self.messages.front_mut() else { break };
-            let available = front.data.len() - front.read;
-            let n = available.min(max - consumed);
-            last = front.data[front.read + n - 1];
+            let n = (front.len - front.read).min(max - consumed);
+            last = front.data.get_index((front.read + n - 1) as u32);
             front.read += n;
             consumed += n;
-            if front.read == front.data.len() {
-                let done = self.messages.pop_front().expect("front exists");
-                if self.pool.len() < 8 {
-                    self.pool.push(done.data);
-                }
+            if front.read == front.len {
+                // Dropping the view releases the ArrayBuffer to the JS GC.
+                self.messages.pop_front();
             }
         }
         self.unread -= consumed;
@@ -107,18 +101,15 @@ impl Inbox {
         let mut written = 0;
         while written < buf.len() {
             let Some(front) = self.messages.front_mut() else { break };
-            let available = front.data.len() - front.read;
-            let n = available.min(buf.len() - written);
-            buf[written..written + n].copy_from_slice(&front.data[front.read..front.read + n]);
+            let n = (front.len - front.read).min(buf.len() - written);
+            front
+                .data
+                .subarray(front.read as u32, (front.read + n) as u32)
+                .copy_to(&mut buf[written..written + n]);
             front.read += n;
             written += n;
-            if front.read == front.data.len() {
-                let done = self.messages.pop_front().expect("front exists");
-                // Recycle a bounded number of buffers; a browser tab should not
-                // hold onto every buffer a multi-gigabyte transfer produced.
-                if self.pool.len() < 8 {
-                    self.pool.push(done.data);
-                }
+            if front.read == front.len {
+                self.messages.pop_front();
             }
         }
         self.unread -= written;
@@ -195,12 +186,12 @@ impl JsWss {
         let waker_msg = waker.clone();
         let onmessage = Closure::wrap(Box::new(move |e: MessageEvent| {
             if let Ok(ab) = e.data().dyn_into::<js_sys::ArrayBuffer>() {
-                inbox_cb.borrow_mut().push(&js_sys::Uint8Array::new(&ab));
+                inbox_cb.borrow_mut().push(js_sys::Uint8Array::new(&ab));
             } else if let Some(text) = e.data().as_string() {
                 let bytes = text.into_bytes();
                 inbox_cb
                     .borrow_mut()
-                    .push(&js_sys::Uint8Array::from(&bytes[..]));
+                    .push(js_sys::Uint8Array::from(&bytes[..]));
             }
             wake(&waker_msg);
         }) as Box<dyn FnMut(MessageEvent)>);

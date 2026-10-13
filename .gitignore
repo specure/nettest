@@ -1,0 +1,30 @@
+# Rust build output
+/target/
+
+# Planning notes (local working documents, not part of the project)
+/plans/
+
+# Node tooling for the static/ site
+node_modules/
+
+# Local TLS material and test certificates (never commit keys)
+*.pem
+/measurementservers.crt
+/measurementservers.key
+
+# Editor and OS files
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local environment overrides
+.env
+.env.*
+
+# Note: dist/ is committed on purpose. It is the built web client that
+# `cargo build` embeds into the binary, so plain `cargo install` works
+# without wasm-bindgen or binaryen. Rebuild it with scripts/build-web.sh.

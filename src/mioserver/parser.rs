@@ -20,7 +20,7 @@ pub fn parse_args(
         num_workers: default_config.server_workers,
         user: default_config.user,
         daemon: default_config.daemonize,
-        version: Some("2.0.0".to_string()),
+        version: Some(env!("CARGO_PKG_VERSION").to_string()),
         secret_key: generate_secret_key(),
         log_level: Some(default_config.logger),
         server_registration: default_config.server_registration,
@@ -29,7 +29,8 @@ pub fn parse_args(
         x_nettest_client: default_config.x_nettest_client,
         registration_token: default_config.registration_token,
         server_name: default_config.server_name,
-        enable_mdns: false,
+        enable_mdns: default_config.enable_mdns,
+        enable_web_ui: default_config.enable_web_ui,
         udp_port: default_config.server_udp_port,
         udp_server: None,
     };
@@ -91,9 +92,6 @@ pub fn parse_args(
                 if i < args.len() {
                     config.udp_port = args[i].parse().unwrap_or(5004);
                 }
-            }
-            "-mdns" => {
-                config.enable_mdns = true;
             }
             "--help" | "-h" => {
                 print_help();
@@ -176,7 +174,9 @@ fn print_help() {
     println!("    -log LEVEL      Set log level: info, debug, trace");
     println!("    -register       Enable server registration with control server");
     println!("    -udp PORT       UDP port for VoIP/packet loss tests (default: 5004)");
-    println!("    -mdns           Enable mDNS service discovery for local network");
     println!("    -h, --help      Show this help message");
-    println!("    -v, --version   Print version and exit");
+    println!("    -v, --version   Print version and exit\n");
+    println!("The browser client is served on the TCP (and TLS) port, and the server");
+    println!("announces itself over mDNS. Turn either off in nettest.conf with");
+    println!("enable_web_ui = false / enable_mdns = false.");
 }

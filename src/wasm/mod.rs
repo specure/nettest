@@ -70,6 +70,32 @@ const PING_TIMEOUT_MS: u64 = 10_000;
 const SIGNED_RESULT_TIMEOUT_MS: u64 = 12_000;
 /// Slack added on top of a phase's nominal duration before the pump gives up.
 const PHASE_SLACK_MS: u64 = 10_000;
+/// How long past the nominal download duration the client keeps reading
+/// before it ends the phase on its own clock.
+///
+/// The server stops sending after the requested seconds, but a browser that
+/// cannot keep up queues everything it was sent — Firefox without any limit —
+/// so the final chunk can sit gigabytes behind the read position. Waiting for
+/// it (the old `PHASE_SLACK_MS`) is what made Firefox time out and abort the
+/// test with a multi-gigabyte tab. Two seconds still covers the RTT and a
+/// bloated queue on a real link.
+const DOWNLOAD_GRACE_MS: u64 = 2_000;
+/// Default chunk-size cap for Firefox: its WebSocket delivers 256 KiB messages
+/// about 60 % faster than 4 MiB ones (4.9 → 8.0 Gbit/s on loopback), while
+/// Chromium is ~10 % slower with them, so the cap is Firefox-only.
+const FIREFOX_MAX_CHUNK: usize = 256 * 1024;
+/// Bounded-memory download (see [`run_download_windowed`]): first window per
+/// connection, before the client has measured anything.
+const WINDOW_INITIAL: usize = 4 * 1024 * 1024;
+/// Default in-flight budget across all connections. Ample for a 10 Gbit/s
+/// LAN; the window would need to be larger only on long, fast paths.
+const WINDOW_BUDGET_MIB: u64 = 96;
+/// A window should take this many request round trips to transfer, so the
+/// idle gap between windows costs at most ~1/16 of the time…
+const WINDOW_TARGET_RTTS: u32 = 16;
+/// …and never less than this, so a sub-millisecond loopback RTT doesn't
+/// shrink windows into per-message overhead.
+const WINDOW_MIN_MS: u64 = 40;
 /// How long the pump waits for readability before re-checking its deadline.
 const READ_TICK_MS: i32 = 100;
 /// Fallback wait for the browser to flush its send buffer, used once the cheap
@@ -239,6 +265,19 @@ fn opt_fn(obj: &JsValue, key: &str) -> Option<js_sys::Function> {
     get_prop(obj, key).and_then(|v| v.dyn_into::<js_sys::Function>().ok())
 }
 
+/// `navigator.userAgent`, read off the global object so it also works in a
+/// worker and in Node (where it may be absent).
+fn user_agent() -> String {
+    get_prop(&js_sys::global(), "navigator")
+        .and_then(|n| get_prop(&n, "userAgent"))
+        .and_then(|ua| ua.as_string())
+        .unwrap_or_default()
+}
+
+fn is_firefox() -> bool {
+    user_agent().contains("Firefox/")
+}
+
 /// Which byte counter a phase feeds into the progress callback.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Track {
@@ -293,6 +332,58 @@ impl Ctx {
             *slot = bytes;
         }
         self.emit(force);
+    }
+
+    /// Announce a transfer phase's final figure as soon as it is known, so the
+    /// page can replace the live estimate without waiting for the whole run.
+    fn emit_final(&self, phase: &str, mbps: f64, bytes: u64) {
+        let Some(f) = &self.progress_fn else { return };
+        let obj = js_sys::Object::new();
+        let set = |k: &str, v: JsValue| {
+            let _ = js_sys::Reflect::set(&obj, &JsValue::from_str(k), &v);
+        };
+        set("phase", JsValue::from_str(phase));
+        set("bytes", JsValue::from_f64(bytes as f64));
+        set("mbps", JsValue::from_f64(mbps));
+        set("final", JsValue::TRUE);
+        let _ = f.call1(&JsValue::NULL, &obj);
+    }
+
+    /// Announce a latency-type result (ping, QoS) as soon as it is known, as
+    /// `{ phase, final: true, <name>: value | null, ... }`.
+    fn emit_values(&self, phase: &str, values: &[(&str, Option<f64>)]) {
+        let Some(f) = &self.progress_fn else { return };
+        let obj = js_sys::Object::new();
+        let set = |k: &str, v: JsValue| {
+            let _ = js_sys::Reflect::set(&obj, &JsValue::from_str(k), &v);
+        };
+        set("phase", JsValue::from_str(phase));
+        set("final", JsValue::TRUE);
+        for (name, value) in values {
+            set(name, value.map(JsValue::from_f64).unwrap_or(JsValue::NULL));
+        }
+        let _ = f.call1(&JsValue::NULL, &obj);
+    }
+
+    /// The ping result plus every round trip, as `{ phase: "ping", final:
+    /// true, pingMs, jitterMs, samplesMs: [..] }`, so the page can plot the
+    /// spread of the individual pings and not only the median.
+    fn emit_ping(&self, ping_ms: f64, jitter_ms: Option<f64>, times_ns: &[u64]) {
+        let Some(f) = &self.progress_fn else { return };
+        let obj = js_sys::Object::new();
+        let set = |k: &str, v: JsValue| {
+            let _ = js_sys::Reflect::set(&obj, &JsValue::from_str(k), &v);
+        };
+        let samples = js_sys::Array::new();
+        for ns in times_ns {
+            samples.push(&JsValue::from_f64(*ns as f64 / 1e6));
+        }
+        set("phase", JsValue::from_str("ping"));
+        set("final", JsValue::TRUE);
+        set("pingMs", JsValue::from_f64(ping_ms));
+        set("jitterMs", jitter_ms.map(JsValue::from_f64).unwrap_or(JsValue::NULL));
+        set("samplesMs", samples.into());
+        let _ = f.call1(&JsValue::NULL, &obj);
     }
 
     fn emit(&self, force: bool) {
@@ -392,6 +483,28 @@ impl Conn {
 
     fn close(&mut self) {
         let _ = self.state.stream.close();
+    }
+
+    /// Replace this connection with a fresh socket at the command prompt.
+    ///
+    /// Used after a download that was cut short on the client's clock (or
+    /// failed): the old socket is mid-`GETTIME`, so the server still expects
+    /// to finish that exchange before it will take a new command. The protocol
+    /// has no way to abort a transfer, so the clean way back to the prompt is a
+    /// new connection and greeting — the same thing every connection did at
+    /// the start of the test. The results gathered so far move over with it.
+    async fn reopen(&mut self, url: &str, ctx: &Ctx) -> Result<(), JsValue> {
+        self.close();
+        let mut fresh = Conn::connect(url, self.idx).await?;
+        run_greeting(&mut fresh, ctx).await?;
+        let (old, new) = (&mut self.state, &mut fresh.state);
+        new.ping_times = std::mem::take(&mut old.ping_times);
+        new.ping_median = old.ping_median;
+        new.download_measurements = std::mem::take(&mut old.download_measurements);
+        new.bytes_received = old.bytes_received;
+        new.download_time = old.download_time;
+        *self = fresh;
+        Ok(())
     }
 
     /// Bytes the progress callback should report for `track`. For upload the
@@ -614,7 +727,22 @@ async fn run_ping(conn: &mut Conn, ctx: &Ctx) -> Result<(), JsValue> {
     pump_until(conn, ctx, TestPhase::PingCompleted, PING_TIMEOUT_MS, Track::None).await
 }
 
-async fn run_download(conn: &mut Conn, ctx: &Ctx, chunk_size: usize, duration_ms: u64) -> Result<(), JsValue> {
+/// How a connection's download phase ended.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DownloadEnd {
+    /// The full `GETTIME` exchange finished; the socket is back at the prompt.
+    Completed,
+    /// Ended on the client's clock with samples in hand; the socket is still
+    /// mid-transfer and must be replaced before it can be used again.
+    Truncated,
+}
+
+async fn run_download(
+    conn: &mut Conn,
+    ctx: &Ctx,
+    chunk_size: usize,
+    duration_ms: u64,
+) -> Result<DownloadEnd, JsValue> {
     conn.state.chunk_size = chunk_size;
     conn.state.download_duration_ms = duration_ms;
     conn.state.download_measurements.clear();
@@ -624,14 +752,203 @@ async fn run_download(conn: &mut Conn, ctx: &Ctx, chunk_size: usize, duration_ms
     conn.state.phase = TestPhase::GetTimeSendCommand;
     conn.set_interest(Interest::WRITABLE);
     conn.state.phase_start_time = Some(Instant::now());
-    pump_until(
-        conn,
-        ctx,
-        TestPhase::GetTimeCompleted,
-        duration_ms + PHASE_SLACK_MS,
-        Track::Download,
-    )
-    .await
+    let limit_ms = duration_ms + DOWNLOAD_GRACE_MS;
+    let deadline = Instant::now() + Duration::from_millis(limit_ms);
+    let result = pump_until(conn, ctx, TestPhase::GetTimeCompleted, limit_ms, Track::Download).await;
+    match result {
+        Ok(()) => Ok(DownloadEnd::Completed),
+        // Out of time while data was still arriving: keep what was measured.
+        Err(_)
+            if Instant::now() >= deadline
+                && !conn.state.failed
+                && !conn.state.download_measurements.is_empty()
+                && matches!(
+                    conn.state.phase,
+                    TestPhase::GetTimeReceiveChunk
+                        | TestPhase::GetTimeSendOk
+                        | TestPhase::GetTimeReceiveTime
+                ) =>
+        {
+            // Samples taken after the server stopped sending time how fast the
+            // tab drained its own backlog, not the link: keep the nominal window.
+            let window_ns = duration_ms.saturating_mul(1_000_000);
+            let samples = &mut conn.state.download_measurements;
+            if samples.front().map_or(false, |(t, _)| *t <= window_ns) {
+                samples.retain(|(t, _)| *t <= window_ns);
+            }
+            conn.state.bytes_received = samples.back().map_or(0, |(_, b)| *b);
+            Ok(DownloadEnd::Truncated)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Write one control line, waiting out browser send backpressure.
+async fn send_line(conn: &mut Conn, line: &str, deadline: Instant) -> Result<(), JsValue> {
+    let bytes = line.as_bytes();
+    let mut written = 0;
+    while written < bytes.len() {
+        match conn.state.stream.write(&bytes[written..]) {
+            Ok(0) => return Err(js_err("control channel accepted no bytes")),
+            Ok(n) => written += n,
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => yield_now().await,
+            Err(e) => return Err(js_err(format!("writing {}: {e}", line.trim()))),
+        }
+        if Instant::now() >= deadline {
+            return Err(js_err(format!("timeout sending {}", line.trim())));
+        }
+    }
+    Ok(())
+}
+
+/// Read complete lines until one starts with `prefix`.
+///
+/// Byte by byte on purpose: control lines are a few dozen bytes, and reading
+/// exactly up to the newline guarantees nothing that follows (the next
+/// window's chunk data) is swallowed with them.
+async fn read_line_until(conn: &mut Conn, prefix: &str, deadline: Instant) -> Result<String, JsValue> {
+    let mut line = Vec::with_capacity(64);
+    loop {
+        let mut byte = [0u8; 1];
+        match conn.state.stream.read(&mut byte) {
+            Ok(0) => return Err(js_err("control channel closed")),
+            Ok(_) if byte[0] == b'\n' => {
+                let text = String::from_utf8_lossy(&line).trim_end().to_string();
+                if text.starts_with(prefix) {
+                    return Ok(text);
+                }
+                line.clear();
+            }
+            Ok(_) if line.len() < 1024 => line.push(byte[0]),
+            Ok(_) => return Err(js_err(format!("overlong line while waiting for {prefix}"))),
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline {
+                    return Err(js_err(format!("timeout waiting for {prefix}")));
+                }
+                if conn.notify.is_closed() {
+                    return Err(js_err(format!("socket closed waiting for {prefix}")));
+                }
+                wait_readable_or_tick(&conn.notify, READ_TICK_MS).await;
+            }
+            Err(e) => return Err(js_err(format!("reading {prefix}: {e}"))),
+        }
+    }
+}
+
+/// Download in bounded windows: repeated `GETCHUNKS <n> <size>`, never more
+/// than `max_window` bytes requested at a time.
+///
+/// `GETTIME` lets the server send for N seconds as fast as TCP allows, and a
+/// browser that processes slower than the link (Firefox above ~7 Gbit/s, or
+/// any browser on loopback) has to queue the difference: Firefox does so
+/// without limit, which is the multi-gigabyte tab. The server has no flow
+/// control to ask for, but `GETCHUNKS` (an existing command, accepted at any
+/// prompt) sends exactly what was asked for and then waits for `OK`. So the
+/// client asks for one window at a time and the tab never holds more than one
+/// window per connection.
+///
+/// The price is an idle gap of about two round trips per window (`OK` ->
+/// `TIME`/`ACCEPT`, then `GETCHUNKS` -> first byte). Windows are therefore
+/// sized from what the previous one measured, so that one transfers in
+/// [`WINDOW_TARGET_RTTS`] of those gaps (at least [`WINDOW_MIN_MS`]), capped
+/// by `max_window`. Samples are taken on one continuous clock, gaps included,
+/// so the result is the throughput actually achieved, never an extrapolation.
+async fn run_download_windowed(
+    conn: &mut Conn,
+    ctx: &Ctx,
+    chunk_size: usize,
+    duration_ms: u64,
+    max_window: usize,
+) -> Result<DownloadEnd, JsValue> {
+    conn.state.chunk_size = chunk_size;
+    conn.state.download_duration_ms = duration_ms;
+    conn.state.download_measurements.clear();
+    conn.state.bytes_received = 0;
+    conn.state.read_pos = 0;
+    conn.state.write_pos = 0;
+    let start = Instant::now();
+    conn.state.phase_start_time = Some(start);
+    let phase_end = start + Duration::from_millis(duration_ms);
+    let deadline = phase_end + Duration::from_millis(PHASE_SLACK_MS);
+
+    let max_chunks = (max_window / chunk_size).max(1);
+    let mut chunks = (WINDOW_INITIAL / chunk_size).clamp(1, max_chunks);
+    while Instant::now() < phase_end {
+        let requested = Instant::now();
+        send_line(conn, &format!("GETCHUNKS {chunks} {chunk_size}\n"), deadline).await?;
+
+        let mut first_byte: Option<Instant> = None;
+        let (mut received, mut pos, mut last) = (0usize, 0usize, 0u8);
+        while received < chunks {
+            match conn.state.stream.consume(chunk_size - pos) {
+                Ok((0, _)) => return Err(js_err(format!("thread {} socket closed mid-window", conn.idx))),
+                Ok((n, byte)) => {
+                    first_byte.get_or_insert_with(Instant::now);
+                    pos += n;
+                    last = byte;
+                    if pos == chunk_size {
+                        pos = 0;
+                        received += 1;
+                        conn.state.bytes_received += chunk_size as u64;
+                        let t = start.elapsed().as_nanos() as u64;
+                        let total = conn.state.bytes_received;
+                        conn.state.download_measurements.push_back((t, total));
+                        ctx.note(conn.idx, total, false);
+                    }
+                }
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    if Instant::now() >= deadline {
+                        return Err(js_err(format!(
+                            "thread {} timed out in a download window ({received}/{chunks} chunks)",
+                            conn.idx
+                        )));
+                    }
+                    if conn.notify.is_closed() {
+                        return Err(js_err(format!("thread {} socket closed mid-window", conn.idx)));
+                    }
+                    wait_readable_or_tick(&conn.notify, READ_TICK_MS).await;
+                    ctx.note(conn.idx, conn.state.bytes_received, false);
+                }
+                Err(e) => return Err(js_err(format!("thread {} download: {e}", conn.idx))),
+            }
+        }
+        if last != 0xFF {
+            return Err(js_err(format!("thread {} window did not end with the terminator chunk", conn.idx)));
+        }
+        let data_done = Instant::now();
+        send_line(conn, "OK\n", deadline).await?;
+        read_line_until(conn, "TIME", deadline).await?;
+        read_line_until(conn, "ACCEPT", deadline).await?;
+
+        // Size the next window from this one: idle = both round trips,
+        // busy = first to last byte.
+        let first = first_byte.unwrap_or(data_done);
+        let idle = (first - requested) + data_done.elapsed();
+        let busy = (data_done - first).as_secs_f64().max(1e-4);
+        let rate = (chunks * chunk_size) as f64 / busy;
+        let target = (idle * WINDOW_TARGET_RTTS).max(Duration::from_millis(WINDOW_MIN_MS));
+        let wanted = (rate * target.as_secs_f64()) as usize / chunk_size;
+        // Grow at most 2x per window (one fast window is not a trend), shrink freely.
+        chunks = wanted.clamp(1, (chunks * 2).min(max_chunks));
+    }
+    // Back at the prompt, exactly like a completed GETTIME.
+    conn.state.phase = TestPhase::GetTimeCompleted;
+    Ok(DownloadEnd::Completed)
+}
+
+/// Download with either method; `window` is the per-connection byte budget
+/// for the bounded-memory variant, or `None` for the standard `GETTIME`.
+async fn download_phase(
+    conn: &mut Conn,
+    ctx: &Ctx,
+    chunk_size: usize,
+    duration_ms: u64,
+    window: Option<usize>,
+) -> Result<DownloadEnd, JsValue> {
+    match window {
+        Some(max_window) => run_download_windowed(conn, ctx, chunk_size, duration_ms, max_window).await,
+        None => run_download(conn, ctx, chunk_size, duration_ms).await,
+    }
 }
 
 /// Upload: `PUTTIMERESULT` (the server times the transfer and reports the
@@ -705,6 +1022,71 @@ macro_rules! parallel_phase {
     }};
 }
 
+/// Close every connection that dropped out of the phase just run (`before`
+/// alive, now not) and mark it for [`reopen_dirty`]. Closing right away matters
+/// in Firefox: it discards whatever the tab still had queued for that socket.
+fn retire_failed(conns: &mut [Conn], before: &[bool], alive: &[bool], dirty: &mut [bool], clean: &mut [bool]) {
+    for (i, c) in conns.iter_mut().enumerate() {
+        if before[i] && !alive[i] {
+            c.close();
+            dirty[i] = true;
+            clean[i] = false;
+        }
+    }
+}
+
+/// Bring every connection marked `dirty` back to the command prompt on a new
+/// socket, concurrently. Returns how many came back.
+async fn reopen_dirty(
+    conns: &mut [Conn],
+    alive: &mut [bool],
+    dirty: &mut [bool],
+    url: &str,
+    ctx: &Ctx,
+    label: &str,
+) -> usize {
+    let todo: Vec<bool> = dirty.to_vec();
+    if !todo.iter().any(|d| *d) {
+        return 0;
+    }
+    // Its own phase: the greeting resets the per-connection byte counters,
+    // which would otherwise drag the previous phase's live figure down.
+    ctx.begin_phase("reconnect");
+    let futures = conns
+        .iter_mut()
+        .enumerate()
+        .filter(|(i, _)| todo[*i])
+        .map(|(i, c)| async move { (i, c.reopen(url, ctx).await) });
+    let mut reopened = 0;
+    for (i, result) in join_all(futures).await {
+        // One attempt per connection, so a server that refuses new sockets
+        // cannot stall the test in a reconnect loop.
+        dirty[i] = false;
+        match result {
+            Ok(()) => {
+                alive[i] = true;
+                reopened += 1;
+            }
+            Err(e) => {
+                alive[i] = false;
+                ctx.log(&format!("{label}: reconnecting thread {i} failed: {}", err_str(&e)));
+            }
+        }
+    }
+    ctx.log(&format!(
+        "{label}: reconnected {reopened}/{} connection(s)",
+        todo.iter().filter(|d| **d).count()
+    ));
+    reopened
+}
+
+fn nullable_str(s: &Option<String>) -> JsValue {
+    match s {
+        Some(s) => JsValue::from_str(s),
+        None => JsValue::NULL,
+    }
+}
+
 fn samples_of(conns: &[Conn], alive: &[bool], upload: bool) -> Vec<Vec<(u64, u64)>> {
     conns
         .iter()
@@ -748,8 +1130,15 @@ fn log_ping_jitter_fallback(ctx: &Ctx, jitter_ms: Option<f64>) {
 /// ```
 ///
 /// Resolves to `{ pingMs, jitterMs, packetLossPercent, qosTransport,
-/// downloadMbps, downloadBytes, uploadMbps, uploadBytes, chunkSize, threads,
-/// durationMs, envelope }`. `jitterMs` is the RTT variation of the ping phase
+/// downloadMbps, downloadBytes, downloadError, uploadMbps, uploadBytes,
+/// uploadError, chunkSize, threads, durationMs, envelope }`. A transfer phase
+/// that fails on every connection no longer rejects the whole measurement: its
+/// `*Mbps` is `NaN` and `*Error` says why, and the remaining phases still run.
+/// `maxChunkSize` caps the pre-test's chunk size (default 256 KiB in Firefox,
+/// none elsewhere). `boundedDownload` (default true) downloads in
+/// `GETCHUNKS` windows so the tab holds at most `downloadWindowMiB` (default
+/// 96, split across connections) instead of whatever the server can push;
+/// it is ignored when `signedResult` is set. `jitterMs` is the RTT variation of the ping phase
 /// and `packetLossPercent` come from the QUIC-datagram QoS phase when it can
 /// run; `qosTransport` says which transport produced them (`"webtransport"`, or
 /// `"websocket"` for the ping-RTT fallback, where packet loss stays null).
@@ -770,6 +1159,12 @@ pub async fn run_measurement(
     let upload_ms = opt_u64(&options, "uploadMs", DEFAULT_UPLOAD_MS);
     let interim_ms = opt_u64(&options, "putTimeResultIntervalMs", 0);
     let forced_chunk = opt_u64(&options, "chunkSize", 0) as usize;
+    // Upper bound for the pre-test's pick (0 = none); see FIREFOX_MAX_CHUNK.
+    let max_chunk = opt_u64(
+        &options,
+        "maxChunkSize",
+        if is_firefox() { FIREFOX_MAX_CHUNK as u64 } else { 0 },
+    ) as usize;
     let do_pretest = opt_bool(&options, "pretest", true);
     let do_ping = opt_bool(&options, "ping", true);
     let do_download = opt_bool(&options, "download", true);
@@ -784,6 +1179,14 @@ pub async fn run_measurement(
     let qos_packets = opt_u64(&options, "qosPackets", 10).max(2) as u32;
     let qos_delay_ms = opt_u64(&options, "qosDelayMs", 200).max(1);
     let progress_fn = opt_fn(&options, "onProgress");
+    // Bounded-memory download (see `run_download_windowed`). On by default:
+    // Firefox's WebSocket otherwise buffers without limit (multi-GiB tab), and
+    // in Chromium it measured 20-35 % faster with a 173 MiB instead of
+    // 0.9-2.9 GiB JS heap (loopback). It cannot be combined with
+    // SIGNEDRESULT: the server signs only GETTIME byte counts.
+    let bounded_requested = opt_bool(&options, "boundedDownload", true);
+    let bounded = bounded_requested && !do_signed_result;
+    let window_budget_mib = opt_u64(&options, "downloadWindowMiB", WINDOW_BUDGET_MIB).max(1);
 
     let ctx = Ctx::new(threads, log_fn, progress_fn);
     // Reborrow once: the per-connection futures below capture this `&Ctx` by
@@ -810,6 +1213,11 @@ pub async fn run_measurement(
         c.state.token = Token(i);
     }
     let mut alive = vec![true; conns.len()];
+    // `dirty`: socket abandoned mid-phase, to be replaced before the next one.
+    // `clean`: the same socket carried download *and* upload, which is what
+    // the server's SIGNEDRESULT signs (its per-connection byte/time totals).
+    let mut dirty = vec![false; conns.len()];
+    let mut clean = vec![true; conns.len()];
     ctx.log(&format!(
         "connected {} ({} WebSocket{}, Rust/wasm handlers)",
         url,
@@ -844,6 +1252,10 @@ pub async fn run_measurement(
             .max()
             .unwrap_or(MIN_CHUNK_SIZE as usize);
         ctx.log(&format!("pretest: chunk size {} KiB", chunk_size / 1024));
+        if max_chunk > 0 && chunk_size > max_chunk {
+            chunk_size = snap_chunk_size(max_chunk);
+            ctx.log(&format!("pretest: capped to {} KiB for this browser", chunk_size / 1024));
+        }
     }
 
     // ---- PING (single connection, like the native runner) ----
@@ -873,6 +1285,7 @@ pub async fn run_measurement(
                     qos_transport = Some("websocket");
                 }
                 ctx.log(&format!("ping: {ping_ms:.2} ms"));
+                ctx.emit_ping(ping_ms, jitter_ms, &conns[idx].state.ping_times);
             }
             Err(e) => {
                 alive[idx] = false;
@@ -884,6 +1297,7 @@ pub async fn run_measurement(
     // ---- DOWNLOAD (GETTIME) ----
     let mut download_mbps = 0.0;
     let mut download_bytes = 0u64;
+    let mut download_error: Option<String> = None;
     if do_download {
         ctx.begin_phase("download");
         ctx.log(&format!(
@@ -892,29 +1306,70 @@ pub async fn run_measurement(
             download_ms,
             chunk_size / 1024
         ));
-        let ok = parallel_phase!(conns, alive, ctx, "download", |c| run_download(
-            c, ctx, chunk_size, download_ms
+        let window = if bounded {
+            let n = alive.iter().filter(|a| **a).count().max(1) as u64;
+            let per_conn = (window_budget_mib * 1024 * 1024 / n) as usize;
+            let per_conn = per_conn.max(chunk_size);
+            ctx.log(&format!(
+                "download: bounded memory, at most {} MiB in flight per connection (GETCHUNKS windows)",
+                per_conn / (1024 * 1024)
+            ));
+            Some(per_conn)
+        } else {
+            if bounded_requested {
+                ctx.log("download: signedResult needs GETTIME, bounded-memory download disabled");
+            }
+            None
+        };
+        let before = alive.clone();
+        let ok = parallel_phase!(conns, alive, ctx, "download", |c| download_phase(
+            c, ctx, chunk_size, download_ms, window
         ));
-        if ok == 0 {
-            return Err(js_err("download failed on every connection"));
-        }
-        let per_thread = samples_of(&conns, &alive, false);
-        download_mbps = calculate_download_speed_from_stats_silent(&per_thread).2;
-        download_bytes = conns
+        let truncated: Vec<bool> = conns
             .iter()
-            .filter(|c| alive[c.idx])
-            .map(|c| c.state.bytes_received)
-            .sum();
-        ctx.log(&format!(
-            "download: {download_mbps:.2} Mbit/s ({ok} thread(s), {:.1} MB)",
-            download_bytes as f64 / 1e6
-        ));
+            .map(|c| alive[c.idx] && c.state.phase != TestPhase::GetTimeCompleted)
+            .collect();
+        let cut = truncated.iter().filter(|t| **t).count();
+        if ok == 0 {
+            download_mbps = f64::NAN;
+            download_error = Some("download failed on every connection".to_string());
+            ctx.log("download: failed on every connection; continuing with the other phases");
+        } else {
+            let per_thread = samples_of(&conns, &alive, false);
+            download_mbps = calculate_download_speed_from_stats_silent(&per_thread).2;
+            download_bytes = conns
+                .iter()
+                .filter(|c| alive[c.idx])
+                .map(|c| c.state.bytes_received)
+                .sum();
+            ctx.emit_final("download", download_mbps, download_bytes);
+            ctx.log(&format!(
+                "download: {download_mbps:.2} Mbit/s ({ok} thread(s), {:.1} MB)",
+                download_bytes as f64 / 1e6
+            ));
+            if cut > 0 {
+                ctx.log(&format!(
+                    "download: ended on the client clock on {cut} connection(s) — the browser \
+                     could not keep up with what the server sent"
+                ));
+            }
+        }
+        // Retire the cut-short sockets *now*: in Firefox, closing them is what
+        // frees the backlog the tab buffered for them.
+        for (i, t) in truncated.iter().enumerate() {
+            if *t {
+                alive[i] = false;
+            }
+        }
+        retire_failed(&mut conns, &before, &alive, &mut dirty, &mut clean);
     }
 
     // ---- UPLOAD (PUTTIMERESULT / PUT) ----
     let mut upload_mbps = 0.0;
     let mut upload_bytes = 0u64;
+    let mut upload_error: Option<String> = None;
     if do_upload {
+        reopen_dirty(&mut conns, &mut alive, &mut dirty, &url, ctx, "upload").await;
         ctx.begin_phase("upload");
         ctx.log(&format!(
             "upload: {} thread(s) × {} ms, {}…",
@@ -922,6 +1377,7 @@ pub async fn run_measurement(
             upload_ms,
             if legacy_upload { "PUT" } else { "PUTTIMERESULT" }
         ));
+        let before = alive.clone();
         let ok = parallel_phase!(conns, alive, ctx, "upload", |c| run_upload(
             c,
             ctx,
@@ -930,26 +1386,37 @@ pub async fn run_measurement(
             legacy_upload,
             interim_ms
         ));
+        retire_failed(&mut conns, &before, &alive, &mut dirty, &mut clean);
         if ok == 0 {
-            return Err(js_err("upload failed on every connection"));
+            upload_mbps = f64::NAN;
+            upload_error = Some("upload failed on every connection".to_string());
+            ctx.log("upload: failed on every connection; continuing with the other phases");
+        } else {
+            let per_thread = samples_of(&conns, &alive, true);
+            upload_mbps = calculate_upload_speed_from_stats_silent(&per_thread).2;
+            upload_bytes = conns
+                .iter()
+                .filter(|c| alive[c.idx])
+                .map(|c| {
+                    c.state
+                        .upload_measurements
+                        .back()
+                        .map(|(_, b)| *b)
+                        .unwrap_or(c.state.bytes_sent)
+                })
+                .sum();
+            ctx.emit_final("upload", upload_mbps, upload_bytes);
+            ctx.log(&format!(
+                "upload: {upload_mbps:.2} Mbit/s ({ok} thread(s), {:.1} MB)",
+                upload_bytes as f64 / 1e6
+            ));
         }
-        let per_thread = samples_of(&conns, &alive, true);
-        upload_mbps = calculate_upload_speed_from_stats_silent(&per_thread).2;
-        upload_bytes = conns
-            .iter()
-            .filter(|c| alive[c.idx])
-            .map(|c| {
-                c.state
-                    .upload_measurements
-                    .back()
-                    .map(|(_, b)| *b)
-                    .unwrap_or(c.state.bytes_sent)
-            })
-            .sum();
-        ctx.log(&format!(
-            "upload: {upload_mbps:.2} Mbit/s ({ok} thread(s), {:.1} MB)",
-            upload_bytes as f64 / 1e6
-        ));
+    }
+
+    // QoS and SIGNEDRESULT need one connection at the command prompt; if every
+    // socket was lost above, get them back rather than skip those phases.
+    if (do_qos || do_signed_result) && !alive.iter().any(|a| *a) {
+        reopen_dirty(&mut conns, &mut alive, &mut dirty, &url, ctx, "qos").await;
     }
 
     // ---- QOS: jitter + packet loss over QUIC datagrams ----
@@ -969,6 +1436,13 @@ pub async fn run_measurement(
                     packet_loss = Some(result.packet_loss_percent());
                     qos_transport = Some("webtransport");
                     qos_detail = Some(result);
+                    ctx.emit_values(
+                        "qos",
+                        &[
+                            ("jitterMs", jitter_ms),
+                            ("packetLossPercent", packet_loss),
+                        ],
+                    );
                     ctx.log(&format!(
                         "qos: jitter {:.2} ms, packet loss {:.1}% (out {}/{} @ {:.2} ms, in {}/{} @ {:.2} ms)",
                         result.jitter_ms(),
@@ -1042,14 +1516,19 @@ pub async fn run_measurement(
     let mut envelope: Option<String> = None;
     if do_signed_result {
         ctx.begin_phase("signedresult");
-        if let Some(idx) = alive.iter().position(|a| *a) {
-            match run_signed_result(&mut conns[idx], ctx).await {
+        // Only a socket that ran both transfers: the server signs that
+        // connection's own totals, which a replacement socket doesn't have.
+        match alive.iter().zip(&clean).position(|(a, c)| *a && *c) {
+            Some(idx) => match run_signed_result(&mut conns[idx], ctx).await {
                 Ok(()) => {
                     envelope = conns[idx].state.envelope.clone();
                     ctx.log("signed result: received");
                 }
                 Err(e) => ctx.log(&format!("signed result failed: {}", err_str(&e))),
-            }
+            },
+            None => ctx.log(
+                "signed result: skipped — no connection completed both download and upload",
+            ),
         }
     }
 
@@ -1121,8 +1600,10 @@ pub async fn run_measurement(
     );
     set("downloadMbps", JsValue::from_f64(download_mbps));
     set("downloadBytes", JsValue::from_f64(download_bytes as f64));
+    set("downloadError", nullable_str(&download_error));
     set("uploadMbps", JsValue::from_f64(upload_mbps));
     set("uploadBytes", JsValue::from_f64(upload_bytes as f64));
+    set("uploadError", nullable_str(&upload_error));
     set("chunkSize", JsValue::from_f64(chunk_size as f64));
     set("threads", JsValue::from_f64(alive.iter().filter(|a| **a).count() as f64));
     set(

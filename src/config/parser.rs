@@ -153,11 +153,10 @@ fn parse_config_content(content: &str) -> Result<FileConfig, anyhow::Error> {
                     config.signed_result = value.parse().unwrap_or(false);
                 }
                 "enable_mdns" => {
-                    if value == "true" {
-                        config.enable_mdns = true;
-                    } else {
-                        config.enable_mdns = false;
-                    }
+                    config.enable_mdns = value == "true";
+                }
+                "enable_web_ui" => {
+                    config.enable_web_ui = value == "true";
                 }
                 "server_udp_port" => {
                     if let Ok(port) = value.parse::<u16>() {

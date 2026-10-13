@@ -12,14 +12,46 @@ use crate::config::constants::MIN_CHUNK_SIZE;
 use crate::mioserver::handlers::basic_handler::{
     handle_client_readable_data, handle_client_writable_data,
 };
-
-// Connection processing timeout constant
-const CONNECTION_PROCESSING_TIMEOUT: u64 = 60;
+use crate::mioserver::handlers::static_files::{build_response, is_static_file_request, WebInfo};
 use crate::mioserver::server::{ConnectionType, ServerConfig, TestState};
 use crate::mioserver::ServerTestPhase;
 use crate::stream::stream::Stream;
 use crate::utils::use_http::RMBT_UPGRADE;
 use crate::utils::websocket::Handshake;
+use std::net::SocketAddr;
+
+// Connection processing timeout constant
+const CONNECTION_PROCESSING_TIMEOUT: u64 = 60;
+/// Upper bound for sending one web UI response (largest file is the WASM).
+const WEB_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Writes `data` completely to a non-blocking stream, retrying on
+/// `WouldBlock` until `deadline`.
+fn write_all_until(stream: &mut Stream, mut data: &[u8], deadline: Instant) -> io::Result<()> {
+    while !data.is_empty() {
+        match stream.write(data) {
+            Ok(0) => return Err(io::Error::new(io::ErrorKind::WriteZero, "write returned 0")),
+            Ok(n) => data = &data[n.min(data.len())..],
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                if Instant::now() > deadline {
+                    return Err(io::Error::new(io::ErrorKind::TimedOut, "web response timeout"));
+                }
+                thread::sleep(Duration::from_millis(1));
+            }
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    loop {
+        match stream.flush() {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock && Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(1));
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
 
 pub struct WorkerThread {
     _thread: thread::JoinHandle<()>,
@@ -140,8 +172,14 @@ impl Worker {
                     continue;
                 }
 
-                match self.handle_greeting_receive_connection_type(stream, token) {
-                    Ok(stream) => {
+                match self.handle_greeting_receive_connection_type(stream, token, ip) {
+                    Ok(None) => {
+                        // Plain HTTP request for the web UI: answered and closed.
+                        let mut counts = self.worker_connection_counts.lock().unwrap();
+                        counts[self.id] -= 1;
+                        continue;
+                    }
+                    Ok(Some(stream)) => {
                         self.connections.insert(
                             token,
                             TestState {
@@ -356,16 +394,21 @@ impl Worker {
         Ok(())
     }
 
+    /// Reads the opening HTTP request and upgrades the connection to RMBT or
+    /// WebSocket. A plain `GET`/`HEAD` (a browser loading the web UI) is
+    /// answered from the embedded files instead; then `Ok(None)` is returned
+    /// and the connection is finished.
     fn handle_greeting_receive_connection_type(
         &mut self,
         mut stream: Stream,
         token: Token,
-    ) -> io::Result<Stream> {
+        client_addr: Option<SocketAddr>,
+    ) -> io::Result<Option<Stream>> {
         info!(
             "Worker {}: handle_greeting_receive_connection_type",
             self.id
         );
-        let mut buffer = vec![0; 1024];
+        let mut buffer = vec![0; 8192];
         let mut result = BytesMut::new();
         let mut loop_flag = false;
         let timeout = std::time::Duration::from_millis(2000);
@@ -390,8 +433,20 @@ impl Worker {
             for event in self.events.iter() {
                 if event.is_readable() {
                     match stream.read(&mut buffer) {
+                        Ok(0) if result.is_empty() && !matches!(stream, Stream::RustlsServer(_)) => {
+                            return Err(io::Error::new(
+                                io::ErrorKind::UnexpectedEof,
+                                "Connection closed before handshake",
+                            ));
+                        }
                         Ok(n) => {
                             result.extend_from_slice(&buffer[..n]);
+                            if result.len() > 64 * 1024 {
+                                return Err(io::Error::new(
+                                    io::ErrorKind::InvalidData,
+                                    "Handshake request too large",
+                                ));
+                            }
                             trace!(
                                 "Worker {}: read {} bytes {}",
                                 self.id,
@@ -403,7 +458,16 @@ impl Worker {
                                     == [b'\r', b'\n', b'\r', b'\n']
                                 || String::from_utf8_lossy(&result).contains("\r\n\r\n")
                             {
-                                let request = String::from_utf8_lossy(&result);
+                                let request = String::from_utf8_lossy(&result).to_string();
+
+                                if self.server_config.enable_web_ui
+                                    && is_static_file_request(&request)
+                                {
+                                    self.serve_web_request(&mut stream, &request, client_addr);
+                                    let _ = stream.close();
+                                    return Ok(None);
+                                }
+
                                 let ws_regex = Regex::new(r"(?i)upgrade:\s*websocket").unwrap();
 
                                 let is_websocket = ws_regex.is_match(&request);
@@ -448,7 +512,33 @@ impl Worker {
             }
         }
         info!("Worker {}: handshake done", self.id);
-        Ok(stream)
+        Ok(Some(stream))
+    }
+
+    fn serve_web_request(
+        &self,
+        stream: &mut Stream,
+        request: &str,
+        client_addr: Option<SocketAddr>,
+    ) {
+        let info = WebInfo::new(&self.server_config, client_addr);
+        let (status, response) = build_response(request, &info);
+        let target = request.lines().next().unwrap_or("");
+        let deadline = Instant::now() + WEB_WRITE_TIMEOUT;
+        match write_all_until(stream, &response, deadline) {
+            Ok(()) => debug!(
+                "Worker {}: web {} -> {} ({} bytes) for {:?}",
+                self.id,
+                target,
+                status,
+                response.len(),
+                client_addr
+            ),
+            Err(e) => debug!(
+                "Worker {}: web {} -> {} failed after write error: {}",
+                self.id, target, status, e
+            ),
+        }
     }
 
     fn check_global_queue_timeout(&self) {

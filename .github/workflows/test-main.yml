@@ -8,6 +8,17 @@ on:
     
 
 jobs:
+  web-dist-up-to-date:
+    # dist/ is committed and embedded into the binary by `cargo build`. Fail
+    # when web/ or the WASM client changed without ./scripts/build-web.sh.
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check that dist/ matches web/ and the WASM client
+      run: ./scripts/build-web.sh --check
+
   test-nettest-main:
     runs-on: ubuntu-24.04
     
@@ -149,6 +160,25 @@ jobs:
           cat server.log
           exit 1
         fi
+
+    - name: Check embedded web UI
+      run: |
+        # The browser client is served on the measurement port by default.
+        check() {
+          path=$1; type=$2
+          headers=$(curl -sf -o /dev/null -D - -H 'Accept-Encoding: gzip' "http://127.0.0.1:5005$path" | tr -d '\r')
+          echo "$headers" | grep -qi "^content-type: $type" || { echo "❌ $path: wrong type"; echo "$headers"; exit 1; }
+          echo "$headers" | grep -qi "^content-encoding: gzip" || { echo "❌ $path: not gzip"; echo "$headers"; exit 1; }
+          echo "✅ $path ($type)"
+        }
+        check / text/html
+        check /app.js text/javascript
+        check /nettest.js text/javascript
+        check /nettest_bg.wasm application/wasm
+        check /style.css text/css
+        # Clients without gzip get the decompressed page.
+        curl -sf http://127.0.0.1:5005/ | grep -q "<!doctype html>" || { echo "❌ identity fallback"; exit 1; }
+        echo "✅ Web UI served"
               
 
         

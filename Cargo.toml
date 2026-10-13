@@ -55,6 +55,11 @@ mio = { version = "1", features = ["net"] }
 prettytable = "0.10.0"
 mdns-sd = "0.17.1"
 include_dir = "0.7"
+# Web UI: gunzip embedded files for the rare client without gzip support,
+# list interface addresses and print a QR code for the startup banner.
+flate2 = "1"
+if-addrs = "0.14"
+qrcode = { version = "0.14", default-features = false }
 # QUIC endpoint for the browser QoS phase (jitter / packet loss over datagrams).
 wtransport = "0.7"
 
@@ -89,3 +94,16 @@ tokio-native-tls = "0.3"
 native-tls = "0.2"
 env_logger = "0.11.2"
 futures-util = "0.3.30"
+
+# Size-focused profile for the browser client only (scripts/build-web.sh):
+#   cargo build --lib --target wasm32-unknown-unknown --profile wasm-release
+# The native server keeps the default release profile.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+debug = false
+

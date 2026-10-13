@@ -89,6 +89,44 @@ The project includes automated builds via GitHub Actions:
 nettest -s
 ```
 
+### Browser Speed Test (no setup)
+
+`nettest -s` also serves a browser speed test on the measurement port. On start it prints the
+addresses to open (and a QR code for phones):
+
+```
+  Nettest is running. Open the speed test on any device on this network:
+
+    http://192.168.1.10:5005/
+    http://nettest.local:5005/
+```
+
+Opening the page connects to the server it was loaded from and starts measuring right away
+(ping, download, upload). No certificates, no configuration and nothing to install on the
+device with the browser. The client is the same Rust measurement code as the CLI, compiled to
+WebAssembly (the whole page is ~160 KB gzipped, embedded in the binary).
+
+Notes:
+- Plain HTTP is enough for ping, download and upload. Packet loss needs WebTransport, which
+  browsers only allow on HTTPS (or `localhost`) pages; over plain HTTP jitter is derived from
+  the ping round trips and the page leaves packet loss out.
+- `?autostart=0` opens the page without starting a measurement. All client options are in the
+  settings panel and can be passed as URL parameters ("Copy link with settings").
+- Turn the page or the mDNS announcement off in `nettest.conf`:
+  `enable_web_ui = false`, `enable_mdns = false`.
+
+Rebuilding the browser client after changes to `web/` or `src/wasm/`:
+
+```bash
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version <wasm-bindgen version from Cargo.lock>
+./scripts/build-web.sh        # writes gzipped files to dist/ and dist.sha256 (wasm-opt optional)
+cargo build --release         # embeds dist/
+```
+
+Commit `dist/` together with `dist.sha256`. CI runs `./scripts/build-web.sh --check` and fails
+when `web/` or the WASM client changed without a rebuild.
+
 ### Run Client
 
 ```bash
