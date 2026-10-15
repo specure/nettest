@@ -42,6 +42,15 @@ pub struct FileConfig {
     pub enable_mdns: bool,
     /// Serve the embedded browser client on the measurement port(s).
     pub enable_web_ui: bool,
+    /// Let the web page ask this server to measure its own internet
+    /// connection ("router ↔ internet" leg). Off by default: every run moves
+    /// gigabytes over the server's uplink.
+    pub enable_upstream_test: bool,
+    /// Public server for the upstream leg: `None` picks the nearest one from
+    /// the control server, otherwise `host` or `host:port`.
+    pub upstream_server: Option<String>,
+    /// Prefer servers inside the ISP's own network (`onNet`) when picking.
+    pub upstream_prefer_on_net: bool,
     pub max_chunk_size: Option<u32>,
 }
 
@@ -76,6 +85,9 @@ impl Default for FileConfig {
             signed_result: false,
             enable_mdns: true,
             enable_web_ui: true,
+            enable_upstream_test: false,
+            upstream_server: None,
+            upstream_prefer_on_net: true,
             max_chunk_size: None,
         }
     }

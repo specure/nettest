@@ -125,11 +125,14 @@ pub async fn run_threads(
             if i == 0 {
                 set_phase(&live, "init");
             }
-            let _ = state.run_get_chunks();
+            // The pre-test only sizes the chunks for download and upload.
+            if config.phases.download || config.phases.upload {
+                let _ = state.run_get_chunks();
+            }
 
             barrier.wait();
 
-            if i == 0 {
+            if i == 0 && config.phases.ping {
                 set_phase(&live, "ping");
                 let _ = state.run_ping();
                 let ping_ms = state.measurement_state().ping_median
@@ -143,8 +146,9 @@ pub async fn run_threads(
                 } else if !config.json_output {
                     print_float_result("Ping Median", "ms", ping_ms, false);
                 }
-
-                if !config.legacy {
+            }
+            if i == 0 {
+                if !config.legacy && config.phases.qos {
                     set_phase(&live, "jitter");
                     if let Err(e) = state.run_voip_test() {
                         log::warn!("VoIP test failed: {}", e);
@@ -196,11 +200,11 @@ pub async fn run_threads(
             }
             barrier.wait();
 
-            if i == 0 {
+            if i == 0 && config.phases.download {
                 set_phase(&live, "download");
             }
-            let _ = state.run_get_time();
-            {
+            if config.phases.download {
+                let _ = state.run_get_time();
                 let mut stats = stats.lock().unwrap();
                 stats.download_measurements.push(
                     state
@@ -214,7 +218,7 @@ pub async fn run_threads(
 
             barrier.wait();
 
-            if i == 0 {
+            if i == 0 && config.phases.download {
                 let stats_guard = stats.lock().unwrap();
                 let speed =
                     calculate_download_speed_from_stats_silent(&stats_guard.download_measurements);
@@ -232,15 +236,15 @@ pub async fn run_threads(
 
             barrier.wait();
 
-            if i == 0 {
+            if i == 0 && config.phases.upload {
                 set_phase(&live, "upload");
             }
-            if config.legacy {
-                let _ = state.run_put();
-            } else {
-                let _ = state.run_perf_test();
-            }
-            {
+            if config.phases.upload {
+                if config.legacy {
+                    let _ = state.run_put();
+                } else {
+                    let _ = state.run_perf_test();
+                }
                 let mut stats = stats.lock().unwrap();
                 stats.upload_measurements.push(
                     state
@@ -254,7 +258,7 @@ pub async fn run_threads(
 
             barrier.wait();
 
-            if i == 0 {
+            if i == 0 && config.phases.upload {
                 let stats_guard = stats.lock().unwrap();
                 let speed =
                     calculate_upload_speed_from_stats_silent(&stats_guard.upload_measurements);

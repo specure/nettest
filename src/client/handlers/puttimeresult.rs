@@ -87,14 +87,38 @@ fn drain_interim_upload(measurement_state: &mut MeasurementState) {
     }
     let _ = process_timeresult_lines(measurement_state);
 
-    // Publish current upload samples to the live sink.
-    if let Some(sink) = &measurement_state.live_sink {
-        if let Ok(mut g) = sink.upload.lock() {
-            g.clear();
-            g.extend(measurement_state.upload_measurements.iter().cloned());
-        }
-    }
+    publish_live_upload(measurement_state);
     measurement_state.last_live_publish = Some(now);
+}
+
+/// Publish the live upload samples. With interim TIMERESULTs these are the
+/// server's figures; without them (the default) fall back to what this side
+/// has sent, so a live view still sees the upload progress. Only the display
+/// uses this; the final result always comes from the server's TIMERESULT.
+pub fn publish_live_upload(measurement_state: &mut MeasurementState) {
+    let Some(sink) = measurement_state.live_sink.clone() else { return };
+    let samples: Vec<(u64, u64)> = if !measurement_state.upload_measurements.is_empty() {
+        measurement_state.upload_measurements.iter().cloned().collect()
+    } else {
+        let sending = matches!(
+            measurement_state.phase,
+            TestPhase::PerfSendChunks | TestPhase::PerfSendLastChunk
+        );
+        if let (true, Some(start)) = (sending, measurement_state.phase_start_time) {
+            let t = start.elapsed().as_nanos() as u64;
+            let b = measurement_state
+                .bytes_sent
+                .saturating_sub(measurement_state.upload_sent_base);
+            measurement_state.upload_sent_samples.push((t, b));
+        }
+        if measurement_state.upload_sent_samples.is_empty() {
+            return;
+        }
+        measurement_state.upload_sent_samples.clone()
+    };
+    if let Ok(mut g) = sink.upload.lock() {
+        *g = samples;
+    };
 }
 
 /// Readable handler active during the upload SEND phases: when interim data
@@ -118,12 +142,7 @@ pub fn handle_put_time_result_drain(
         }
     }
     let accept_seen = process_timeresult_lines(measurement_state);
-    if let Some(sink) = &measurement_state.live_sink {
-        if let Ok(mut g) = sink.upload.lock() {
-            g.clear();
-            g.extend(measurement_state.upload_measurements.iter().cloned());
-        }
-    }
+    publish_live_upload(measurement_state);
     // Defense-in-depth: if the final ACCEPT arrived while draining, complete the
     // phase here instead of dropping it (which would hang PerfReceiveTime).
     if accept_seen {
@@ -248,6 +267,8 @@ pub fn handle_put_time_result_send_chunks(
     if measurement_state.phase_start_time.is_none() {
         measurement_state.write_pos = 0;
         measurement_state.phase_start_time = Some(Instant::now());
+        measurement_state.upload_sent_base = measurement_state.bytes_sent;
+        measurement_state.upload_sent_samples.clear();
     }
     if let Some(start_time) = measurement_state.phase_start_time {
         let buffer = CHUNK_STORAGE

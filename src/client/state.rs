@@ -134,6 +134,11 @@ pub struct MeasurementState {
     pub live_sink: Option<LiveSink>,
     /// Throttle marker for live publishing.
     pub last_live_publish: Option<Instant>,
+    /// `bytes_sent` at the start of the upload phase.
+    pub upload_sent_base: u64,
+    /// Sender-side `(ns since phase start, bytes)` samples, published live when
+    /// the server sends no interim TIMERESULTs (the default).
+    pub upload_sent_samples: Vec<(u64, u64)>,
     /// PUTTIMERESULT interim reporting interval in ms (0 = only final result).
     pub puttimeresult_interval_ms: u64,
     /// Per-phase durations in ms (configurable from the client).
@@ -191,6 +196,8 @@ impl MeasurementState {
             udp_server_received_out: None,
             live_sink: None,
             last_live_publish: None,
+            upload_sent_base: 0,
+            upload_sent_samples: Vec::new(),
             puttimeresult_interval_ms: 0,
             download_duration_ms: 7000,
             upload_duration_ms: 7000,
@@ -266,8 +273,8 @@ impl TestState {
     /// polling UI can redraw the graph during a phase. Throttled to ~100 ms
     /// unless `force` is set (used to flush the final snapshot of a phase).
     fn publish_live(&mut self, force: bool) {
-        let (dl_sink, ul_sink) = match &self.measurement_state.live_sink {
-            Some(s) => (s.download.clone(), s.upload.clone()),
+        let dl_sink = match &self.measurement_state.live_sink {
+            Some(s) => s.download.clone(),
             None => return,
         };
         let now = Instant::now();
@@ -283,10 +290,7 @@ impl TestState {
             g.clear();
             g.extend(self.measurement_state.download_measurements.iter().cloned());
         }
-        if let Ok(mut g) = ul_sink.lock() {
-            g.clear();
-            g.extend(self.measurement_state.upload_measurements.iter().cloned());
-        }
+        crate::client::handlers::puttimeresult::publish_live_upload(&mut self.measurement_state);
         self.measurement_state.last_live_publish = Some(now);
     }
 

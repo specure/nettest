@@ -37,21 +37,35 @@
   </header>
 
   <main class="stage">
-    <!-- What is being measured: this device <-> this server. -->
+    <!-- What is being measured: this device <-> server, and with the
+         internet legs also server <-> internet and device <-> internet. -->
     <div class="link" id="link" title="Measured path">
       <div class="node">
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-device"/></svg>
         <span><small>This device</small><b id="link-client">–</b></span>
       </div>
-      <div class="wire" aria-hidden="true"><i></i><i></i><i></i></div>
-      <div class="node end">
+      <div class="wire on" data-w="lan" aria-hidden="true"><i></i><i></i><i></i><em></em></div>
+      <div class="node end" id="node-server">
         <span><small id="link-server-name">Server</small><b id="link-server">–</b></span>
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-server"/></svg>
+      </div>
+      <div class="wire x3" data-w="wan" aria-hidden="true"><i></i><i></i><i></i><em></em></div>
+      <div class="node end x3">
+        <span><small>Internet</small><b id="link-net">–</b></span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-globe"/></svg>
+      </div>
+      <div class="arc x3" data-w="direct" aria-hidden="true">
+        <svg viewBox="0 0 100 20" preserveAspectRatio="none"><path d="M1 0C20 19 80 19 99 0"/></svg><em></em>
       </div>
     </div>
 
     <section class="orbit" aria-label="Measurement">
       <canvas id="ring" role="img" aria-label="Measurement ring"></canvas>
+      <div class="ring-tip" id="ring-tip" aria-hidden="true">
+        <div><b id="ring-tip-value"></b> Mbit/s</div>
+        <div><span id="ring-tip-dir"></span> <span id="ring-tip-at"></span></div>
+        <div class="tip-leg" id="ring-tip-leg"></div>
+      </div>
       <button class="core" id="core" aria-label="Start measurement" disabled>
         <span class="phase" id="phase-label"></span>
         <span class="value" id="core-value"></span>
@@ -60,14 +74,29 @@
       </button>
     </section>
 
-    <ol class="steps" id="steps" aria-label="Progress">
-      <li data-step="ping">Ping</li>
-      <li data-step="download">Download</li>
-      <li data-step="upload">Upload</li>
-      <li data-step="qos">Loss</li>
-    </ol>
+    <ol class="steps" id="steps" aria-label="Progress"></ol>
+    <p class="eta" id="eta"></p>
 
     <div class="message" id="message" role="status" aria-live="polite"></div>
+
+    <!-- Where the bottleneck is: the main result when the legs ran. -->
+    <section class="diag" id="diag" aria-live="polite" hidden>
+      <p class="eyebrow" id="diag-eyebrow"></p>
+      <h2 id="diag-title"></h2>
+      <div class="meter" id="diag-meter" role="img" hidden>
+        <div class="bar"><i></i></div>
+        <div class="nums">
+          <span class="got"><b id="diag-got"></b> <small id="diag-got-label"></small></span>
+          <span class="of">of <b id="diag-cap"></b> <small id="diag-cap-label"></small></span>
+        </div>
+      </div>
+      <p id="diag-text"></p>
+      <p class="diag-tip" id="diag-tip"></p>
+      <ul class="chips" id="diag-chips"></ul>
+    </section>
+
+    <!-- The three legs side by side, one scale. -->
+    <section class="legtable" id="path" aria-label="Measured segments" hidden></section>
 
     <section class="strip" id="strip" aria-label="Results"></section>
 
@@ -124,6 +153,7 @@
         </label>
         <label class="switch"><input type="checkbox" name="autostart"><span></span>Start automatically when the page opens</label>
         <label class="switch"><input type="checkbox" name="fx"><span></span>Animations</label>
+        <label class="switch"><input type="checkbox" name="internet"><span></span>Also measure the internet connection (when the server offers it)</label>
       </fieldset>
 
       <fieldset>
@@ -217,6 +247,7 @@
     <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="16" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
     <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
     <symbol id="i-device" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 20h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 12h17M12 3.5c2.4 2.6 3.5 5.4 3.5 8.5s-1.1 5.9-3.5 8.5c-2.4-2.6-3.5-5.4-3.5-8.5s1.1-5.9 3.5-8.5Z" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
     <symbol id="i-server" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="7" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="4" y="13" width="16" height="7" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 7.5h.01M8 16.5h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
     <symbol id="i-image" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>

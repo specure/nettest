@@ -158,6 +158,18 @@ fn parse_config_content(content: &str) -> Result<FileConfig, anyhow::Error> {
                 "enable_web_ui" => {
                     config.enable_web_ui = value == "true";
                 }
+                "enable_upstream_test" => {
+                    config.enable_upstream_test = value == "true";
+                }
+                "upstream_server" => {
+                    config.upstream_server = match value.trim() {
+                        "" | "auto" => None,
+                        v => Some(v.to_string()),
+                    };
+                }
+                "upstream_prefer_on_net" => {
+                    config.upstream_prefer_on_net = value != "false";
+                }
                 "server_udp_port" => {
                     if let Ok(port) = value.parse::<u16>() {
                         config.server_udp_port = port;

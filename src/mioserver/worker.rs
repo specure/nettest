@@ -12,7 +12,9 @@ use crate::config::constants::MIN_CHUNK_SIZE;
 use crate::mioserver::handlers::basic_handler::{
     handle_client_readable_data, handle_client_writable_data,
 };
-use crate::mioserver::handlers::static_files::{build_response, is_static_file_request, WebInfo};
+use crate::mioserver::handlers::static_files::{
+    build_response, is_ip_echo_request, is_static_file_request, parse_http_path, WebInfo,
+};
 use crate::mioserver::server::{ConnectionType, ServerConfig, TestState};
 use crate::mioserver::ServerTestPhase;
 use crate::stream::stream::Stream;
@@ -460,8 +462,12 @@ impl Worker {
                             {
                                 let request = String::from_utf8_lossy(&result).to_string();
 
-                                if self.server_config.enable_web_ui
-                                    && is_static_file_request(&request)
+                                // /api/ip is answered even with the page off:
+                                // public servers echo addresses for the
+                                // three-leg check on home servers.
+                                if is_static_file_request(&request)
+                                    && (self.server_config.enable_web_ui
+                                        || is_ip_echo_request(&request))
                                 {
                                     self.serve_web_request(&mut stream, &request, client_addr);
                                     let _ = stream.close();
@@ -521,7 +527,10 @@ impl Worker {
         request: &str,
         client_addr: Option<SocketAddr>,
     ) {
-        let info = WebInfo::new(&self.server_config, client_addr);
+        let mut info = WebInfo::new(&self.server_config, client_addr);
+        if parse_http_path(request).as_deref() == Some("/api/info") {
+            info = info.with_path(&self.server_config);
+        }
         let (status, response) = build_response(request, &info);
         let target = request.lines().next().unwrap_or("");
         let deadline = Instant::now() + WEB_WRITE_TIMEOUT;

@@ -7,6 +7,10 @@
 # Node tooling for the static/ site
 node_modules/
 
+# Talk decks and notes (kept outside the repository)
+/presentations/
+/docs/Nettest_Browser_Talk_EN.md
+
 # Local TLS material and test certificates (never commit keys)
 *.pem
 /measurementservers.crt
@@ -28,3 +32,6 @@ Thumbs.db
 # Note: dist/ is committed on purpose. It is the built web client that
 # `cargo build` embeds into the binary, so plain `cargo install` works
 # without wasm-bindgen or binaryen. Rebuild it with scripts/build-web.sh.
+
+# Local demo binary
+/nettest-wasm-demo

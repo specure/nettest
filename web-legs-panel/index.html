@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#05070c" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f3f4f7" media="(prefers-color-scheme: light)">
+  <meta name="description" content="Measure download, upload and latency to your local Nettest server.">
+  <title>Nettest</title>
+  <!-- Favicons: the files from nettest.com, unchanged. -->
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="modulepreload" href="nettest.js">
+  <link rel="preload" href="nettest_bg.wasm" as="fetch" type="application/wasm" crossorigin>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <div class="backdrop" aria-hidden="true"><i></i><i></i></div>
+
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="Nettest home">
+      <svg viewBox="0 0 180 180" aria-hidden="true"><use href="#logo"/></svg>
+      <span>nettest</span>
+    </a>
+    <nav class="actions">
+      <button class="icon-btn" id="btn-history" aria-label="History" title="History (H)">
+        <svg viewBox="0 0 24 24"><use href="#i-history"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-settings" aria-label="Settings" title="Settings (S)">
+        <svg viewBox="0 0 24 24"><use href="#i-settings"/></svg>
+      </button>
+    </nav>
+  </header>
+
+  <main class="stage">
+    <!-- What is being measured: this device <-> this server. -->
+    <div class="link" id="link" title="Measured path">
+      <div class="node">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-device"/></svg>
+        <span><small>This device</small><b id="link-client">–</b></span>
+      </div>
+      <div class="wire" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="node end">
+        <span><small id="link-server-name">Server</small><b id="link-server">–</b></span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-server"/></svg>
+      </div>
+    </div>
+
+    <section class="orbit" aria-label="Measurement">
+      <canvas id="ring" role="img" aria-label="Measurement ring"></canvas>
+      <button class="core" id="core" aria-label="Start measurement" disabled>
+        <span class="phase" id="phase-label"></span>
+        <span class="value" id="core-value"></span>
+        <span class="unit" id="core-unit"></span>
+        <span class="cta" id="core-cta"></span>
+      </button>
+    </section>
+
+    <ol class="steps" id="steps" aria-label="Progress">
+      <li data-step="ping">Ping</li>
+      <li data-step="download">Download</li>
+      <li data-step="upload">Upload</li>
+      <li data-step="qos">Loss</li>
+    </ol>
+
+    <div class="message" id="message" role="status" aria-live="polite"></div>
+
+    <section class="strip" id="strip" aria-label="Results"></section>
+
+    <p class="verdict" id="verdict" hidden></p>
+
+    <!-- Where the speed goes: device <-> server, server <-> internet,
+         device <-> internet. Only when the server can measure upstream. -->
+    <section class="path" id="path" aria-label="Where the speed goes" hidden>
+      <div class="legs" id="legs"></div>
+      <p class="path-verdict" id="path-verdict" aria-live="polite"></p>
+    </section>
+
+    <div class="after" id="after" hidden>
+      <button class="text-btn" id="btn-image"><svg viewBox="0 0 24 24"><use href="#i-image" id="btn-image-icon"/></svg><span id="btn-image-label">Save image</span></button>
+      <button class="text-btn" id="btn-copy"><svg viewBox="0 0 24 24"><use href="#i-copy"/></svg>Copy results</button>
+      <button class="text-btn" id="btn-details"><svg viewBox="0 0 24 24"><use href="#i-list"/></svg>Details</button>
+    </div>
+
+    <p class="sr-only" id="announce" aria-live="polite"></p>
+  </main>
+
+  <footer class="foot">
+    <a id="foot-version" href="https://github.com/specure/nettest" target="_blank" rel="noopener" title="Nettest on GitHub">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-github"/></svg><span id="foot-version-text">nettest</span>
+    </a>
+  </footer>
+
+  <!-- Drawers ------------------------------------------------------------ -->
+  <div class="scrim" id="scrim" hidden></div>
+
+  <aside class="drawer" id="drawer-history" aria-label="History" hidden>
+    <header>
+      <h2>History</h2>
+      <button class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24"><use href="#i-close"/></svg></button>
+    </header>
+    <div class="drawer-body">
+      <ol class="history" id="history-list"></ol>
+      <p class="empty" id="history-empty">Your measurements on this device will appear here.</p>
+    </div>
+    <footer>
+      <button class="ghost danger" id="btn-clear-history">Clear history</button>
+    </footer>
+  </aside>
+
+  <aside class="drawer" id="drawer-settings" aria-label="Settings" hidden>
+    <header>
+      <h2>Settings</h2>
+      <button class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24"><use href="#i-close"/></svg></button>
+    </header>
+    <form class="drawer-body settings" id="settings-form" autocomplete="off">
+      <fieldset>
+        <legend>Measurement</legend>
+        <label class="row">Connections
+          <input type="number" name="threads" min="1" max="64" step="1">
+        </label>
+        <label class="row">Download duration <small>s</small>
+          <input type="number" name="downloadS" min="1" max="60" step="1">
+        </label>
+        <label class="row">Upload duration <small>s</small>
+          <input type="number" name="uploadS" min="1" max="60" step="1">
+        </label>
+        <label class="switch"><input type="checkbox" name="autostart"><span></span>Start automatically when the page opens</label>
+        <label class="switch"><input type="checkbox" name="fx"><span></span>Animations</label>
+        <label class="switch"><input type="checkbox" name="internet"><span></span>Also measure the internet connection (when the server offers it)</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Phases</legend>
+        <label class="switch"><input type="checkbox" name="pretest"><span></span>Pre-test (pick the chunk size)</label>
+        <label class="switch"><input type="checkbox" name="ping"><span></span>Ping</label>
+        <label class="switch"><input type="checkbox" name="download"><span></span>Download</label>
+        <label class="switch"><input type="checkbox" name="upload"><span></span>Upload</label>
+        <label class="switch"><input type="checkbox" name="qos"><span></span>Jitter &amp; packet loss (WebTransport, HTTPS pages only)</label>
+        <label class="switch"><input type="checkbox" name="signedResult"><span></span>Request signed result</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Advanced</legend>
+        <label class="row">Chunk size <small>bytes, 0 = auto</small>
+          <input type="number" name="chunkSize" min="0" step="1024">
+        </label>
+        <label class="row">Max chunk size <small>bytes, empty = browser default</small>
+          <input type="number" name="maxChunkSize" min="0" step="1024" placeholder="default">
+        </label>
+        <label class="switch"><input type="checkbox" name="boundedDownload"><span></span>Bounded-memory download</label>
+        <label class="row">Download window <small>MiB in flight</small>
+          <input type="number" name="downloadWindowMiB" min="1" max="1024" step="1">
+        </label>
+        <label class="switch"><input type="checkbox" name="legacyUpload"><span></span>Legacy upload (PUT)</label>
+        <label class="row">Interim upload results <small>ms, 0 = off</small>
+          <input type="number" name="putTimeResultIntervalMs" min="0" step="50">
+        </label>
+        <label class="row">QoS packets
+          <input type="number" name="qosPackets" min="2" max="1000" step="1">
+        </label>
+        <label class="row">QoS interval <small>ms</small>
+          <input type="number" name="qosDelayMs" min="1" max="5000" step="1">
+        </label>
+        <label class="row stack">Measurement server
+          <input type="text" name="server" placeholder="this server" spellcheck="false">
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Sharing</legend>
+        <label class="switch"><input type="checkbox" name="save"><span></span>Submit results to a control server</label>
+        <label class="row stack">Control server
+          <input type="url" name="controlServer" spellcheck="false">
+        </label>
+      </fieldset>
+
+      <div class="settings-actions">
+        <button type="button" class="ghost" id="btn-reset-settings">Reset to defaults</button>
+        <button type="button" class="ghost" id="btn-share-settings">Copy link with settings</button>
+      </div>
+    </form>
+  </aside>
+
+  <aside class="drawer wide" id="drawer-details" aria-label="Details" hidden>
+    <header>
+      <h2>Details</h2>
+      <button class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24"><use href="#i-close"/></svg></button>
+    </header>
+    <div class="drawer-body">
+      <dl class="kv" id="details-kv"></dl>
+      <h3>Log</h3>
+      <pre class="log" id="log"></pre>
+      <h3>Result JSON</h3>
+      <pre class="json" id="json"></pre>
+    </div>
+    <footer>
+      <button class="ghost" id="btn-download-json">Download JSON</button>
+    </footer>
+  </aside>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <noscript><p class="noscript">Nettest needs JavaScript and WebAssembly to measure your connection.</p></noscript>
+
+  <!-- Icons -------------------------------------------------------------- -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="logo-g" gradientUnits="userSpaceOnUse" x1="70" y1="30" x2="170" y2="180">
+        <stop offset="0" stop-color="#00abb1"/>
+        <stop offset="1" stop-color="#0668ba"/>
+      </linearGradient>
+    </defs>
+    <!-- The nettest.com mark: a square frame with a notch on the right. -->
+    <symbol id="logo" viewBox="0 0 180 180">
+      <path fill="url(#logo-g)" fill-rule="evenodd" d="M0 0H180V180H0Z M24 24V156H156V24Z M156 97L180 62V101H156Z"/>
+    </symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M6 12H5v8h14v-8h-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-github" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.58 9.58 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v4h4M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="16" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-device" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 20h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 12h17M12 3.5c2.4 2.6 3.5 5.4 3.5 8.5s-1.1 5.9-3.5 8.5c-2.4-2.6-3.5-5.4-3.5-8.5s1.1-5.9 3.5-8.5Z" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="7" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="4" y="13" width="16" height="7" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 7.5h.01M8 16.5h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-again" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </svg>
+</body>
+</html>

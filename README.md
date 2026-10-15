@@ -115,6 +115,32 @@ Notes:
 - Turn the page or the mDNS announcement off in `nettest.conf`:
   `enable_web_ui = false`, `enable_mdns = false`.
 
+#### Where the speed goes (gateway or home server)
+
+With `enable_upstream_test = true`, the page measures three legs, one after the other:
+
+1. this device ↔ the nettest server (the normal browser test),
+2. the server ↔ the internet: the server runs the nettest client itself against the nearest
+   public measurement server (or `upstream_server`),
+3. this device ↔ the internet: the browser measures the same public server directly.
+
+It then says whether the Wi-Fi/LAN, the internet line or the server itself is the bottleneck,
+with a This device / Server / Internet diagram, three concentric result rings on one scale and a
+comparison table. The breakdown only runs for devices on the server's own network; visitors
+from the internet get the plain test. Speeds don't add up: end to end should be close to the
+slower leg; ping does add up. The
+server also notes whether other devices used the line during its test and whether its CPU
+was saturated. The `/api/upstream/*` endpoints only answer devices on the local network,
+require an `X-Nettest: 1` header, reject cross-origin requests and allow one run per minute.
+
+When the browser runs on the server itself, the local segment is only loopback and the
+server's internet is this device's internet, so the page runs a single test: this device
+against the nearest public measurement server.
+
+`nettest -s -demo` (presentation mode) turns the upstream test on even without
+`enable_upstream_test`, always runs all three segments whatever the path, and drops the
+one-run-per-minute limit.
+
 Rebuilding the browser client after changes to `web/` or `src/wasm/`:
 
 ```bash

@@ -25,6 +25,7 @@
   --up-2: #ff5fb0;
   --ok: #38d996;
   --bad: #ff5d73;
+  --warn: #ffb547;
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --ease: cubic-bezier(.2, .8, .2, 1);
@@ -50,6 +51,7 @@
     --down-2: #1670e8;
     --up: #7247ff;
     --up-2: #e33d91;
+    --warn: #d98200;
     --glow-a: #7aa2ff;
     --glow-b: #b49cff;
     color-scheme: light;
@@ -83,7 +85,7 @@ svg { display: block; }
 
 /* --- Backdrop: dot grid + two phase-coloured glows (no per-frame JS) ---- */
 
-.backdrop { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+.backdrop { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; will-change: transform; }
 .backdrop::before {
   content: "";
   position: absolute;
@@ -161,8 +163,10 @@ svg { display: block; }
   gap: 14px;
 }
 
-/* Device <-> server link. Dots move with the data. */
+/* Device <-> server (<-> internet) link. Dots move with the data on the
+   segment being measured; finished segments carry their values. */
 .link {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -170,6 +174,45 @@ svg { display: block; }
   color: var(--muted);
   max-width: 100%;
 }
+.link:not(.three) .x3 { display: none; }
+.link.three { gap: 10px; padding-bottom: 30px; }
+.link.three .node { flex-direction: column; gap: 5px; text-align: center; }
+.link.three .node span { align-items: center; text-align: center; }
+.link.three .node.end svg { order: -1; }
+.link.three .node b { max-width: 26vw; }
+.link.three .wire { width: clamp(44px, 14vw, 170px); align-self: flex-start; margin-top: 6px; }
+.wire em, .arc em {
+  position: absolute;
+  left: 0; right: 0; top: 13px;
+  font: 11px var(--mono);
+  font-style: normal;
+  text-align: center;
+  white-space: nowrap;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Clip the moving dots sideways only, so the value under the wire shows. */
+.link.three .wire { overflow: visible; clip-path: inset(-2px 0 -30px 0); }
+.wire.done { background-image: linear-gradient(var(--muted), var(--muted)); }
+.wire.limit, .arc.limit { --c: var(--warn); }
+.wire.limit { background-image: linear-gradient(var(--warn), var(--warn)); background-size: 100% 2px; }
+.wire.limit em, .arc.limit em { color: var(--warn); }
+.wire.failed { background: repeating-linear-gradient(90deg, var(--faint) 0 3px, transparent 3px 7px) center / 100% 1px no-repeat; }
+.wire.failed em, .arc.failed em { color: var(--faint); }
+/* Device <-> internet: an arc under the server (beside it on a LAN), or
+   straight through it when the server is the gateway. */
+.arc { position: absolute; left: 18px; right: 18px; bottom: 0; height: 24px; pointer-events: none; }
+.arc svg { width: 100%; height: 20px; overflow: visible; }
+.arc path { fill: none; stroke: var(--c, var(--line-2)); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.arc.done path { --c: var(--muted); }
+.arc.limit path { stroke-width: 2; }
+.arc.failed path { stroke-dasharray: 3 4; --c: var(--faint); }
+.arc.on path { stroke-dasharray: 2 6; stroke-width: 2.5; stroke-linecap: round; --c: var(--ink); animation: dash .6s linear infinite; }
+body[data-mode="download"] .arc.on path { --c: var(--down); animation-direction: reverse; }
+body[data-mode="upload"] .arc.on path { --c: var(--up-2); }
+@keyframes dash { to { stroke-dashoffset: -8; } }
+.arc em { top: auto; bottom: -6px; }
+.link.thru .arc path { visibility: hidden; }
 .node { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .node svg { width: 20px; height: 20px; flex: none; color: var(--faint); }
 .node span { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
@@ -190,12 +233,12 @@ svg { display: block; }
   background: radial-gradient(circle at 4px 50%, var(--ink) 2px, transparent 2.6px);
   transform: translateX(-10%);
 }
-body[data-mode="download"] .wire i,
-body[data-mode="upload"] .wire i,
-body[data-mode="ping"] .wire i { opacity: 1; animation: wire 1.5s linear infinite; }
-body[data-mode="download"] .wire i { animation-direction: reverse; background-image: radial-gradient(circle at 4px 50%, var(--down) 2px, transparent 2.6px); }
-body[data-mode="upload"] .wire i { background-image: radial-gradient(circle at 4px 50%, var(--up-2) 2px, transparent 2.6px); }
-body[data-mode="ping"] .wire i { animation-direction: alternate; animation-duration: .9s; }
+body[data-mode="download"] .wire.on i,
+body[data-mode="upload"] .wire.on i,
+body[data-mode="ping"] .wire.on i { opacity: 1; animation: wire 1.5s linear infinite; }
+body[data-mode="download"] .wire.on i { animation-direction: reverse; background-image: radial-gradient(circle at 4px 50%, var(--down) 2px, transparent 2.6px); }
+body[data-mode="upload"] .wire.on i { background-image: radial-gradient(circle at 4px 50%, var(--up-2) 2px, transparent 2.6px); }
+body[data-mode="ping"] .wire.on i { animation-direction: alternate; animation-duration: .9s; }
 .wire i:nth-child(2) { animation-delay: -.5s !important; }
 .wire i:nth-child(3) { animation-delay: -1s !important; }
 @keyframes wire { from { transform: translateX(-10%); } to { transform: translateX(100%); } }
@@ -207,7 +250,36 @@ body[data-mode="ping"] .wire i { animation-direction: alternate; animation-durat
   aspect-ratio: 1;
   flex: none;
 }
-.orbit canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* Own layer: ring repaints must not re-raster the backdrop behind it. */
+.orbit canvas { position: absolute; inset: 0; width: 100%; height: 100%; will-change: transform; touch-action: manipulation; }
+
+/* Value of the ring bar under the pointer. */
+.ring-tip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  pointer-events: none;
+  padding: 7px 11px 8px;
+  border-radius: 10px;
+  background: var(--glass);
+  border: 1px solid var(--line-2);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .28);
+  font: 500 11px/1.45 var(--mono);
+  color: var(--muted);
+  white-space: nowrap;
+  transform: translate(var(--x, 0), var(--y, 0)) translate(-50%, calc(-100% - 14px));
+  opacity: 0;
+  transition: opacity .12s;
+}
+.ring-tip.below { transform: translate(var(--x, 0), var(--y, 0)) translate(-50%, 18px); }
+.ring-tip.on { opacity: 1; }
+.ring-tip b { font: 300 22px/1.1 var(--font); color: var(--ink); letter-spacing: -0.02em; }
+.ring-tip .d { color: var(--down); }
+.ring-tip .u { color: var(--up); }
+.ring-tip .tip-leg:empty { display: none; }
 
 .core {
   position: absolute;
@@ -303,6 +375,9 @@ body[data-mode="upload"] .steps li.active::after { background: var(--up-2); }
 .steps li.done { color: var(--muted); }
 .steps li.done::after { transform: scaleX(1); opacity: .35; }
 body.done .steps, body.idle .steps { visibility: hidden; }
+.steps.legs li { text-transform: none; letter-spacing: .04em; }
+.eta { margin: -8px 0 0; font: 11px var(--mono); color: var(--faint); letter-spacing: .06em; min-height: 1.3em; }
+body:not(.busy) .eta { visibility: hidden; }
 
 .message { min-height: 1.3em; font-size: 14px; color: var(--muted); text-align: center; max-width: 600px; }
 .message:empty { min-height: 0; margin-top: -14px; }
@@ -378,6 +453,136 @@ body.done .steps, body.idle .steps { visibility: hidden; }
   text-wrap: balance;
 }
 .verdict b { color: var(--ink); font-weight: 550; }
+
+/* --- Diagnosis: the headline result when the internet legs ran ---------
+   Typographic, no card: what limits you, and how much of your speed you get. */
+
+.diag {
+  --accent: var(--ink);
+  width: 100%;
+  max-width: 560px;
+  padding: 6px 4px 4px;
+  text-align: center;
+}
+.diag.warn { --accent: var(--warn); }
+.diag.good { --accent: var(--ok); }
+.diag .eyebrow {
+  margin: 0 0 6px;
+  font: 500 11px var(--mono);
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.diag h2 {
+  margin: 0;
+  font-size: clamp(30px, 6.4vw, 46px);
+  font-weight: 250;
+  letter-spacing: -.03em;
+  line-height: 1.08;
+  color: var(--accent);
+  text-wrap: balance;
+}
+.meter { margin: 20px 0 0; }
+.meter .bar {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+.meter .bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--fill, 0%);
+  border-radius: inherit;
+  background: var(--accent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 60%, transparent);
+  transform-origin: left;
+}
+.diag.reveal .meter .bar i { animation: meter-in .9s cubic-bezier(.2, .8, .2, 1) both .15s; }
+@keyframes meter-in { from { transform: scaleX(0); } }
+.meter .nums {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 10px;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+.meter .of { text-align: right; color: var(--muted); }
+.meter b { font-size: 20px; font-weight: 500; color: var(--ink); }
+.meter .of b { color: var(--muted); }
+.meter small { font-size: 12.5px; color: var(--muted); }
+.meter.full .of { display: none; }
+.diag p { margin: 14px auto 0; max-width: 46ch; color: var(--muted); font-size: 15px; line-height: 1.5; }
+.diag .diag-tip { margin-top: 4px; color: var(--ink); }
+.diag p:empty { display: none; }
+.chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 14px 0 0; padding: 0; list-style: none; }
+.chips:empty { display: none; }
+.chips li { font: 11.5px var(--mono); color: var(--warn); padding: 4px 10px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line)); }
+
+/* --- The three legs, one scale ------------------------------------------ */
+
+.legtable {
+  width: 100%;
+  max-width: 720px;
+  display: grid;
+  /* Shared columns, so every leg's bars start and end at the same place. */
+  grid-template-columns: minmax(150px, 1.3fr) repeat(2, minmax(0, 1fr)) minmax(0, .7fr);
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  overflow: hidden;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+.leg, .lh {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 12px 18px;
+  background: var(--glass);
+  transition: opacity .4s var(--ease), background .4s;
+}
+.lh { padding: 9px 18px; font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+.leg.waiting { opacity: .45; }
+.leg.running { background: color-mix(in srgb, var(--panel-2) 60%, var(--glass)); }
+.leg.limit { background: linear-gradient(90deg, color-mix(in srgb, var(--warn) 14%, transparent), transparent 70%), var(--glass); }
+.leg.limit .leg-name > span { color: var(--warn); }
+.leg-name small { grid-column: 2; font: 11.5px var(--font); letter-spacing: 0; text-transform: none; color: var(--faint); }
+.leg-name small:empty { display: none; }
+.c { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.c b { font-weight: 300; font-size: clamp(18px, 2.6vw, 24px); letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+.c b small { font: 10.5px var(--mono); color: var(--muted); letter-spacing: 0; margin-left: 4px; }
+.c > i { display: block; height: 4px; border-radius: 2px; background: var(--panel-2); position: relative; overflow: hidden; }
+.c > i::after { content: ""; position: absolute; inset: 0; border-radius: inherit; transform-origin: left; transform: scaleX(var(--w, 0)); transition: transform .9s var(--ease); }
+.c.dn > i::after { background: linear-gradient(90deg, var(--down-2), var(--down)); }
+.c.up > i::after { background: linear-gradient(90deg, var(--up), var(--up-2)); }
+.c.pg > i { visibility: hidden; }
+.c.limit b { color: var(--warn); }
+.c.limit > i::after { background: var(--warn); }
+.leg.running .c > i::after { animation: leg-pulse 1.2s ease-in-out infinite; }
+.leg.failed .c b { color: var(--faint); }
+.leg-name {
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 8px;
+  min-width: 0;
+  font: 500 10.5px var(--mono);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.leg-name svg { width: 15px; height: 15px; color: var(--faint); }
+.leg-name > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@keyframes leg-pulse { 50% { opacity: .55; } }
+/* With the legs, the table replaces the strip. */
+body.legs .strip { display: none; }
 
 .after { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 8px; }
 .text-btn {
@@ -601,6 +806,7 @@ body.done .steps, body.idle .steps { visibility: hidden; }
 /* --- Small screens ------------------------------------------------------ */
 
 @media (max-width: 640px) {
+  .link.three .wire em .sec { display: none; }
   .stage { gap: 12px; }
   .node svg { display: none; }
   .node small { font-size: 9px; }
@@ -616,6 +822,19 @@ body.done .steps, body.idle .steps { visibility: hidden; }
   .strip[data-big="1"] .m.big { grid-column: span 6; }
   .m .k { font-size: 9.5px; letter-spacing: .08em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .verdict { font-size: 14px; }
+  /* One card per leg: the name on top, the three values below. */
+  .legtable { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .lh { display: none; }
+  .leg { padding: 12px 14px 14px; gap: 10px 12px; }
+  .leg-name { grid-column: 1 / -1; }
+  .c::before { content: attr(data-l); font: 500 9.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+  .diag { padding: 4px 0 0; }
+  .meter b { font-size: 17px; }
+  .diag p { font-size: 14px; }
+  .link.three { gap: 6px; }
+  .link.three .node b { font-size: 11px; max-width: 24vw; }
+  .link.three .node svg { display: block; width: 18px; height: 18px; }
+  .wire em, .arc em { font-size: 10px; letter-spacing: -.02em; }
 }
 
 /* Animations off: ?fx=0, the settings switch, or the OS preference. */

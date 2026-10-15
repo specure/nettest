@@ -29,6 +29,7 @@ pub async fn parse_args(args: Vec<String>, default_config: FileConfig) -> Result
         upload_duration_ms: 7000,
         jitter_duration_ms: 4000,
         packetloss_duration_ms: 4000,
+        phases: Default::default(),
     };
 
 

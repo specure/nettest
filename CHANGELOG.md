@@ -11,6 +11,8 @@ to that version. Releases before 2.1.0 are listed on the
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-15
+
 ### Added
 
 - A browser speed test built into the server. `nettest -s` serves the page on
@@ -35,6 +37,41 @@ to that version. Releases before 2.1.0 are listed on the
 - On startup the server prints the addresses to open on other devices, the
   local network address first, and a QR code for phones when it runs in a
   terminal.
+- "Where the speed goes": with `enable_upstream_test = true` (off by default),
+  the page measures three legs in turn: this device to the server, the server
+  to the internet, and this device straight to the same public server. It then
+  names the bottleneck: Wi-Fi/LAN, the internet line, or the server itself.
+  - The page switches to a three-segment layout: a This device / Server /
+    Internet diagram at the top (the end-to-end arc passes through the server
+    when it is the gateway), three concentric orbits on one shared scale, a
+    diagnosis card as the main result and a segment comparison table. The
+    centre shows what reaches this device end to end. History, the shared
+    image and copied text follow the same layout.
+  - The server works out how the visitor reaches it (`gateway`, `same-lan`,
+    `routed`, `remote`, `hairpin`, `self`) and reports it in `/api/info`.
+    Visitors from the internet get only the plain test, with a note why.
+  - Both internet segments use the same IPv4 address of the public server.
+    Where the public server supports the new `/api/ip` echo, the page checks
+    that the device and the server leave through the same public address and
+    otherwise reports "separate paths" instead of a bottleneck.
+  - The server runs the nettest client in-process against the nearest public
+    measurement server (`upstream_server = auto`, preferring servers in the
+    user's own provider network) or a fixed `host[:port]`.
+  - New endpoints `POST /api/upstream/start`, `GET /api/upstream/status` and
+    `GET /api/upstream/last`. They answer only private addresses, require an
+    `X-Nettest: 1` header, check `Host`, reject cross-origin requests, run one
+    test at a time and allow one run per minute.
+  - The result notes whether other traffic used the line during the test and
+    whether the server's CPU was saturated.
+  - `/api/info` reports whether the upstream test is available and the
+    visitor's path relation; new `GET /api/ip` returns the caller's address
+    (readable cross-origin).
+  - When the browser runs on the server itself, the page measures only this
+    device against the nearest public server (one ring, "Internet" node),
+    since the other two segments would be loopback or a duplicate.
+  - `nettest -s -demo` (presentation mode): enables the upstream test, always
+    runs all three segments regardless of the path and removes the
+    one-run-per-minute limit.
 - `scripts/build-web.sh` builds the browser page into `dist/`.
   `scripts/build-web.sh --check` verifies, without building, that `dist/` was
   built from the current `web/` files and WASM client. CI runs the check.

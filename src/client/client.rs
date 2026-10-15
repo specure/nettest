@@ -68,6 +68,37 @@ pub struct ClientConfig {
     pub upload_duration_ms: u64,
     pub jitter_duration_ms: u64,
     pub packetloss_duration_ms: u64,
+    /// Which phases run. The CLI runs all of them; the server's own internet
+    /// measurement splits speed (download/upload) and quality (ping, jitter,
+    /// packet loss) into two runs so the page can show the speeds sooner.
+    pub phases: Phases,
+}
+
+/// Phase selection for one run. The pre-test runs only with a transfer phase.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Phases {
+    pub ping: bool,
+    /// Jitter (VoIP) and packet loss (UDP); also skipped in legacy mode.
+    pub qos: bool,
+    pub download: bool,
+    pub upload: bool,
+}
+
+impl Default for Phases {
+    fn default() -> Self {
+        Phases { ping: true, qos: true, download: true, upload: true }
+    }
+}
+
+impl Phases {
+    /// Download and upload only.
+    pub fn speed() -> Self {
+        Phases { ping: false, qos: false, download: true, upload: true }
+    }
+    /// Ping, jitter and packet loss only.
+    pub fn quality() -> Self {
+        Phases { ping: true, qos: true, download: false, upload: false }
+    }
 }
 
 impl Default for ClientConfig {
@@ -96,6 +127,7 @@ impl Default for ClientConfig {
             upload_duration_ms: 7000,
             jitter_duration_ms: 4000,
             packetloss_duration_ms: 4000,
+            phases: Phases::default(),
         }
     }
 }

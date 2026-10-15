@@ -5,13 +5,26 @@ use crate::{
     utils::user,
     config::parser::parse_listen_address,
 };
+use crate::mioserver::upstream::{Upstream, UpstreamSettings, MIN_INTERVAL as UPSTREAM_MIN_INTERVAL};
 use log::LevelFilter;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::sync::Arc;
+use std::time::Duration;
 
 pub fn parse_args(
     args: Vec<String>,
     default_config: FileConfig,
 ) -> Result<ServerConfig, anyhow::Error> {
+    // The upstream leg is an API of the web page, so it needs the web UI.
+    // Created after the options are parsed: `-demo` turns it on.
+    let upstream_wanted = default_config.enable_upstream_test;
+    let upstream_settings = UpstreamSettings {
+        server: default_config.upstream_server.clone(),
+        prefer_on_net: default_config.upstream_prefer_on_net,
+        control_server: default_config.control_server.clone(),
+        x_nettest_client: default_config.x_nettest_client.clone(),
+        min_interval: UPSTREAM_MIN_INTERVAL,
+    };
     let mut config = ServerConfig {
         tcp_addresses: vec![],
         tls_addresses: vec![],
@@ -31,6 +44,8 @@ pub fn parse_args(
         server_name: default_config.server_name,
         enable_mdns: default_config.enable_mdns,
         enable_web_ui: default_config.enable_web_ui,
+        upstream: None,
+        demo: false,
         udp_port: default_config.server_udp_port,
         udp_server: None,
     };
@@ -87,6 +102,9 @@ pub fn parse_args(
             "-register" => {
                 config.server_registration = true;
             }
+            "-demo" => {
+                config.demo = true;
+            }
             "-udp" => {
                 i += 1;
                 if i < args.len() {
@@ -109,6 +127,14 @@ pub fn parse_args(
         }
         i += 1;
     }
+    if config.enable_web_ui && (upstream_wanted || config.demo) {
+        config.upstream = Some(Arc::new(Upstream::new(UpstreamSettings {
+            // Presentations run the test back to back.
+            min_interval: if config.demo { Duration::ZERO } else { upstream_settings.min_interval },
+            ..upstream_settings
+        })));
+    }
+
     if config.log_level.is_some() && config.log_level.unwrap() != LevelFilter::Off {
         println!(
             "Initializing logger with level: {:?}",
@@ -174,6 +200,9 @@ fn print_help() {
     println!("    -log LEVEL      Set log level: info, debug, trace");
     println!("    -register       Enable server registration with control server");
     println!("    -udp PORT       UDP port for VoIP/packet loss tests (default: 5004)");
+    println!("    -demo           Presentation mode: the page always runs all three segments");
+    println!("                    (device ↔ server ↔ internet), even from the server itself,");
+    println!("                    with no wait between runs. Turns on the upstream test.");
     println!("    -h, --help      Show this help message");
     println!("    -v, --version   Print version and exit\n");
     println!("The browser client is served on the TCP (and TLS) port, and the server");

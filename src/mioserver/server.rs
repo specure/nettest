@@ -117,6 +117,11 @@ pub struct ServerConfig {
     /// Serve the embedded browser client to plain HTTP GETs on the
     /// measurement port(s) — see `handlers::static_files`.
     pub enable_web_ui: bool,
+    /// The "this server ↔ internet" measurement the page can trigger;
+    /// `None` unless `enable_upstream_test = true`.
+    pub upstream: Option<Arc<crate::mioserver::upstream::Upstream>>,
+    /// `-demo`: the page runs every segment regardless of the client's path.
+    pub demo: bool,
     pub udp_port: u16,
     pub udp_server: Option<Arc<SharedUdpServer>>,
 }
