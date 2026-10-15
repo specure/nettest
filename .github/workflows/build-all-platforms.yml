@@ -48,6 +48,9 @@ jobs:
 
     - name: Install system dependencies
       run: |
+        # Bullseye security updates are moving to archive.debian.org; packages
+        # listed in the deb.debian.org index can 404 there.
+        echo 'deb http://archive.debian.org/debian-security bullseye-security main' > /etc/apt/sources.list.d/security-archive.list
         apt-get update
         apt-get install -y curl build-essential pkg-config libssl-dev libfontconfig1-dev
 
@@ -99,6 +102,9 @@ jobs:
 
     - name: Install system dependencies
       run: |
+        # Bullseye security updates are moving to archive.debian.org; packages
+        # listed in the deb.debian.org index can 404 there.
+        echo 'deb http://archive.debian.org/debian-security bullseye-security main' > /etc/apt/sources.list.d/security-archive.list
         apt-get update
         apt-get install -y curl build-essential pkg-config libssl-dev libfontconfig1-dev
 
