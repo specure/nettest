@@ -11,6 +11,40 @@ to that version. Releases before 2.1.0 are listed on the
 
 ## [Unreleased]
 
+### Added
+
+- The `-no-jitter-packetloss` client option skips the jitter (VoIP) and packet
+  loss (UDP) phases. Library users set `ClientConfig::run_jitter_and_packetloss`
+  to `false` for the same effect. The phases still don't run with `-legacy` or
+  when `phases.qos` is `false`.
+- Live progress of the ping phase. While ping runs, the measurement thread
+  publishes its progress (0–100) in `LiveSink::ping_progress`, and
+  `LiveState::ping_progress_threads` collects it per thread, so a UI can show
+  progress during the roughly one-second phase instead of waiting for its
+  result.
+- The library builds for Android. On Android the server module (`mioserver`)
+  and its dependencies (mdns-sd, include_dir, flate2, if-addrs, qrcode) are left
+  out, and the console speed chart (textplots) is replaced by a no-op. Other
+  targets are unchanged.
+
+### Changed
+
+- **New public fields** in `ClientConfig` (`run_jitter_and_packetloss`),
+  `LiveSink` (`ping_progress`) and `LiveState` (`ping_progress_threads`). Code
+  that builds these structs with every field written out must add the new
+  fields, or use `..Default::default()` / `LiveSink::new()`.
+- `nettest::mioserver` does not exist when the library is built for Android.
+- If the server closes the connection during the greeting, the client now fails
+  with an error that names the step it was waiting for and shows what the
+  server had sent.
+
+### Fixed
+
+- TLS measurements could stop on a healthy connection. When a read only
+  received part of a TLS record, it returned 0 bytes, which the client treats as
+  a closed connection. The read now reports `WouldBlock`, and the client waits
+  for more data.
+
 ## [2.2.0] - 2026-10-15
 
 ### Added

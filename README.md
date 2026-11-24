@@ -183,8 +183,8 @@ The JSON document reports nettest's native units: milliseconds for latency and
 jitter, bits per second for speed, percent for packet loss and bytes for the
 transferred volume. A value that was not measured is left out instead of being
 reported as zero, so a consumer can tell "not measured" apart from "measured as
-zero". With `-legacy`, for example, `jitter_ms` and `packet_loss_percent` are
-absent because no VoIP and no UDP test ran.
+zero". With `-legacy` or `-no-jitter-packetloss`, for example, `jitter_ms` and
+`packet_loss_percent` are absent because no VoIP and no UDP test ran.
 
 ```console
 $ nettest -c 192.168.1.100 -json
@@ -258,6 +258,7 @@ nettest -c 192.168.1.100 -json | jq .download.speed_bps
 | `-raw` | Print one parseable line: `ping/download/upload` | `false` |
 | `-json` | Print the measurement as JSON on stdout | `false` |
 | `-legacy` | Use legacy PUT command (skip VoIP/packet loss) | `false` |
+| `-no-jitter-packetloss` | Skip the jitter (VoIP) and packet loss (UDP) phases | `false` |
 | `-log` | Log level (info, debug, trace) | - |
 
 ## 🔌 Protocols
