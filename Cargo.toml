@@ -49,17 +49,9 @@ chrono = "0.4.34"
 tokio-rustls = { version = "0.26.0", default-features = false, features = ["ring", "tls12", "logging"] }
 rustls = { version = "0.23.0", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 rustls-pemfile = "2.0.0"
-textplots = "0.8.7"
 reqwest = { version = "0.12.9", default-features = false, features = ["json", "rustls-tls"] }
 mio = { version = "1", features = ["net"] }
 prettytable = "0.10.0"
-mdns-sd = "0.17.1"
-include_dir = "0.7"
-# Web UI: gunzip embedded files for the rare client without gzip support,
-# list interface addresses and print a QR code for the startup banner.
-flate2 = "1"
-if-addrs = "0.14"
-qrcode = { version = "0.14", default-features = false }
 # QUIC endpoint for the browser QoS phase (jitter / packet loss over datagrams).
 wtransport = "0.7"
 
@@ -88,6 +80,21 @@ web-sys = { version = "0.3", features = [
     "MessageChannel",
     "MessagePort",
 ] }
+
+# textplots (CLI console speed chart) and the mio server's dependencies
+# (mdns-sd, include_dir, flate2, if-addrs, qrcode) are not needed by the
+# mobile FFI client and complicate cross-compiling for Android - keep them
+# host/iOS/desktop-only. The server module is gated out for Android in
+# src/lib.rs and the console chart is stubbed in src/client/print/mod.rs.
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
+textplots = "0.8.7"
+mdns-sd = "0.17.1"
+include_dir = "0.7"
+# Web UI: gunzip embedded files for the rare client without gzip support,
+# list interface addresses and print a QR code for the startup banner.
+flate2 = "1"
+if-addrs = "0.14"
+qrcode = { version = "0.14", default-features = false }
 
 [dev-dependencies]
 tokio-native-tls = "0.3"

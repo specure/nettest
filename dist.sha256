@@ -1,18 +1,18 @@
 # Written by scripts/build-web.sh; verified in CI by scripts/build-web.sh --check.
-# rustc: rustc 1.99.0 (b940084d7 2026-09-28)
+# rustc: rustc 1.98.1 (48a229cea 2026-09-01)
 # wasm-bindgen: 0.2.127
-# wasm-opt: wasm-opt version 119 (version_119)
+# wasm-opt: wasm-opt version 133
 21cfbeffaccbf836a8ad253b41562cfa08f75fe212dc9875ee498bdb25b1315e  .cargo/config.toml
 4f4fb714afcc568214b288aa8b011496c89c4f914ed29a69fa92e62703f60814  Cargo.lock
-df29570f22fbe601b69dc59dae7910de2573dbc04b7f433e5903657a368cc12f  Cargo.toml
+38585a910b5d3ad118433a0109076fea1f23b0beb73f3e5160f002e96dff6ce3  Cargo.toml
 4bfd8405857fbaf150f062e22d2216af700ebc891d6b57b4ee262d4f545798e8  dist/app.js.gz
 e9fbbc12f5fd844c5f3f1801ebe48e468ba9e42efa774ce6feee0d12d97edc73  dist/apple-touch-icon.png.gz
 3f36dc89ff96aa36eb17f3d20bc1df9eaf091b51275a223774827f0f6c2290ba  dist/favicon-16x16.png.gz
 672995016eafd21ecbedeccd74e8a1e55934aaab8147f93c098995dc921b66de  dist/favicon-32x32.png.gz
 f0f55e519e000921a0bec45454ffd9e0683a63dbcca7a5556fa4f9a465c55a49  dist/favicon.ico.gz
 4bca5bd5276e521e802d8a0b5a02c9601c767fa349c9ec06d9444912baa30817  dist/index.html.gz
-8b86042fa0a4080e987d518e6c4b93bbaabe2cfa27509cd7326e8b38e634aa19  dist/nettest.js.gz
-5d8f02fc7a018b61445d7f1ad30c7f800a9ce0b5f53a5c144f29143f85a8bffe  dist/nettest_bg.wasm.gz
+e86e5091fbdbe35f67a17cd017788244ac5bc7b2abdf5b3e6a1596f06ede365d  dist/nettest.js.gz
+5a34d1d571fb7fc43fe0e5ee32003497257c561bae07384f18dedaa12be9cce1  dist/nettest_bg.wasm.gz
 7c900fac2c4fee21e060a390d858b916e9a421665250154e8161445bfd762a14  dist/style.css.gz
 0ded6ef98241f6a5e11f215092de082aa1adff46989372f28faf91635ac71c54  scripts/build-web.sh
 414104e0bfca2cdfbc28c34c3821c28feee04653ea92018420cb6d14530ab091  src/client/calculator.rs
@@ -22,17 +22,17 @@ ee56c1ba13be3aca0e8ca3c606654fca5c3f849cd551d21f9fe105b5f07d8573  src/client/con
 402c54151234757679c71c3783c929e6387c7afcc1a5469a9e560cefdd72cbc8  src/client/handlers/basic_handler.rs
 7a5228e7d31beb3e56528fb0a5acd8274325690a2c7a25ab012c2dff6c8091a5  src/client/handlers/get_chunks.rs
 7c879e3cb1a307cf15bb97d0041e332394182be05d859b39a357962e40670655  src/client/handlers/get_time.rs
-90b695998029e7300588ec5fa969bac0195f84dc97f9e0de0d04928214d8c2d7  src/client/handlers/greeting.rs
+57e10537cf8eae6fbef00f561c91c82525e9e891511aad1dcaa4dc44da7eeaac  src/client/handlers/greeting.rs
 ae22b99c9db6de5ca38483bb6ebfd6b001a55a8a8fad2766c8b3009ba8842274  src/client/handlers/mod.rs
-0de429259881e736d4d0e69cbfc52b86c39fc870d9b1f8e76ee0490d56dd8a02  src/client/handlers/ping.rs
+a542c620d01e277bd256b8600babe2f254e3500d457bd4f7489f2d09a93fcf9d  src/client/handlers/ping.rs
 9241bcc9c290f2d05f5965c74cc4ba28387aaf43032c1b8fe56c6a70dcc11c73  src/client/handlers/put.rs
-20f7d9f38d86b282ab5b827f64be8b90ca6a496ee05e7e7a1a303f2c031df0d1  src/client/handlers/puttimeresult.rs
+5e13209c82ffc674c45400b89693b4ac6bfd0f736bfcb0747e5de47c60136ea5  src/client/handlers/puttimeresult.rs
 603ca440401d0138395cc66c9470b5bd5544fd92de2b6259c42e8a3e19943527  src/client/handlers/signed_result.rs
-b42bcf4f3f758eb87b80e9ea48a9633e9734e4e968acf2bd92fd1b1cc460eb5e  src/client/live.rs
+c94f21e3f6689cf58848d4a8b30b2a9faf44697afd1694a7f93f31bea9efb47d  src/client/live.rs
 05c74e0c11ed6f886562c5bafef2f0bdb186cc569b79c91585c7e8297dbdd159  src/client/mod.rs
 e06c8e7bc82faa36c2ed97817371c4c9dd32af399e1b49e00f0a700aa1a3f936  src/client/state.rs
 21103476644d0083401124cb9a072f4def647a637d3ed88443f2cafe8369666d  src/client/user_agent.rs
-09233f88377c5896662bb99ec363a344f449c6af484300909980f2ee9766e6c4  src/lib.rs
+68d7f89b5a2c1629af73b33acd6d8b095fe8b7db5a7dd689a3cb276c5b4a8c57  src/lib.rs
 7f257fe712bf195e258470b5b8482879cc2a09c1aeacc6a7e6cd6612ac61a449  src/reactor.rs
 009498ae2fed2da2aee29952050ebfa3b278fca98f5d1b04deda1d0851d6f564  src/stream/js_wss.rs
 30d41c268a61d3f8687b1558c13c7edfce9760ae231314712eca78b4b8d31cf0  src/stream/mod.rs

@@ -86,6 +86,11 @@ fn drain_interim_upload(measurement_state: &mut MeasurementState) {
         }
     }
     let _ = process_timeresult_lines(measurement_state);
+    debug!(
+        "drain_interim_upload: upload_measurements len={} buffered_bytes={}",
+        measurement_state.upload_measurements.len(),
+        measurement_state.time_result_buffer.len()
+    );
 
     publish_live_upload(measurement_state);
     measurement_state.last_live_publish = Some(now);
@@ -235,6 +240,10 @@ pub fn handle_put_time_result_send_command(
         format!("PUTTIMERESULT {}\n", measurement_state.chunk_size)
     };
     if measurement_state.write_pos == 0 {
+        debug!(
+            "handle_put_time_result_send_command: sending {:?} (interval_ms={})",
+            command, measurement_state.puttimeresult_interval_ms
+        );
         measurement_state.write_buffer[..command.len()].copy_from_slice(command.as_bytes());
     }
     loop {

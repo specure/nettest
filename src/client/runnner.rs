@@ -52,6 +52,7 @@ pub async fn run_threads(
         if let Ok(mut guard) = live.lock() {
             guard.download_threads = sinks.iter().map(|s| s.download.clone()).collect();
             guard.upload_threads = sinks.iter().map(|s| s.upload.clone()).collect();
+            guard.ping_progress_threads = sinks.iter().map(|s| s.ping_progress.clone()).collect();
         }
     }
     let ping_median = Arc::new(Mutex::new(None::<u64>));
@@ -148,7 +149,7 @@ pub async fn run_threads(
                 }
             }
             if i == 0 {
-                if !config.legacy && config.phases.qos {
+                if !config.legacy && config.phases.qos && config.run_jitter_and_packetloss {
                     set_phase(&live, "jitter");
                     if let Err(e) = state.run_voip_test() {
                         log::warn!("VoIP test failed: {}", e);
