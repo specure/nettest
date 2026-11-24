@@ -25,31 +25,51 @@ crate-type = ["cdylib", "rlib", "staticlib"]
 - `staticlib` → `.a` (iOS, linked statically)
 - `rlib` → so the crate can also be used as a regular Rust dependency
 
-### Dependencies that break the mobile build
+### Android dependency set (already in the crate)
 
-`plotters` / `plotters-backend` / `textplots` pull in **fontconfig**, which does
-not build for Android. Move them out of the mobile targets:
+The crate builds for Android as it is; no `Cargo.toml` edits are needed.
+Crates that only the server or the CLI use are left out of the Android build:
 
 ```toml
-[target.'cfg(not(target_os = "android"))'.dependencies]
-plotters = "0.3.7"
-plotters-backend = "0.3.7"
-textplots = "0.8.7"
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
+textplots = "0.8.7"        # CLI console speed chart
+mdns-sd = "0.17.1"         # server
+include_dir = "0.7"        # server (embedded web UI)
+flate2 = "1"               # server
+if-addrs = "0.14"          # server
+qrcode = { version = "0.14", default-features = false }  # server
 ```
 
-The `flutter` branch also dropped `mdns-sd` and `include_dir` (not needed by the
-client).
+`plotters` / `plotters-backend`, which pulled in **fontconfig** and broke the
+Android build, are no longer dependencies at all, and OpenSSL was replaced by
+rustls.
 
 ## 2. Code changes (`src/lib.rs`)
 
-### Conditional compilation of the server part
+### Conditional compilation of the server part (already in the crate)
 
-The server module is not needed on Android and pulls in extra dependencies:
+The server module is not needed on Android and pulls in the dependencies above,
+so it is gated out for Android (and for wasm32, which has no sockets):
 
 ```rust
-#[cfg(not(target_os = "android"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 pub mod mioserver;
 ```
+
+`nettest::mioserver` therefore does not exist in an Android build. The CLI
+console chart (`client::print::graph_service`) is replaced by a no-op on
+Android, so `GraphService::print_graph` keeps the same signature.
+
+### Client options for the mobile app
+
+- `ClientConfig::run_jitter_and_packetloss` (default `true`): set it to `false`
+  to skip the jitter (VoIP) and packet loss (UDP) phases. The CLI equivalent is
+  `-no-jitter-packetloss`. The phases also stay off with `legacy = true` or
+  `phases.qos = false`.
+- Live progress: `run_measurement_with_progress` fills a `SharedLive`. Besides
+  the per-thread download/upload samples, `LiveState::ping_progress_threads`
+  holds each thread's ping-phase progress (0–100), so the UI can show progress
+  during the roughly one-second ping phase.
 
 ### FFI functions with `#[no_mangle] extern "C"`
 
@@ -83,15 +103,13 @@ its own `tokio::runtime::Runtime` and calls `block_on`.
 rustup target add aarch64-linux-android      # arm64-v8a
 rustup target add armv7-linux-androideabi    # armeabi-v7a
 rustup target add x86_64-linux-android       # x86_64
-# i686-linux-android is NOT used — deprecated, atomic-operation issues in OpenSSL.
+# i686-linux-android is NOT used — deprecated; it used to fail on OpenSSL
+# atomic operations (OpenSSL is gone now, but the target is still untested).
 ```
 
-### Environment variables (disable fontconfig)
-```bash
-export FONTCONFIG_NO_PKG_CONFIG=1
-export RUST_FONTCONFIG_DLOPEN=1
-export PKG_CONFIG_ALLOW_CROSS=1
-```
+The `FONTCONFIG_*` / `PKG_CONFIG_ALLOW_CROSS` environment variables used by
+older notes are no longer needed: nothing in the Android build depends on
+fontconfig.
 
 ### Build command (per target)
 ```bash
@@ -187,12 +205,15 @@ Dart looks for the `.dylib` next to the executable / in `../Frameworks/` / in
 
 ## 8. Main gotchas (where time was spent)
 
-1. **fontconfig/plotters don't build for Android** → move them under
-   `cfg(not(target_os = "android"))` + the `FONTCONFIG_*` env vars.
-2. **i686-linux-android fails** on OpenSSL atomic operations → exclude it.
+1. **fontconfig/plotters didn't build for Android** → solved in the crate:
+   plotters was removed and the remaining host-only crates are excluded on
+   Android (section 1).
+2. **i686-linux-android failed** on OpenSSL atomic operations → excluded.
 3. **iOS symbols are stripped by the linker** without `-force_load`.
 4. **`crate-type`** must include `cdylib` (so/dylib) and `staticlib` (iOS .a).
+   The crate itself declares `["cdylib", "rlib"]`; a wrapper crate such as
+   `nettest-flutter-lib` adds `staticlib`.
 5. **The `mioserver` server module** is not needed by the mobile client and pulls
-   in extra deps → `#[cfg(not(target_os = "android"))]`.
+   in extra deps → gated out on Android in the crate (section 2).
 6. On **Apple Silicon**, `aarch64-apple-ios-sim` is universal for sim+device
    during development — don't multiply targets prematurely.
