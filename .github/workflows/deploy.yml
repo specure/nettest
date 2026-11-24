@@ -2,45 +2,48 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [ main, light_theme ]
+    branches: [ main ]
+
+# One Pages deployment at a time. A newer push waits for the running deployment
+# instead of cancelling it halfway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  # Build and upload in one job, deploy in another (GitHub's recommended Pages
+  # layout). The deploy job starts only after the upload job has finished, so
+  # the artifact is registered by the time deploy-pages looks it up. Deploying
+  # in the same job right after the upload could fail with 'No artifacts named
+  # "github-pages" were found'.
+  build:
+    runs-on: ubuntu-latest
     permissions:
       contents: read
-      pages: write
-      id-token: write
-    runs-on: ubuntu-latest
-    
+    outputs:
+      artifact: ${{ steps.name.outputs.artifact }}
+
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
-      
+      uses: actions/checkout@v7
+
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
         node-version: '18'
         cache: 'npm'
         cache-dependency-path: static/package-lock.json
-        
+
     - name: Install dependencies
-      run: |
-        cd static
-        npm ci
-        echo "Dependencies installed successfully"
-        
+      working-directory: static
+      run: npm ci
+
     - name: Build
+      working-directory: static
       run: |
-        cd static
-        echo "Current directory: $(pwd)"
         echo "Node version: $(node --version)"
         echo "NPM version: $(npm --version)"
-        echo "Package.json exists: $(test -f package.json && echo 'YES' || echo 'NO')"
-        echo "Installing dependencies..."
-        npm ci
-        echo "Building application..."
         npm run build
-        echo "Build completed successfully"
         echo "Build directory contents:"
         ls -la build/
         echo "HTML files:"
@@ -49,15 +52,39 @@ jobs:
         find build/ -name "*.js" | head -5
         echo "CSS files:"
         find build/ -name "*.css" | head -5
-        
+
     - name: Setup Pages
-      uses: actions/configure-pages@v4
-      
+      uses: actions/configure-pages@v6
+
+    # A re-run keeps the artifacts of earlier attempts, and deploy-pages fails
+    # when it finds more than one artifact with its name ('Multiple artifacts
+    # named "github-pages" were unexpectedly found'). Name the artifact per
+    # attempt and hand the name to the deploy job. "Re-run failed jobs" reuses
+    # this job's output, so the deploy picks up the artifact that already
+    # exists.
+    - name: Artifact name
+      id: name
+      run: echo "artifact=github-pages-${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
+
     - name: Upload artifact
-      uses: actions/upload-pages-artifact@v3
+      uses: actions/upload-pages-artifact@v5
       with:
+        name: ${{ steps.name.outputs.artifact }}
         path: ./static/build
-        
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
     - name: Deploy to GitHub Pages
       id: deployment
-      uses: actions/deploy-pages@v4 
+      uses: actions/deploy-pages@v5
+      with:
+        artifact_name: ${{ needs.build.outputs.artifact }}
